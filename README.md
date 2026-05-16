@@ -3,6 +3,8 @@
 This is a minimal local Flask wrapper around the installed NCBI BLAST+ executables.
 It validates FASTA input with Biopython, runs allowlisted BLAST+ programs through
 `subprocess`, and parses BLAST tabular/XML output with `Bio.SearchIO`.
+The browser interface uses an NCBI-inspired colour palette and keeps routine
+clinician-facing controls separate from advanced BLAST parameters.
 
 ## 1. Verify BLAST+
 
@@ -64,6 +66,18 @@ The main page lets the user choose a BLAST program, choose a compatible
 registered database from a dropdown, review the database description, and run
 BLAST. The raw BLAST database prefix remains visible in the advanced database
 details panel.
+
+The routine search form includes:
+
+- query paste/upload
+- search type
+- compatible database
+- sensitivity preset
+- run button
+
+Advanced settings are collapsed by default and include E-value, maximum target
+sequences, word size, BLASTN task, minimum percent identity, output parser
+format, timeout, and raw database details.
 
 The database-management page is available at:
 

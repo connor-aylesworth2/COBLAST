@@ -2,7 +2,7 @@ from pathlib import Path
 
 from flask import Flask, redirect, render_template, request, url_for
 
-from blast_runner import BLAST_PROGRAMS, run_blast
+from blast_runner import BLAST_PROGRAMS, SENSITIVITY_PRESETS, run_blast
 from database_registry import (
     DB_CATEGORIES,
     DB_TYPES,
@@ -43,6 +43,7 @@ def index():
     return render_template(
         "index.html",
         blast_programs=BLAST_PROGRAMS,
+        sensitivity_presets=SENSITIVITY_PRESETS,
         databases=databases,
         registry_error=registry_error,
     )
@@ -51,9 +52,14 @@ def index():
 @app.post("/run-blast")
 def run_blast_route():
     sequence = request.form.get("sequence", "")
+    uploaded_query = request.files.get("sequence_file")
+    if uploaded_query and uploaded_query.filename:
+        sequence = uploaded_query.read().decode("utf-8-sig")
+
     program = request.form.get("program", "blastn")
     database_id = request.form.get("database_id", "")
     output_format = request.form.get("output_format", "tabular")
+    sensitivity_preset = request.form.get("sensitivity_preset", "standard")
 
     try:
         if program not in BLAST_PROGRAMS:
@@ -79,6 +85,13 @@ def run_blast_route():
             database=database.db_prefix_path,
             program=program,
             output_format=output_format,
+            sensitivity_preset=sensitivity_preset,
+            task=request.form.get("task") or None,
+            evalue=request.form.get("evalue") or None,
+            max_target_seqs=request.form.get("max_target_seqs") or None,
+            word_size=request.form.get("word_size") or None,
+            perc_identity=request.form.get("perc_identity") or None,
+            timeout_seconds=request.form.get("timeout_seconds") or 60,
         )
     except Exception as exc:
         return render_template("results.html", error=str(exc), result=None), 400

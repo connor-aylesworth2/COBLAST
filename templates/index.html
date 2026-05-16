@@ -3,77 +3,157 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Local BLAST+ Test</title>
-    <style>
-      body { font-family: system-ui, sans-serif; max-width: 960px; margin: 40px auto; padding: 0 20px; line-height: 1.5; }
-      label { display: block; font-weight: 650; margin-top: 18px; }
-      textarea, input, select { box-sizing: border-box; width: 100%; margin-top: 6px; padding: 10px; font: inherit; }
-      textarea { min-height: 180px; font-family: ui-monospace, Consolas, monospace; }
-      button { margin-top: 18px; padding: 10px 14px; font: inherit; cursor: pointer; }
-      nav { display: flex; gap: 16px; margin-bottom: 24px; }
-      details { margin-top: 14px; }
-      pre { white-space: pre-wrap; background: #f6f6f6; padding: 12px; overflow: auto; }
-      .error { color: #9b1c1c; font-weight: 650; }
-      .muted { color: #555; }
-    </style>
+    <title>Local BLAST+ Search</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   </head>
   <body>
-    <nav>
-      <a href="/">Run BLAST</a>
-      <a href="/databases">Databases</a>
-    </nav>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <div class="brand">
+          <span class="brand__name">Local BLAST+ Search</span>
+          <span class="brand__sub">Clinician-friendly local sequence search</span>
+        </div>
+        <nav class="nav">
+          <a href="/">Run BLAST</a>
+          <a href="/databases">Databases</a>
+        </nav>
+      </div>
+    </header>
 
-    <h1>Local BLAST+ Test</h1>
+    <main class="page">
+      <h1 class="page-title">Run BLAST</h1>
 
-    {% if registry_error %}
-      <p class="error">{{ registry_error }}</p>
-    {% endif %}
+      {% if registry_error %}
+        <p class="error">{{ registry_error }}</p>
+      {% endif %}
 
-    <form method="post" action="/run-blast">
-      <label for="sequence">Query sequence</label>
-      <textarea id="sequence" name="sequence">&gt;query
-ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTA</textarea>
+      <form class="panel" method="post" action="/run-blast" enctype="multipart/form-data">
+        <div class="panel__header">
+          <h2 class="panel__title">Search Setup</h2>
+        </div>
 
-      <label for="program">BLAST program</label>
-      <select id="program" name="program">
-        {% for program, config in blast_programs.items() %}
-          <option value="{{ program }}">{{ config.label }} - {{ config.description }}</option>
-        {% endfor %}
-      </select>
+        <div class="field">
+          <label for="sequence">Query input</label>
+          <textarea id="sequence" name="sequence">&gt;query
+ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTA</textarea>
+        </div>
 
-      <label for="database_id">Database</label>
-      <select id="database_id" name="database_id">
-        <option value="">No compatible database available</option>
-        {% for database in databases %}
-          {% if database.status == "available" %}
-            <option
-              value="{{ database.id }}"
-              data-db-type="{{ database.db_type }}"
-              data-description="{{ database.description }}"
-              data-path="{{ database.db_prefix_path }}"
-              data-title="{{ database.database_title }}"
-            >{{ database.display_name }} ({{ database.db_type }})</option>
-          {% endif %}
-        {% endfor %}
-      </select>
-      <p id="database_description" class="muted"></p>
+        <div class="field">
+          <label for="sequence_file">Query upload</label>
+          <input class="file-input" id="sequence_file" name="sequence_file" type="file" accept=".fa,.fasta,.fna,.faa,.txt">
+        </div>
 
-      <details>
-        <summary>Advanced database details</summary>
-        <label for="database_path">BLAST database prefix path</label>
-        <input id="database_path" readonly>
-        <label for="database_title">Database title</label>
-        <input id="database_title" readonly>
-      </details>
+        <div class="grid">
+          <div class="field">
+            <label for="program">Search type</label>
+            <select id="program" name="program">
+              {% for program, config in blast_programs.items() %}
+                <option value="{{ program }}">{{ config.label }} - {{ config.description }}</option>
+              {% endfor %}
+            </select>
+          </div>
 
-      <label for="output_format">Parser/output format</label>
-      <select id="output_format" name="output_format">
-        <option value="tabular">Tabular output parsed by Bio.SearchIO</option>
-        <option value="xml">XML output parsed by Bio.SearchIO</option>
-      </select>
+          <div class="field">
+            <label for="database_id">Database</label>
+            <select id="database_id" name="database_id">
+              <option value="">No compatible database available</option>
+              {% for database in databases %}
+                {% if database.status == "available" %}
+                  <option
+                    value="{{ database.id }}"
+                    data-db-type="{{ database.db_type }}"
+                    data-description="{{ database.description }}"
+                    data-path="{{ database.db_prefix_path }}"
+                    data-title="{{ database.database_title }}"
+                  >{{ database.display_name }} ({{ database.db_type }})</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+        </div>
 
-      <button type="submit">Run BLAST</button>
-    </form>
+        <p id="database_description" class="muted"></p>
+
+        <div class="field">
+          <span class="field-label">Sensitivity preset</span>
+          <div class="preset-group">
+            {% for preset, config in sensitivity_presets.items() %}
+              <label class="preset-option">
+                <input
+                  type="radio"
+                  name="sensitivity_preset"
+                  value="{{ preset }}"
+                  {% if preset == "standard" %}checked{% endif %}
+                >
+                <span class="preset-card">
+                  <strong>{{ config.label }}</strong>
+                  <span class="muted">{{ config.description }}</span>
+                </span>
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <details>
+          <summary>Advanced settings</summary>
+          <div class="details-body">
+            <div class="grid">
+              <div class="field">
+                <label for="evalue">E-value threshold</label>
+                <input id="evalue" name="evalue" inputmode="decimal" placeholder="Preset default">
+              </div>
+              <div class="field">
+                <label for="max_target_seqs">Maximum target sequences</label>
+                <input id="max_target_seqs" name="max_target_seqs" inputmode="numeric" placeholder="Preset default">
+              </div>
+              <div class="field">
+                <label for="word_size">Word size</label>
+                <input id="word_size" name="word_size" inputmode="numeric">
+              </div>
+              <div class="field">
+                <label for="perc_identity">Minimum percent identity</label>
+                <input id="perc_identity" name="perc_identity" inputmode="decimal">
+              </div>
+              <div class="field">
+                <label for="task">BLASTN task</label>
+                <select id="task" name="task">
+                  <option value="">Program default</option>
+                  {% for task in blast_programs["blastn"].allowed_tasks | sort %}
+                    <option value="{{ task }}">{{ task }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="field">
+                <label for="output_format">Parser/output format</label>
+                <select id="output_format" name="output_format">
+                  <option value="tabular">Tabular output parsed by Bio.SearchIO</option>
+                  <option value="xml">XML output parsed by Bio.SearchIO</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="timeout_seconds">Timeout seconds</label>
+                <input id="timeout_seconds" name="timeout_seconds" inputmode="numeric" value="60">
+              </div>
+            </div>
+
+            <details>
+              <summary>Database details</summary>
+              <div class="details-body">
+                <label for="database_path">BLAST database prefix path</label>
+                <input id="database_path" readonly>
+                <label for="database_title">Database title</label>
+                <input id="database_title" readonly>
+              </div>
+            </details>
+          </div>
+        </details>
+
+        <div class="button-row">
+          <button type="submit">Run BLAST</button>
+          <a class="button button-secondary" href="/databases">Manage Databases</a>
+        </div>
+      </form>
+    </main>
 
     <script>
       const programRequirements = {
@@ -86,6 +166,8 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCT
       const databaseDescription = document.getElementById("database_description");
       const databasePath = document.getElementById("database_path");
       const databaseTitle = document.getElementById("database_title");
+      const taskSelect = document.getElementById("task");
+      const percentIdentity = document.getElementById("perc_identity");
 
       function updateDatabaseDetails() {
         const option = databaseSelect.selectedOptions[0];
@@ -125,9 +207,23 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCT
         updateDatabaseDetails();
       }
 
-      programSelect.addEventListener("change", updateCompatibleDatabases);
+      function updateAdvancedAvailability() {
+        const isBlastn = programSelect.value === "blastn";
+        taskSelect.disabled = !isBlastn;
+        percentIdentity.disabled = !isBlastn;
+        if (!isBlastn) {
+          taskSelect.value = "";
+          percentIdentity.value = "";
+        }
+      }
+
+      programSelect.addEventListener("change", () => {
+        updateCompatibleDatabases();
+        updateAdvancedAvailability();
+      });
       databaseSelect.addEventListener("change", updateDatabaseDetails);
       updateCompatibleDatabases();
+      updateAdvancedAvailability();
     </script>
   </body>
 </html>

@@ -61,11 +61,33 @@ BLAST_OUTPUT_FORMATS = {
     "tabular": "6 " + " ".join(OUTFMT6_FIELDS),
     "xml": "5",
 }
+SENSITIVITY_PRESETS = {
+    "standard": {
+        "label": "Standard",
+        "description": "Balanced default for routine sequence checks.",
+        "evalue": "10",
+        "max_target_seqs": "50",
+    },
+    "sensitive": {
+        "label": "Sensitive",
+        "description": "Keeps weaker candidate matches for review.",
+        "evalue": "100",
+        "max_target_seqs": "100",
+    },
+    "fast": {
+        "label": "Fast",
+        "description": "Returns a smaller hit list for quick checks.",
+        "evalue": "10",
+        "max_target_seqs": "10",
+    },
+}
 NUCLEOTIDE_ALPHABET = set("ACGTRYSWKMBDHVNU")
 PROTEIN_ALPHABET = set("ABCDEFGHIKLMNPQRSTVWXYZJUO*")
 MAX_FASTA_RECORDS = 100
 MAX_TOTAL_SEQUENCE_LENGTH = 5_000_000
 FASTA_LINE_WIDTH = 80
+MAX_TARGET_SEQS_LIMIT = 10_000
+TIMEOUT_SECONDS_LIMIT = 3_600
 
 
 @dataclass(frozen=True)
@@ -95,6 +117,8 @@ class BlastResult:
     query_type: str
     query_count: int
     query_total_length: int
+    sensitivity_preset: str
+    parameters: dict[str, str]
 
 
 def require_biopython() -> None:
@@ -305,6 +329,100 @@ def parse_blast_output(stdout: str, output_format: str = "tabular") -> list[dict
     raise ValueError(f"Unsupported BLAST output format: {output_format}")
 
 
+def optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def parse_positive_float(name: str, value: str | None) -> str | None:
+    cleaned = optional_text(value)
+    if cleaned is None:
+        return None
+    try:
+        number = float(cleaned)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a number.") from exc
+    if number <= 0:
+        raise ValueError(f"{name} must be greater than 0.")
+    return cleaned
+
+
+def parse_bounded_int(name: str, value: str | None, minimum: int, maximum: int) -> str | None:
+    cleaned = optional_text(value)
+    if cleaned is None:
+        return None
+    try:
+        number = int(cleaned)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a whole number.") from exc
+    if number < minimum or number > maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}.")
+    return str(number)
+
+
+def parse_percent_identity(program: str, value: str | None) -> str | None:
+    cleaned = optional_text(value)
+    if cleaned is None:
+        return None
+    if program != "blastn":
+        raise ValueError("Minimum percent identity is currently supported for BLASTN only.")
+    try:
+        number = float(cleaned)
+    except ValueError as exc:
+        raise ValueError("Minimum percent identity must be a number.") from exc
+    if number < 0 or number > 100:
+        raise ValueError("Minimum percent identity must be between 0 and 100.")
+    return cleaned
+
+
+def build_blast_parameters(
+    *,
+    program: str,
+    sensitivity_preset: str,
+    evalue: str | None,
+    max_target_seqs: str | None,
+    word_size: str | None,
+    perc_identity: str | None,
+) -> dict[str, str]:
+    if sensitivity_preset not in SENSITIVITY_PRESETS:
+        allowed = ", ".join(SENSITIVITY_PRESETS)
+        raise ValueError(f"Unsupported sensitivity preset: {sensitivity_preset}. Choose one of: {allowed}.")
+
+    preset = SENSITIVITY_PRESETS[sensitivity_preset]
+    parameters = {
+        "evalue": str(preset["evalue"]),
+        "max_target_seqs": str(preset["max_target_seqs"]),
+    }
+
+    parsed_evalue = parse_positive_float("E-value", evalue)
+    parsed_max_target_seqs = parse_bounded_int(
+        "Maximum target sequences",
+        max_target_seqs,
+        1,
+        MAX_TARGET_SEQS_LIMIT,
+    )
+    parsed_word_size = parse_bounded_int(
+        "Word size",
+        word_size,
+        4 if program == "blastn" else 2,
+        1_000,
+    )
+    parsed_perc_identity = parse_percent_identity(program, perc_identity)
+
+    if parsed_evalue is not None:
+        parameters["evalue"] = parsed_evalue
+    if parsed_max_target_seqs is not None:
+        parameters["max_target_seqs"] = parsed_max_target_seqs
+    if parsed_word_size is not None:
+        parameters["word_size"] = parsed_word_size
+    if parsed_perc_identity is not None:
+        parameters["perc_identity"] = parsed_perc_identity
+
+    return parameters
+
+
 def run_blast(
     sequence: str,
     database: str | Path,
@@ -312,12 +430,23 @@ def run_blast(
     timeout_seconds: int = 60,
     task: str | None = None,
     output_format: str = "tabular",
+    sensitivity_preset: str = "standard",
+    evalue: str | None = None,
+    max_target_seqs: str | None = None,
+    word_size: str | None = None,
+    perc_identity: str | None = None,
 ) -> BlastResult:
     if program not in BLAST_PROGRAMS:
         allowed = ", ".join(BLAST_PROGRAMS)
         raise ValueError(f"Unsupported BLAST program: {program}. Choose one of: {allowed}.")
     if output_format not in BLAST_OUTPUT_FORMATS:
         raise ValueError(f"Unsupported BLAST output format: {output_format}")
+    timeout = parse_bounded_int(
+        "Timeout",
+        str(timeout_seconds),
+        1,
+        TIMEOUT_SECONDS_LIMIT,
+    )
 
     program_config = BLAST_PROGRAMS[program]
     default_task = program_config["default_task"]
@@ -325,6 +454,14 @@ def run_blast(
     allowed_tasks = program_config["allowed_tasks"]
     if selected_task is not None and selected_task not in allowed_tasks:
         raise ValueError(f"Unsupported task for {program}: {selected_task}")
+    parameters = build_blast_parameters(
+        program=program,
+        sensitivity_preset=sensitivity_preset,
+        evalue=evalue,
+        max_target_seqs=max_target_seqs,
+        word_size=word_size,
+        perc_identity=perc_identity,
+    )
 
     query = validate_fasta_input(
         sequence,
@@ -347,13 +484,15 @@ def run_blast(
         ]
         if selected_task is not None:
             cmd.extend(["-task", selected_task])
+        for parameter, value in parameters.items():
+            cmd.extend([f"-{parameter}", value])
 
         start = perf_counter()
         completed = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=timeout_seconds,
+            timeout=int(timeout),
             check=False,
         )
         runtime_seconds = perf_counter() - start
@@ -372,6 +511,8 @@ def run_blast(
         query_type=query.sequence_type,
         query_count=len(query.records),
         query_total_length=query.total_length,
+        sensitivity_preset=sensitivity_preset,
+        parameters=parameters,
     )
 
 
@@ -381,6 +522,7 @@ def run_blastn(
     timeout_seconds: int = 60,
     task: str = "blastn-short",
     output_format: str = "tabular",
+    sensitivity_preset: str = "standard",
 ) -> BlastResult:
     return run_blast(
         sequence=sequence,
@@ -389,4 +531,5 @@ def run_blastn(
         timeout_seconds=timeout_seconds,
         task=task,
         output_format=output_format,
+        sensitivity_preset=sensitivity_preset,
     )
