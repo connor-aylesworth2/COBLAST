@@ -9,7 +9,7 @@ import tempfile
 from time import perf_counter
 from typing import Any
 
-from config import blast_exe
+from config import DISALLOWED_BLAST_OPTIONS, REMOTE_BLAST_ENABLED, blast_exe
 
 try:
     from Bio import SearchIO, SeqIO
@@ -364,6 +364,20 @@ def parse_blast_output(stdout: str, output_format: str = "tabular") -> list[dict
     raise ValueError(f"Unsupported BLAST output format: {output_format}")
 
 
+def enforce_local_blast_only(command: list[str]) -> None:
+    if REMOTE_BLAST_ENABLED:
+        raise RuntimeError("Remote BLAST cannot be enabled for this local interface.")
+
+    command_options = {part.lower() for part in command}
+    blocked_options = {option.lower() for option in DISALLOWED_BLAST_OPTIONS}
+    used_blocked_options = sorted(command_options & blocked_options)
+    if used_blocked_options:
+        raise RuntimeError(
+            "Remote BLAST is disabled for this local interface. "
+            f"Blocked option(s): {', '.join(used_blocked_options)}"
+        )
+
+
 def optional_text(value: str | None) -> str | None:
     if value is None:
         return None
@@ -521,6 +535,7 @@ def run_blast(
             cmd.extend(["-task", selected_task])
         for parameter, value in parameters.items():
             cmd.extend([f"-{parameter}", value])
+        enforce_local_blast_only(cmd)
 
         start = perf_counter()
         completed = subprocess.run(

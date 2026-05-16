@@ -15,6 +15,7 @@ from database_registry import (
     verify_database,
 )
 from result_store import load_result, result_rows_as_delimited, save_result
+from config import FLASK_HOST, flask_port
 
 
 app = Flask(__name__)
@@ -209,4 +210,4 @@ def remove_database_route(database_id: int):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host=FLASK_HOST, port=flask_port(), debug=False)

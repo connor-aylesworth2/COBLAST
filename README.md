@@ -55,6 +55,15 @@ Open:
 http://127.0.0.1:5000
 ```
 
+The bundled Flask development server is explicitly bound to `127.0.0.1`, so it
+listens only on the local machine when launched with `python app.py`. Do not run
+the app with `--host 0.0.0.0` unless the project has been deliberately reviewed
+for network exposure.
+
+Remote BLAST is disabled. The backend does not expose NCBI BLAST+'s `-remote`
+option and rejects any generated BLAST command that contains it, keeping query
+sequences and databases local by default.
+
 The app also seeds a local SQLite registry and managed toy BLAST databases under:
 
 ```text
