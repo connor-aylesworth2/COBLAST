@@ -3,7 +3,7 @@ import tempfile
 
 from flask import Flask, render_template, request
 
-from blast_runner import run_blastn
+from blast_runner import BLAST_PROGRAMS, run_blast
 
 
 app = Flask(__name__)
@@ -14,19 +14,25 @@ DEFAULT_TOY_DB = Path(tempfile.gettempdir()) / "blast_flask_demo" / "db" / "toy_
 
 @app.get("/")
 def index():
-    return render_template("index.html", default_db=DEFAULT_TOY_DB)
+    return render_template(
+        "index.html",
+        blast_programs=BLAST_PROGRAMS,
+        default_db=DEFAULT_TOY_DB,
+    )
 
 
 @app.post("/run-blast")
-def run_blast():
+def run_blast_route():
     sequence = request.form.get("sequence", "")
     database = request.form.get("database", str(DEFAULT_TOY_DB))
+    program = request.form.get("program", "blastn")
     output_format = request.form.get("output_format", "tabular")
 
     try:
-        result = run_blastn(
+        result = run_blast(
             sequence=sequence,
             database=database,
+            program=program,
             output_format=output_format,
         )
     except Exception as exc:

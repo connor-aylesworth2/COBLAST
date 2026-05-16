@@ -19,6 +19,13 @@
       <textarea id="sequence" name="sequence">&gt;query
 ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTA</textarea>
 
+      <label for="program">BLAST program</label>
+      <select id="program" name="program">
+        {% for program, config in blast_programs.items() %}
+          <option value="{{ program }}">{{ config.label }} - {{ config.description }}</option>
+        {% endfor %}
+      </select>
+
       <label for="database">BLAST database prefix</label>
       <input id="database" name="database" value="{{ default_db }}">
 
@@ -28,7 +35,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCT
         <option value="xml">XML output parsed by Bio.SearchIO</option>
       </select>
 
-      <button type="submit">Run BLASTN</button>
+      <button type="submit">Run BLAST</button>
     </form>
   </body>
 </html>

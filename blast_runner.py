@@ -1,19 +1,21 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
 import subprocess
 import tempfile
-from collections.abc import Iterable
+from time import perf_counter
 from typing import Any
 
 from config import blast_exe
 
 try:
-    from Bio import SearchIO
+    from Bio import SearchIO, SeqIO
 except ImportError as exc:  # pragma: no cover - exercised only when dependency is absent
     SearchIO = None
+    SeqIO = None
     BIOPYTHON_IMPORT_ERROR = exc
 else:
     BIOPYTHON_IMPORT_ERROR = None
@@ -21,10 +23,59 @@ else:
 
 OUTFMT6_FIELDS = ["qseqid", "sseqid", "pident", "length", "evalue", "bitscore"]
 ALLOWED_BLASTN_TASKS = {"blastn", "blastn-short", "dc-megablast", "megablast"}
+BLAST_PROGRAMS = {
+    "blastn": {
+        "label": "BLASTN",
+        "description": "nucleotide query vs nucleotide database",
+        "query_type": "nucleotide",
+        "default_task": "blastn-short",
+        "allowed_tasks": ALLOWED_BLASTN_TASKS,
+    },
+    "blastp": {
+        "label": "BLASTP",
+        "description": "protein query vs protein database",
+        "query_type": "protein",
+        "default_task": None,
+        "allowed_tasks": set(),
+    },
+    "blastx": {
+        "label": "BLASTX",
+        "description": "translated nucleotide query vs protein database",
+        "query_type": "nucleotide",
+        "default_task": None,
+        "allowed_tasks": set(),
+    },
+    "tblastn": {
+        "label": "TBLASTN",
+        "description": "protein query vs translated nucleotide database",
+        "query_type": "protein",
+        "default_task": None,
+        "allowed_tasks": set(),
+    },
+}
 BLAST_OUTPUT_FORMATS = {
     "tabular": "6 " + " ".join(OUTFMT6_FIELDS),
     "xml": "5",
 }
+NUCLEOTIDE_ALPHABET = set("ACGTRYSWKMBDHVNU")
+PROTEIN_ALPHABET = set("ABCDEFGHIKLMNPQRSTVWXYZJUO*")
+MAX_FASTA_RECORDS = 100
+MAX_TOTAL_SEQUENCE_LENGTH = 5_000_000
+FASTA_LINE_WIDTH = 80
+
+
+@dataclass(frozen=True)
+class FastaRecordSummary:
+    id: str
+    length: int
+
+
+@dataclass(frozen=True)
+class FastaValidationResult:
+    fasta: str
+    sequence_type: str
+    records: list[FastaRecordSummary]
+    total_length: int
 
 
 @dataclass(frozen=True)
@@ -35,23 +86,151 @@ class BlastResult:
     stderr: str
     command: list[str]
     output_format: str
+    program: str
+    runtime_seconds: float
+    query_type: str
+    query_count: int
+    query_total_length: int
 
 
-def validate_fasta(sequence: str) -> str:
+def require_biopython() -> None:
+    if SearchIO is None or SeqIO is None:
+        raise RuntimeError(
+            "Biopython is required for FASTA validation and BLAST result parsing. "
+            "Install dependencies with: python -m pip install -r requirements.txt"
+        ) from BIOPYTHON_IMPORT_ERROR
+
+
+def wrap_sequence(sequence: str, width: int = FASTA_LINE_WIDTH) -> str:
+    return "\n".join(sequence[i : i + width] for i in range(0, len(sequence), width))
+
+
+def coerce_to_fasta_text(sequence: str) -> str:
     cleaned = sequence.strip()
     if not cleaned:
         raise ValueError("Enter a FASTA sequence.")
-    if not cleaned.startswith(">"):
-        cleaned = ">query\n" + cleaned
-    return cleaned + "\n"
+
+    normalized = cleaned.replace("\r\n", "\n").replace("\r", "\n")
+    if normalized.lstrip().startswith(">"):
+        return normalized
+
+    raw_sequence = "".join(normalized.split())
+    if not raw_sequence:
+        raise ValueError("Enter a sequence with at least one residue or base.")
+    return f">query\n{raw_sequence}"
+
+
+def normalize_fasta_lines(fasta_text: str) -> str:
+    normalized_lines: list[str] = []
+    seen_header = False
+
+    for line_number, line in enumerate(fasta_text.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(">"):
+            header = stripped[1:].strip()
+            if not header:
+                raise ValueError(f"FASTA header on line {line_number} is empty.")
+            normalized_lines.append(f">{header}")
+            seen_header = True
+            continue
+        if not seen_header:
+            raise ValueError(
+                f"Sequence data appears before the first FASTA header on line {line_number}."
+            )
+        normalized_lines.append("".join(stripped.split()).upper())
+
+    if not normalized_lines:
+        raise ValueError("Enter a FASTA sequence.")
+
+    return "\n".join(normalized_lines) + "\n"
+
+
+def invalid_characters(sequence: str, expected_type: str) -> set[str]:
+    if expected_type == "nucleotide":
+        return set(sequence) - NUCLEOTIDE_ALPHABET
+    if expected_type == "protein":
+        return set(sequence) - PROTEIN_ALPHABET
+    raise ValueError(f"Unsupported query sequence type: {expected_type}")
+
+
+def validate_fasta_input(
+    sequence: str,
+    expected_type: str = "nucleotide",
+) -> FastaValidationResult:
+    require_biopython()
+    if expected_type not in {"nucleotide", "protein"}:
+        raise ValueError(f"Unsupported query sequence type: {expected_type}")
+
+    fasta_text = normalize_fasta_lines(coerce_to_fasta_text(sequence))
+    records = list(SeqIO.parse(StringIO(fasta_text), "fasta"))
+    if not records:
+        raise ValueError("No FASTA records could be parsed from the query.")
+    if len(records) > MAX_FASTA_RECORDS:
+        raise ValueError(
+            f"Too many FASTA records ({len(records)}). "
+            f"The current prototype accepts up to {MAX_FASTA_RECORDS} records per run."
+        )
+
+    seen_ids: set[str] = set()
+    summaries: list[FastaRecordSummary] = []
+    normalized_records: list[str] = []
+    total_length = 0
+
+    for record_number, record in enumerate(records, start=1):
+        record_id = record.id.strip()
+        if not record_id or record_id == "<unknown id>":
+            raise ValueError(f"FASTA record {record_number} does not have a usable ID.")
+        if record_id in seen_ids:
+            raise ValueError(f"Duplicate FASTA record ID: {record_id}")
+        seen_ids.add(record_id)
+
+        seq = str(record.seq).replace(" ", "").replace("\t", "").upper()
+        if not seq:
+            raise ValueError(f"FASTA record {record_id} has no sequence.")
+        if "-" in seq or "." in seq:
+            raise ValueError(
+                f"FASTA record {record_id} contains gap characters. "
+                "Remove '-' or '.' before running BLAST."
+            )
+
+        invalid = invalid_characters(seq, expected_type)
+        if invalid:
+            chars = ", ".join(sorted(invalid))
+            raise ValueError(
+                f"FASTA record {record_id} contains characters that are not valid "
+                f"for a {expected_type} query: {chars}"
+            )
+
+        if expected_type == "nucleotide":
+            seq = seq.replace("U", "T")
+
+        total_length += len(seq)
+        if total_length > MAX_TOTAL_SEQUENCE_LENGTH:
+            raise ValueError(
+                f"Query contains {total_length:,} total bases/residues. "
+                f"The current prototype limit is {MAX_TOTAL_SEQUENCE_LENGTH:,}."
+            )
+
+        description = record.description.strip() or record_id
+        normalized_records.append(f">{description}\n{wrap_sequence(seq)}")
+        summaries.append(FastaRecordSummary(id=record_id, length=len(seq)))
+
+    return FastaValidationResult(
+        fasta="\n".join(normalized_records) + "\n",
+        sequence_type=expected_type,
+        records=summaries,
+        total_length=total_length,
+    )
+
+
+def validate_fasta(sequence: str, expected_type: str = "nucleotide") -> str:
+    return validate_fasta_input(sequence, expected_type=expected_type).fasta
 
 
 def require_searchio() -> None:
-    if SearchIO is None:
-        raise RuntimeError(
-            "Biopython is required for BLAST result parsing. "
-            "Install dependencies with: python -m pip install -r requirements.txt"
-        ) from BIOPYTHON_IMPORT_ERROR
+    require_biopython()
 
 
 def format_float(value: Any, decimals: int) -> str:
@@ -122,36 +301,50 @@ def parse_blast_output(stdout: str, output_format: str = "tabular") -> list[dict
     raise ValueError(f"Unsupported BLAST output format: {output_format}")
 
 
-def run_blastn(
+def run_blast(
     sequence: str,
     database: str | Path,
+    program: str = "blastn",
     timeout_seconds: int = 60,
-    task: str = "blastn-short",
+    task: str | None = None,
     output_format: str = "tabular",
 ) -> BlastResult:
-    fasta = validate_fasta(sequence)
-    if task not in ALLOWED_BLASTN_TASKS:
-        raise ValueError(f"Unsupported blastn task: {task}")
+    if program not in BLAST_PROGRAMS:
+        allowed = ", ".join(BLAST_PROGRAMS)
+        raise ValueError(f"Unsupported BLAST program: {program}. Choose one of: {allowed}.")
     if output_format not in BLAST_OUTPUT_FORMATS:
         raise ValueError(f"Unsupported BLAST output format: {output_format}")
+
+    program_config = BLAST_PROGRAMS[program]
+    default_task = program_config["default_task"]
+    selected_task = task if task is not None else default_task
+    allowed_tasks = program_config["allowed_tasks"]
+    if selected_task is not None and selected_task not in allowed_tasks:
+        raise ValueError(f"Unsupported task for {program}: {selected_task}")
+
+    query = validate_fasta_input(
+        sequence,
+        expected_type=str(program_config["query_type"]),
+    )
     db_path = str(database)
 
     with tempfile.TemporaryDirectory(prefix="blast_flask_") as tmpdir:
         query_path = Path(tmpdir) / "query.fasta"
-        query_path.write_text(fasta, encoding="utf-8")
+        query_path.write_text(query.fasta, encoding="utf-8")
 
         cmd = [
-            str(blast_exe("blastn")),
+            str(blast_exe(program)),
             "-query",
             str(query_path),
             "-db",
             db_path,
-            "-task",
-            task,
             "-outfmt",
             BLAST_OUTPUT_FORMATS[output_format],
         ]
+        if selected_task is not None:
+            cmd.extend(["-task", selected_task])
 
+        start = perf_counter()
         completed = subprocess.run(
             cmd,
             capture_output=True,
@@ -159,6 +352,7 @@ def run_blastn(
             timeout=timeout_seconds,
             check=False,
         )
+        runtime_seconds = perf_counter() - start
 
     return BlastResult(
         returncode=completed.returncode,
@@ -168,5 +362,27 @@ def run_blastn(
         stdout=completed.stdout,
         stderr=completed.stderr,
         command=cmd,
+        output_format=output_format,
+        program=program,
+        runtime_seconds=runtime_seconds,
+        query_type=query.sequence_type,
+        query_count=len(query.records),
+        query_total_length=query.total_length,
+    )
+
+
+def run_blastn(
+    sequence: str,
+    database: str | Path,
+    timeout_seconds: int = 60,
+    task: str = "blastn-short",
+    output_format: str = "tabular",
+) -> BlastResult:
+    return run_blast(
+        sequence=sequence,
+        database=database,
+        program="blastn",
+        timeout_seconds=timeout_seconds,
+        task=task,
         output_format=output_format,
     )

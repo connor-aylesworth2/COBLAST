@@ -19,8 +19,14 @@
     {% if error %}
       <p class="error">{{ error }}</p>
     {% elif result %}
+      <p>Program: {{ result.program }}</p>
       <p>Return code: {{ result.returncode }}</p>
       <p>Parsed output format: {{ result.output_format }}</p>
+      <p>Runtime: {{ "%.3f"|format(result.runtime_seconds) }} seconds</p>
+      <p>Query: {{ result.query_count }} record(s), {{ result.query_total_length }} total bases/residues, expected {{ result.query_type }}</p>
+
+      <h2>Command</h2>
+      <pre>{{ result.command | join(" ") }}</pre>
 
       {% if result.hits %}
         <table>

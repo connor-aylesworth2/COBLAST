@@ -1,6 +1,8 @@
 # Local Flask + BLAST+ Prototype
 
 This is a minimal local Flask wrapper around the installed NCBI BLAST+ executables.
+It validates FASTA input with Biopython, runs allowlisted BLAST+ programs through
+`subprocess`, and parses BLAST tabular/XML output with `Bio.SearchIO`.
 
 ## 1. Verify BLAST+
 
@@ -30,11 +32,13 @@ python -m pip install -r requirements.txt
 python smoke_test.py
 ```
 
-This creates a tiny toy nucleotide database with `makeblastdb`, runs `blastn`, and prints parsed hits.
-The toy database is written under your temp directory, usually:
+This creates tiny toy nucleotide and protein databases with `makeblastdb`, then
+runs `blastn`, `blastp`, `blastx`, and `tblastn` through the shared backend.
+The toy databases are written under your temp directory, usually:
 
 ```text
 C:\Users\Connor\AppData\Local\Temp\blast_flask_demo\db\toy_nt
+C:\Users\Connor\AppData\Local\Temp\blast_flask_demo\db\toy_protein
 ```
 
 ## 4. Run the Flask app
@@ -49,7 +53,20 @@ Open:
 http://127.0.0.1:5000
 ```
 
-The default database field points at the toy database created by `smoke_test.py`.
+The default database field points at the toy nucleotide database created by
+`smoke_test.py`. For `blastp` or `blastx`, use the toy protein database prefix
+instead.
+
+## Current supported BLAST programs
+
+- `blastn`: nucleotide query vs nucleotide database
+- `blastp`: protein query vs protein database
+- `blastx`: translated nucleotide query vs protein database
+- `tblastn`: protein query vs translated nucleotide database
+
+The backend validates query sequence type before running BLAST. Nucleotide
+queries accept IUPAC nucleotide ambiguity codes and convert `U` to `T`; protein
+queries accept common IUPAC amino acid codes plus `*`.
 
 ## Useful note
 
