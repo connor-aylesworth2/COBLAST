@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BLAST Databases</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <div class="brand">
+          <span class="brand__name">Local BLAST+ Search</span>
+          <span class="brand__sub">Clinician-friendly local sequence search</span>
+        </div>
+        <nav class="nav">
+          <a href="/">Run BLAST</a>
+          <a href="/databases">Databases</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="page">
+      <h1 class="page-title">Databases</h1>
+
+      {% if message %}
+        <p class="message">{{ message }}</p>
+      {% endif %}
+      {% if error %}
+        <p class="error">{{ error }}</p>
+      {% endif %}
+
+      <section class="panel">
+        <div class="panel__header">
+          <h2 class="panel__title">Registered Databases</h2>
+        </div>
+
+        <form class="inline" method="post" action="/databases/verify-all">
+          <button type="submit" class="button-secondary">Verify All</button>
+        </form>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Category</th>
+                <th>Status</th>
+                <th>Sequences</th>
+                <th>Last Verified</th>
+                <th>Prefix</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for database in databases %}
+                <tr>
+                  <td>
+                    <strong>{{ database.display_name }}</strong>
+                    {% if database.description %}
+                      <br><span class="muted">{{ database.description }}</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ database.db_type }}</td>
+                  <td>{{ database.category }}</td>
+                  <td class="status-{{ database.status }}">{{ database.status }}</td>
+                  <td>{{ database.sequence_count if database.sequence_count is not none else "" }}</td>
+                  <td>{{ database.last_verified_at }}</td>
+                  <td>{{ database.db_prefix_path }}</td>
+                  <td class="actions">
+                    <form class="inline" method="post" action="/databases/{{ database.id }}/verify">
+                      <button type="submit" class="button-secondary">Verify</button>
+                    </form>
+                    <form class="inline" method="post" action="/databases/{{ database.id }}/remove">
+                      <button type="submit" class="button-danger">Remove</button>
+                    </form>
+                  </td>
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="8">No databases are registered.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <details>
+        <summary>Add Existing BLAST Database</summary>
+        <div class="details-body">
+          <form method="post" action="/databases/register">
+            <div class="grid">
+              <div class="field">
+                <label for="register_display_name">Display name</label>
+                <input id="register_display_name" name="display_name" required>
+              </div>
+              <div class="field">
+                <label for="register_db_type">Database type</label>
+                <select id="register_db_type" name="db_type" required>
+                  {% for db_type in db_types %}
+                    <option value="{{ db_type }}">{{ db_type }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="field">
+                <label for="register_category">Category</label>
+                <select id="register_category" name="category">
+                  {% for category in categories %}
+                    <option value="{{ category }}">{{ category }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <label for="register_db_prefix_path">BLAST database prefix path</label>
+            <input id="register_db_prefix_path" name="db_prefix_path" required>
+
+            <label for="register_source_fasta_path">Source FASTA path</label>
+            <input id="register_source_fasta_path" name="source_fasta_path">
+
+            <label for="register_description">Description</label>
+            <textarea id="register_description" name="description"></textarea>
+
+            <label for="register_notes">Notes</label>
+            <textarea id="register_notes" name="notes"></textarea>
+
+            <button type="submit">Add Database</button>
+          </form>
+        </div>
+      </details>
+
+      <details>
+        <summary>Create BLAST Database From FASTA</summary>
+        <div class="details-body">
+          <form method="post" action="/databases/create">
+            <div class="grid">
+              <div class="field">
+                <label for="create_display_name">Display name</label>
+                <input id="create_display_name" name="display_name" required>
+              </div>
+              <div class="field">
+                <label for="create_db_type">Database type</label>
+                <select id="create_db_type" name="db_type" required>
+                  {% for db_type in db_types %}
+                    <option value="{{ db_type }}">{{ db_type }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="field">
+                <label for="create_category">Category</label>
+                <select id="create_category" name="category">
+                  {% for category in categories %}
+                    <option value="{{ category }}">{{ category }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <label for="create_source_fasta_path">Source FASTA path</label>
+            <input id="create_source_fasta_path" name="source_fasta_path" required>
+
+            <label for="create_db_prefix_path">Output database prefix path</label>
+            <input id="create_db_prefix_path" name="db_prefix_path">
+
+            <label for="create_description">Description</label>
+            <textarea id="create_description" name="description"></textarea>
+
+            <label for="create_notes">Notes</label>
+            <textarea id="create_notes" name="notes"></textarea>
+
+            <button type="submit">Create Database</button>
+          </form>
+        </div>
+      </details>
+    </main>
+  </body>
+</html>

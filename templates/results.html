@@ -4,57 +4,142 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>BLAST+ Results</title>
-    <style>
-      body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 40px auto; padding: 0 20px; line-height: 1.5; }
-      table { width: 100%; border-collapse: collapse; margin-top: 18px; }
-      th, td { border-bottom: 1px solid #ddd; padding: 8px; text-align: left; }
-      pre { white-space: pre-wrap; background: #f6f6f6; padding: 12px; overflow: auto; }
-      .error { color: #9b1c1c; font-weight: 650; }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   </head>
   <body>
-    <p><a href="/">Back</a></p>
-    <h1>BLAST+ Results</h1>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <div class="brand">
+          <span class="brand__name">Local BLAST+ Search</span>
+          <span class="brand__sub">Clinician-friendly local sequence search</span>
+        </div>
+        <nav class="nav">
+          <a href="/">Run BLAST</a>
+          <a href="/databases">Databases</a>
+        </nav>
+      </div>
+    </header>
 
-    {% if error %}
-      <p class="error">{{ error }}</p>
-    {% elif result %}
-      <p>Return code: {{ result.returncode }}</p>
-      <p>Parsed output format: {{ result.output_format }}</p>
+    <main class="page">
+      <h1 class="page-title">Results</h1>
 
-      {% if result.hits %}
-        <table>
-          <thead>
-            <tr>
-              <th>Query</th>
-              <th>Subject</th>
-              <th>% identity</th>
-              <th>Length</th>
-              <th>E-value</th>
-              <th>Bit score</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for hit in result.hits %}
-              <tr>
-                <td>{{ hit.qseqid }}</td>
-                <td>{{ hit.sseqid }}</td>
-                <td>{{ hit.pident }}</td>
-                <td>{{ hit.length }}</td>
-                <td>{{ hit.evalue }}</td>
-                <td>{{ hit.bitscore }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <p>No hits returned.</p>
+      {% if error %}
+        <p class="error">{{ error }}</p>
+      {% elif result %}
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="panel__title">Search Summary</h2>
+          </div>
+          <div class="summary-list">
+            <div class="summary-item">
+              <span>Program</span>
+              {{ result.program }}
+            </div>
+            <div class="summary-item">
+              <span>Status</span>
+              Return code {{ result.returncode }}
+            </div>
+            <div class="summary-item">
+              <span>Runtime</span>
+              {{ "%.3f"|format(result.runtime_seconds) }} seconds
+            </div>
+            <div class="summary-item">
+              <span>Query</span>
+              {{ result.query_count }} record(s), {{ result.query_total_length }} bases/residues
+            </div>
+            <div class="summary-item">
+              <span>Preset</span>
+              {{ result.sensitivity_preset }}
+            </div>
+            <div class="summary-item">
+              <span>Parsed Format</span>
+              {{ result.output_format }}
+            </div>
+          </div>
+
+          <details>
+            <summary>Command and parameters</summary>
+            <div class="details-body">
+              <pre>{{ result.command | join(" ") }}</pre>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Parameter</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for parameter, value in result.parameters.items() %}
+                      <tr>
+                        <td>{{ parameter }}</td>
+                        <td>{{ value }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+
+          {% if run_id %}
+            <div class="button-row">
+              <a class="button button-secondary" href="{{ url_for('download_results', run_id=run_id, file_format='csv') }}">Download CSV</a>
+              <a class="button button-secondary" href="{{ url_for('download_results', run_id=run_id, file_format='tsv') }}">Download TSV</a>
+            </div>
+          {% endif %}
+        </section>
+
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="panel__title">Results Table</h2>
+          </div>
+
+          {% if result.hits %}
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Query</th>
+                    <th>Subject</th>
+                    <th>Subject title</th>
+                    <th>% identity</th>
+                    <th>Length</th>
+                    <th>Query coverage</th>
+                    <th>E-value</th>
+                    <th>Bit score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for hit in result.hits %}
+                    <tr>
+                      <td>{{ hit.qseqid }}</td>
+                      <td>{{ hit.sseqid }}</td>
+                      <td>{{ hit.stitle }}</td>
+                      <td>{{ hit.pident }}</td>
+                      <td>{{ hit.length }}</td>
+                      <td>{{ hit.qcovs }}</td>
+                      <td>{{ hit.evalue }}</td>
+                      <td>{{ hit.bitscore }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p class="info">No hits returned.</p>
+          {% endif %}
+
+          {% if result.stderr %}
+            <details>
+              <summary>BLAST stderr</summary>
+              <div class="details-body">
+                <pre>{{ result.stderr }}</pre>
+              </div>
+            </details>
+          {% endif %}
+        </section>
       {% endif %}
-
-      {% if result.stderr %}
-        <h2>BLAST stderr</h2>
-        <pre>{{ result.stderr }}</pre>
-      {% endif %}
-    {% endif %}
+    </main>
   </body>
 </html>
