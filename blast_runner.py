@@ -21,7 +21,16 @@ else:
     BIOPYTHON_IMPORT_ERROR = None
 
 
-OUTFMT6_FIELDS = ["qseqid", "sseqid", "pident", "length", "evalue", "bitscore"]
+OUTFMT6_FIELDS = [
+    "qseqid",
+    "sseqid",
+    "stitle",
+    "pident",
+    "length",
+    "qcovs",
+    "evalue",
+    "bitscore",
+]
 ALLOWED_BLASTN_TASKS = {"blastn", "blastn-short", "dc-megablast", "megablast"}
 BLAST_PROGRAMS = {
     "blastn": {
@@ -287,6 +296,30 @@ def percent_identity(hsp: Any) -> float | None:
     return (float(ident_num) / float(aln_span)) * 100
 
 
+def query_coverage(qresult: Any, hit: Any, hsp: Any) -> float | None:
+    if getattr(hit, "query_coverage", None) is not None:
+        return float(hit.query_coverage)
+
+    query_span = getattr(hsp, "query_span", None)
+    query_length = getattr(qresult, "seq_len", None)
+    if query_span is None or not query_length:
+        return None
+    return (float(query_span) / float(query_length)) * 100
+
+
+def subject_title(hit: Any, hsp: Any) -> str:
+    for candidate in (
+        getattr(hit, "title", None),
+        getattr(hit, "description", None),
+        getattr(hsp, "hit_description", None),
+        getattr(hsp, "hit_id", None),
+        getattr(hit, "id", None),
+    ):
+        if candidate and candidate != "<unknown description>":
+            return str(candidate)
+    return ""
+
+
 def searchio_results_to_hits(qresults: Iterable[Any]) -> list[dict[str, str]]:
     hits: list[dict[str, str]] = []
     for qresult in qresults:
@@ -296,8 +329,10 @@ def searchio_results_to_hits(qresults: Iterable[Any]) -> list[dict[str, str]]:
                     {
                         "qseqid": getattr(hsp, "query_id", None) or qresult.id,
                         "sseqid": getattr(hsp, "hit_id", None) or hit.id,
+                        "stitle": subject_title(hit, hsp),
                         "pident": format_float(percent_identity(hsp), 3),
                         "length": str(getattr(hsp, "aln_span", "")),
+                        "qcovs": format_float(query_coverage(qresult, hit, hsp), 1),
                         "evalue": format_evalue(getattr(hsp, "evalue", None)),
                         "bitscore": format_float(getattr(hsp, "bitscore", None), 1),
                     }

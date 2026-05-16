@@ -79,6 +79,10 @@ Advanced settings are collapsed by default and include E-value, maximum target
 sequences, word size, BLASTN task, minimum percent identity, output parser
 format, timeout, and raw database details.
 
+The results table reports the top BLAST hits with query ID, subject ID, subject
+title, percent identity, alignment length, query coverage, E-value, and bit
+score.
+
 The database-management page is available at:
 
 ```text

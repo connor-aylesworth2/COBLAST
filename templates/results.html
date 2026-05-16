@@ -95,8 +95,10 @@
                   <tr>
                     <th>Query</th>
                     <th>Subject</th>
+                    <th>Subject title</th>
                     <th>% identity</th>
                     <th>Length</th>
+                    <th>Query coverage</th>
                     <th>E-value</th>
                     <th>Bit score</th>
                   </tr>
@@ -106,8 +108,10 @@
                     <tr>
                       <td>{{ hit.qseqid }}</td>
                       <td>{{ hit.sseqid }}</td>
+                      <td>{{ hit.stitle }}</td>
                       <td>{{ hit.pident }}</td>
                       <td>{{ hit.length }}</td>
+                      <td>{{ hit.qcovs }}</td>
                       <td>{{ hit.evalue }}</td>
                       <td>{{ hit.bitscore }}</td>
                     </tr>
