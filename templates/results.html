@@ -81,6 +81,13 @@
               </div>
             </div>
           </details>
+
+          {% if run_id %}
+            <div class="button-row">
+              <a class="button button-secondary" href="{{ url_for('download_results', run_id=run_id, file_format='csv') }}">Download CSV</a>
+              <a class="button button-secondary" href="{{ url_for('download_results', run_id=run_id, file_format='tsv') }}">Download TSV</a>
+            </div>
+          {% endif %}
         </section>
 
         <section class="panel">

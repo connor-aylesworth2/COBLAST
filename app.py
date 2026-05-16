@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, Response, abort, redirect, render_template, request, url_for
 
 from blast_runner import BLAST_PROGRAMS, SENSITIVITY_PRESETS, run_blast
 from database_registry import (
@@ -14,6 +14,7 @@ from database_registry import (
     remove_database,
     verify_database,
 )
+from result_store import load_result, result_rows_as_delimited, save_result
 
 
 app = Flask(__name__)
@@ -96,7 +97,29 @@ def run_blast_route():
     except Exception as exc:
         return render_template("results.html", error=str(exc), result=None), 400
 
-    return render_template("results.html", error=None, result=result)
+    run_id = save_result(result)
+    return render_template("results.html", error=None, result=result, run_id=run_id)
+
+
+@app.get("/results/<run_id>.<file_format>")
+def download_results(run_id: str, file_format: str):
+    if file_format not in {"csv", "tsv"}:
+        abort(404)
+
+    try:
+        result_data = load_result(run_id)
+    except FileNotFoundError:
+        abort(404)
+
+    delimiter = "," if file_format == "csv" else "\t"
+    body = result_rows_as_delimited(result_data, delimiter=delimiter)
+    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
+    filename = f"blast_results_{run_id}.{file_format}"
+    return Response(
+        body,
+        mimetype=mimetype,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @app.get("/databases")

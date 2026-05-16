@@ -82,6 +82,8 @@ format, timeout, and raw database details.
 The results table reports the top BLAST hits with query ID, subject ID, subject
 title, percent identity, alignment length, query coverage, E-value, and bit
 score.
+Each completed run is saved locally under `instance\results\` so the displayed
+result table can be downloaded as CSV or TSV without rerunning BLAST.
 
 The database-management page is available at:
 
