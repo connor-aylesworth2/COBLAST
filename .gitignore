@@ -1,0 +1,61 @@
+# Python environments and caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local configuration and secrets
+.env
+.env.*
+instance/
+
+# Flask/runtime output
+logs/
+*.log
+
+# User-provided or generated app data
+uploads/
+results/
+databases/
+blastdb/
+tmp/
+temp/
+
+# BLAST database index files
+*.nhr
+*.nin
+*.nog
+*.nsd
+*.nsi
+*.nsq
+*.ndb
+*.not
+*.ntf
+*.nto
+*.phr
+*.pin
+*.pog
+*.psd
+*.psi
+*.psq
+*.pdb
+*.pot
+*.ptf
+*.pto
+
+# Large/downloaded BLAST+ distributions if copied into this app repo
+ncbi-blast-*/
+*.tar.gz
+*.zip
+*.md5
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

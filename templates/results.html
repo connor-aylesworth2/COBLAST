@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BLAST+ Results</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 40px auto; padding: 0 20px; line-height: 1.5; }
+      table { width: 100%; border-collapse: collapse; margin-top: 18px; }
+      th, td { border-bottom: 1px solid #ddd; padding: 8px; text-align: left; }
+      pre { white-space: pre-wrap; background: #f6f6f6; padding: 12px; overflow: auto; }
+      .error { color: #9b1c1c; font-weight: 650; }
+    </style>
+  </head>
+  <body>
+    <p><a href="/">Back</a></p>
+    <h1>BLAST+ Results</h1>
+
+    {% if error %}
+      <p class="error">{{ error }}</p>
+    {% elif result %}
+      <p>Return code: {{ result.returncode }}</p>
+      <p>Parsed output format: {{ result.output_format }}</p>
+
+      {% if result.hits %}
+        <table>
+          <thead>
+            <tr>
+              <th>Query</th>
+              <th>Subject</th>
+              <th>% identity</th>
+              <th>Length</th>
+              <th>E-value</th>
+              <th>Bit score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for hit in result.hits %}
+              <tr>
+                <td>{{ hit.qseqid }}</td>
+                <td>{{ hit.sseqid }}</td>
+                <td>{{ hit.pident }}</td>
+                <td>{{ hit.length }}</td>
+                <td>{{ hit.evalue }}</td>
+                <td>{{ hit.bitscore }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p>No hits returned.</p>
+      {% endif %}
+
+      {% if result.stderr %}
+        <h2>BLAST stderr</h2>
+        <pre>{{ result.stderr }}</pre>
+      {% endif %}
+    {% endif %}
+  </body>
+</html>

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Local BLAST+ Test</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 960px; margin: 40px auto; padding: 0 20px; line-height: 1.5; }
+      label { display: block; font-weight: 650; margin-top: 18px; }
+      textarea, input, select { box-sizing: border-box; width: 100%; margin-top: 6px; padding: 10px; font: inherit; }
+      textarea { min-height: 180px; font-family: ui-monospace, Consolas, monospace; }
+      button { margin-top: 18px; padding: 10px 14px; font: inherit; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <h1>Local BLAST+ Test</h1>
+    <form method="post" action="/run-blast">
+      <label for="sequence">Query sequence</label>
+      <textarea id="sequence" name="sequence">&gt;query
+ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTA</textarea>
+
+      <label for="database">BLAST database prefix</label>
+      <input id="database" name="database" value="{{ default_db }}">
+
+      <label for="output_format">Parser/output format</label>
+      <select id="output_format" name="output_format">
+        <option value="tabular">Tabular output parsed by Bio.SearchIO</option>
+        <option value="xml">XML output parsed by Bio.SearchIO</option>
+      </select>
+
+      <button type="submit">Run BLASTN</button>
+    </form>
+  </body>
+</html>
