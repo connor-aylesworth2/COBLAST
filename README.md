@@ -19,7 +19,7 @@ Expected output includes `blastn: 2.17.0+`.
 Install Python first if `python --version` does not work in your own PowerShell.
 
 ```powershell
-cd 'C:\Users\cjohn\OneDrive\Desktop\School Shit\Edinburgh Stuff\eToL-V Dissertation\blast_flask_app'
+cd 'C:\Projects\blast_flask_app'
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
@@ -39,8 +39,8 @@ runs `blastn`, `blastp`, `blastx`, and `tblastn` through the shared backend.
 The smoke-test databases are written under your temp directory, usually:
 
 ```text
-C:\Users\Connor\AppData\Local\Temp\blast_flask_demo\db\toy_nt
-C:\Users\Connor\AppData\Local\Temp\blast_flask_demo\db\toy_protein
+C:\Users\<your-username>\AppData\Local\Temp\blast_flask_demo\db\toy_nt
+C:\Users\<your-username>\AppData\Local\Temp\blast_flask_demo\db\toy_protein
 ```
 
 ## 4. Run the Flask app
@@ -63,6 +63,9 @@ for network exposure.
 Remote BLAST is disabled. The backend does not expose NCBI BLAST+'s `-remote`
 option and rejects any generated BLAST command that contains it, keeping query
 sequences and databases local by default.
+
+For tester-facing installation and validation steps, see `TESTING.md`. For
+privacy, security, and clinical-use boundaries, see `PRIVACY_SECURITY.md`.
 
 The app also seeds a local SQLite registry and managed toy BLAST databases under:
 
@@ -128,5 +131,10 @@ folder names while preserving the source FASTA path in the registry.
 If BLAST+ is installed somewhere else, set `BLAST_BIN` before running:
 
 ```powershell
-$env:BLAST_BIN = 'C:\Users\cjohn\OneDrive\Desktop\School Shit\Edinburgh Stuff\eToL-V Dissertation\ncbi-blast-2.17.0+\bin'
+$env:BLAST_BIN = 'C:\Tools\ncbi-blast-2.17.0+\bin'
 ```
+
+## License
+
+This repository currently includes a placeholder license notice in `LICENSE`.
+Choose a formal license before wider distribution.

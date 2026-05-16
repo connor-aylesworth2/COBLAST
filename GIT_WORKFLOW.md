@@ -9,7 +9,7 @@ documents, downloaded BLAST+ binaries, and possible datasets.
 Install Git for Windows or GitHub Desktop first if `git --version` does not work.
 
 ```powershell
-cd 'C:\Users\cjohn\OneDrive\Desktop\School Shit\Edinburgh Stuff\eToL-V Dissertation\blast_flask_app'
+cd 'C:\Projects\blast_flask_app'
 git init
 git branch -M main
 git status
