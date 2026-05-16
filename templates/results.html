@@ -9,11 +9,15 @@
       table { width: 100%; border-collapse: collapse; margin-top: 18px; }
       th, td { border-bottom: 1px solid #ddd; padding: 8px; text-align: left; }
       pre { white-space: pre-wrap; background: #f6f6f6; padding: 12px; overflow: auto; }
+      nav { display: flex; gap: 16px; margin-bottom: 24px; }
       .error { color: #9b1c1c; font-weight: 650; }
     </style>
   </head>
   <body>
-    <p><a href="/">Back</a></p>
+    <nav>
+      <a href="/">Run BLAST</a>
+      <a href="/databases">Databases</a>
+    </nav>
     <h1>BLAST+ Results</h1>
 
     {% if error %}

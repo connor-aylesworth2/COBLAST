@@ -34,7 +34,7 @@ python smoke_test.py
 
 This creates tiny toy nucleotide and protein databases with `makeblastdb`, then
 runs `blastn`, `blastp`, `blastx`, and `tblastn` through the shared backend.
-The toy databases are written under your temp directory, usually:
+The smoke-test databases are written under your temp directory, usually:
 
 ```text
 C:\Users\Connor\AppData\Local\Temp\blast_flask_demo\db\toy_nt
@@ -53,9 +53,28 @@ Open:
 http://127.0.0.1:5000
 ```
 
-The default database field points at the toy nucleotide database created by
-`smoke_test.py`. For `blastp` or `blastx`, use the toy protein database prefix
-instead.
+The app also seeds a local SQLite registry and managed toy BLAST databases under:
+
+```text
+instance\database_registry.sqlite
+instance\databases\
+```
+
+The main page lets the user choose a BLAST program, choose a compatible
+registered database from a dropdown, review the database description, and run
+BLAST. The raw BLAST database prefix remains visible in the advanced database
+details panel.
+
+The database-management page is available at:
+
+```text
+http://127.0.0.1:5000/databases
+```
+
+From that page, users can view registered databases, check availability, see
+database type, add an existing BLAST database, create a new BLAST database from
+FASTA with `makeblastdb`, and remove a database from the registry without
+deleting BLAST files.
 
 ## Current supported BLAST programs
 
@@ -64,9 +83,16 @@ instead.
 - `blastx`: translated nucleotide query vs protein database
 - `tblastn`: protein query vs translated nucleotide database
 
+The interface enforces these compatibility rules by filtering registered
+databases by `nucl` or `prot` type after the BLAST program is selected.
+
 The backend validates query sequence type before running BLAST. Nucleotide
 queries accept IUPAC nucleotide ambiguity codes and convert `U` to `T`; protein
 queries accept common IUPAC amino acid codes plus `*`.
+
+On Windows, BLAST-facing database paths may be stored using short path segments
+such as `SCHOOL~1`. This avoids BLAST+ parsing issues with spaces in local
+folder names while preserving the source FASTA path in the registry.
 
 ## Useful note
 

@@ -10,10 +10,25 @@
       textarea, input, select { box-sizing: border-box; width: 100%; margin-top: 6px; padding: 10px; font: inherit; }
       textarea { min-height: 180px; font-family: ui-monospace, Consolas, monospace; }
       button { margin-top: 18px; padding: 10px 14px; font: inherit; cursor: pointer; }
+      nav { display: flex; gap: 16px; margin-bottom: 24px; }
+      details { margin-top: 14px; }
+      pre { white-space: pre-wrap; background: #f6f6f6; padding: 12px; overflow: auto; }
+      .error { color: #9b1c1c; font-weight: 650; }
+      .muted { color: #555; }
     </style>
   </head>
   <body>
+    <nav>
+      <a href="/">Run BLAST</a>
+      <a href="/databases">Databases</a>
+    </nav>
+
     <h1>Local BLAST+ Test</h1>
+
+    {% if registry_error %}
+      <p class="error">{{ registry_error }}</p>
+    {% endif %}
+
     <form method="post" action="/run-blast">
       <label for="sequence">Query sequence</label>
       <textarea id="sequence" name="sequence">&gt;query
@@ -26,8 +41,30 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCT
         {% endfor %}
       </select>
 
-      <label for="database">BLAST database prefix</label>
-      <input id="database" name="database" value="{{ default_db }}">
+      <label for="database_id">Database</label>
+      <select id="database_id" name="database_id">
+        <option value="">No compatible database available</option>
+        {% for database in databases %}
+          {% if database.status == "available" %}
+            <option
+              value="{{ database.id }}"
+              data-db-type="{{ database.db_type }}"
+              data-description="{{ database.description }}"
+              data-path="{{ database.db_prefix_path }}"
+              data-title="{{ database.database_title }}"
+            >{{ database.display_name }} ({{ database.db_type }})</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+      <p id="database_description" class="muted"></p>
+
+      <details>
+        <summary>Advanced database details</summary>
+        <label for="database_path">BLAST database prefix path</label>
+        <input id="database_path" readonly>
+        <label for="database_title">Database title</label>
+        <input id="database_title" readonly>
+      </details>
 
       <label for="output_format">Parser/output format</label>
       <select id="output_format" name="output_format">
@@ -37,5 +74,60 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCT
 
       <button type="submit">Run BLAST</button>
     </form>
+
+    <script>
+      const programRequirements = {
+        {% for program, config in blast_programs.items() %}
+          "{{ program }}": "{{ config.db_type }}",
+        {% endfor %}
+      };
+      const programSelect = document.getElementById("program");
+      const databaseSelect = document.getElementById("database_id");
+      const databaseDescription = document.getElementById("database_description");
+      const databasePath = document.getElementById("database_path");
+      const databaseTitle = document.getElementById("database_title");
+
+      function updateDatabaseDetails() {
+        const option = databaseSelect.selectedOptions[0];
+        if (!option || !option.value) {
+          databaseDescription.textContent = "";
+          databasePath.value = "";
+          databaseTitle.value = "";
+          return;
+        }
+        databaseDescription.textContent = option.dataset.description || "";
+        databasePath.value = option.dataset.path || "";
+        databaseTitle.value = option.dataset.title || "";
+      }
+
+      function updateCompatibleDatabases() {
+        const requiredDbType = programRequirements[programSelect.value];
+        let firstCompatible = null;
+
+        for (const option of databaseSelect.options) {
+          if (!option.value) {
+            option.hidden = true;
+            continue;
+          }
+          const compatible = option.dataset.dbType === requiredDbType;
+          option.hidden = !compatible;
+          option.disabled = !compatible;
+          if (compatible && firstCompatible === null) {
+            firstCompatible = option;
+          }
+        }
+
+        if (!databaseSelect.selectedOptions.length || databaseSelect.selectedOptions[0].hidden) {
+          databaseSelect.value = firstCompatible ? firstCompatible.value : "";
+        }
+        databaseSelect.options[0].hidden = firstCompatible !== null;
+        databaseSelect.options[0].disabled = firstCompatible !== null;
+        updateDatabaseDetails();
+      }
+
+      programSelect.addEventListener("change", updateCompatibleDatabases);
+      databaseSelect.addEventListener("change", updateDatabaseDetails);
+      updateCompatibleDatabases();
+    </script>
   </body>
 </html>
