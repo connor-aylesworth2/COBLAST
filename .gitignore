@@ -9,6 +9,13 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
+# PyInstaller build output
+build/
+dist/
+*.spec
+*.manifest
+/run_COBLAST.exe
+
 # Local configuration and secrets
 .env
 .env.*

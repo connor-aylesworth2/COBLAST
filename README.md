@@ -44,6 +44,69 @@ python run_COBLAST.py --no-browser
 python run_COBLAST.py --port 5050
 ```
 
+## Windows .exe Launcher
+
+`run_COBLAST.py` can also be packaged as a Windows executable named
+`run_COBLAST.exe` with PyInstaller. The executable is a launcher for this
+repository: it finds the COBLAST project folder, checks BLAST+, creates or reuses
+`.venv`, installs `requirements.txt`, runs the smoke test, starts Flask on
+`127.0.0.1`, and opens the browser.
+
+The `.exe` does not bundle BLAST+ or the full application database files. For a
+fresh machine, testers should still have:
+
+- the COBLAST repository files
+- NCBI BLAST+ installed or extracted locally
+- Python 3.11 or newer available for first-time `.venv` creation
+
+Build the executable from a clean checkout on Windows:
+
+```powershell
+cd 'C:\Projects\blast_flask_app'
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install pyinstaller
+python -m PyInstaller --onefile --name run_COBLAST run_COBLAST.py
+```
+
+PyInstaller writes the executable to:
+
+```text
+dist\run_COBLAST.exe
+```
+
+Test the executable before sharing it:
+
+```powershell
+.\dist\run_COBLAST.exe --check-only --skip-smoke --no-browser
+```
+
+Then run the app through the executable:
+
+```powershell
+.\dist\run_COBLAST.exe
+```
+
+If the executable is copied outside the repository, set the project root:
+
+```powershell
+$env:COBLAST_PROJECT_ROOT = 'C:\Projects\blast_flask_app'
+.\run_COBLAST.exe
+```
+
+If Windows finds the wrong Python when the executable tries to create `.venv`,
+pass a Python 3.11+ executable explicitly:
+
+```powershell
+.\dist\run_COBLAST.exe --python 'C:\Users\<your-username>\AppData\Local\Programs\Python\Python312\python.exe'
+```
+
+For GitHub distribution, prefer attaching `run_COBLAST.exe` to a GitHub Release
+or sharing it in a zip that also contains the repository files. PyInstaller
+build folders and generated executables are ignored by Git.
+
 ## Manual Setup
 
 Use these steps if you need to debug the installation manually.
