@@ -33,6 +33,24 @@ git checkout codex/localhost-remote-safety
 
 ## 3. Create a virtual environment
 
+Recommended one-step setup and launch:
+
+```powershell
+python run_COBLAST.py
+```
+
+If Windows uses the wrong Python version, try:
+
+```powershell
+py -3.11 run_COBLAST.py
+```
+
+The launcher creates `.venv`, installs dependencies, verifies BLAST+, runs the
+backend smoke test, starts the local interface, and opens
+`http://127.0.0.1:5000`.
+
+Manual setup is also possible:
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -49,6 +67,12 @@ Windows PowerShell example:
 
 ```powershell
 $env:BLAST_BIN = 'C:\Tools\ncbi-blast-2.17.0+\bin'
+```
+
+Or pass the path directly to the one-step launcher:
+
+```powershell
+python run_COBLAST.py --blast-bin 'C:\Tools\ncbi-blast-2.17.0+\bin'
 ```
 
 Confirm BLAST+ is reachable:

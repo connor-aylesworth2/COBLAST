@@ -6,7 +6,49 @@ It validates FASTA input with Biopython, runs allowlisted BLAST+ programs throug
 The browser interface uses an NCBI-inspired colour palette and keeps routine
 clinician-facing controls separate from advanced BLAST parameters.
 
-## 1. Verify BLAST+
+## Quick Start
+
+The easiest way to set up and launch the local interface is:
+
+```powershell
+cd 'C:\Projects\blast_flask_app'
+python run_COBLAST.py
+```
+
+On Windows, if `python` does not launch Python 3.11 or newer, try:
+
+```powershell
+py -3.11 run_COBLAST.py
+```
+
+The launcher checks BLAST+, creates `.venv` if needed, installs
+`requirements.txt`, runs `smoke_test.py`, starts Flask on `127.0.0.1`, and opens:
+
+```text
+http://127.0.0.1:5000
+```
+
+If BLAST+ is installed somewhere the launcher cannot find, pass the BLAST+ `bin`
+directory explicitly:
+
+```powershell
+python run_COBLAST.py --blast-bin 'C:\Tools\ncbi-blast-2.17.0+\bin'
+```
+
+Useful launcher options:
+
+```powershell
+python run_COBLAST.py --check-only
+python run_COBLAST.py --skip-smoke
+python run_COBLAST.py --no-browser
+python run_COBLAST.py --port 5050
+```
+
+## Manual Setup
+
+Use these steps if you need to debug the installation manually.
+
+### 1. Verify BLAST+
 
 ```powershell
 & '..\ncbi-blast-2.17.0+\bin\blastn.exe' -version
@@ -14,7 +56,7 @@ clinician-facing controls separate from advanced BLAST parameters.
 
 Expected output includes `blastn: 2.17.0+`.
 
-## 2. Create and activate a virtual environment
+### 2. Create and activate a virtual environment
 
 Install Python first if `python --version` does not work in your own PowerShell.
 
@@ -28,7 +70,7 @@ python -m pip install -r requirements.txt
 `requirements.txt` installs Flask plus Biopython, which is used through
 `Bio.SearchIO` to parse BLAST tabular and XML output.
 
-## 3. Run the backend smoke test
+### 3. Run the backend smoke test
 
 ```powershell
 python smoke_test.py
@@ -43,7 +85,7 @@ C:\Users\<your-username>\AppData\Local\Temp\blast_flask_demo\db\toy_nt
 C:\Users\<your-username>\AppData\Local\Temp\blast_flask_demo\db\toy_protein
 ```
 
-## 4. Run the Flask app
+### 4. Run the Flask app
 
 ```powershell
 python app.py
@@ -66,6 +108,37 @@ sequences and databases local by default.
 
 For tester-facing installation and validation steps, see `TESTING.md`. For
 privacy, security, and clinical-use boundaries, see `PRIVACY_SECURITY.md`.
+
+## Troubleshooting Python Setup
+
+If `python run_COBLAST.py` fails with a Python version error, check your current
+Python version:
+
+```powershell
+python --version
+py -0p
+```
+
+Install Python 3.11 or newer if needed, then rerun:
+
+```powershell
+py -3.11 run_COBLAST.py
+```
+
+If virtual environment creation fails, confirm that the Python `venv` module is
+available:
+
+```powershell
+py -3.11 -m venv .venv
+```
+
+If dependency installation fails, check internet access and rerun the launcher.
+If BLAST+ is not found, either set `BLAST_BIN` or pass `--blast-bin`:
+
+```powershell
+$env:BLAST_BIN = 'C:\Tools\ncbi-blast-2.17.0+\bin'
+python run_COBLAST.py
+```
 
 The app also seeds a local SQLite registry and managed toy BLAST databases under:
 
