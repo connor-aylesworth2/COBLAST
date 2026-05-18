@@ -5,6 +5,7 @@ from functools import lru_cache
 import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -114,6 +115,33 @@ def run_command(
     if check and completed.returncode != 0:
         raise LauncherError(f"Command failed with exit code {completed.returncode}: {printable}")
     return completed
+
+
+def port_is_available(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
+def choose_available_port(requested_port: int) -> int:
+    if port_is_available(requested_port):
+        return requested_port
+
+    for port in range(requested_port + 1, min(requested_port + 100, 65535) + 1):
+        if port_is_available(port):
+            print(
+                f"  Port {requested_port} is already in use; using 127.0.0.1:{port} instead.",
+                flush=True,
+            )
+            return port
+
+    raise LauncherError(
+        f"Could not find an available localhost port near {requested_port}. "
+        "Close any existing COBLAST/Flask windows and try again."
+    )
 
 
 def require_supported_python() -> None:
@@ -393,6 +421,7 @@ def start_app(
     if not app.exists():
         raise LauncherError(f"Missing Flask app: {app}")
 
+    port = choose_available_port(port)
     url = f"http://127.0.0.1:{port}"
     env["BLAST_FLASK_PORT"] = str(port)
 
@@ -424,6 +453,7 @@ def start_standalone_app(
         step("Check-only mode complete")
         return
 
+    port = choose_available_port(port)
     url = f"http://127.0.0.1:{port}"
     os.environ["BLAST_FLASK_PORT"] = str(port)
 
