@@ -1,6 +1,6 @@
 # Local Flask + BLAST+ Prototype
 
-This is a minimal local Flask wrapper around the installed NCBI BLAST+ executables.
+This is a minimal local Flask wrapper designed to work with pre-installed NCBI BLAST+ executables.
 It validates FASTA input with Biopython, runs allowlisted BLAST+ programs through
 `subprocess`, and parses BLAST tabular/XML output with `Bio.SearchIO`.
 The browser interface uses an NCBI-inspired colour palette and keeps routine
