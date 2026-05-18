@@ -18,6 +18,9 @@ example:
 C:\Tools\ncbi-blast-2.17.0+\bin
 ```
 
+The BLAST+ `bin` folder should contain `blastn`, `blastp`, `blastx`, `tblastn`,
+`makeblastdb`, and `blastdbcmd`.
+
 ## 2. Get the prototype
 
 ```powershell
@@ -31,71 +34,44 @@ If you are testing a feature branch before it is merged:
 git checkout codex/localhost-remote-safety
 ```
 
-## 3. Create a virtual environment
+## 3. Run the one-step launcher
 
-Recommended one-step setup and launch:
+Recommended setup and launch:
 
 ```powershell
 python run_COBLAST.py
 ```
 
-If Windows uses the wrong Python version, try:
+On Windows, if `python` does not launch Python 3.11 or newer, try:
 
 ```powershell
 py -3.11 run_COBLAST.py
 ```
 
-The launcher creates `.venv`, installs dependencies, verifies BLAST+, runs the
-backend smoke test, starts the local interface, and opens
-`http://127.0.0.1:5000`.
+The launcher checks BLAST+, creates `.venv` if needed, installs
+`requirements.txt`, runs `smoke_test.py`, starts Flask on `127.0.0.1`, and opens:
 
-Manual setup is also possible:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+```text
+http://127.0.0.1:5000
 ```
 
-## 4. Point the app at BLAST+
-
-Set `BLAST_BIN` to the folder containing `blastn`, `blastp`, `blastx`,
-`tblastn`, `makeblastdb`, and `blastdbcmd`.
-
-Windows PowerShell example:
-
-```powershell
-$env:BLAST_BIN = 'C:\Tools\ncbi-blast-2.17.0+\bin'
-```
-
-Or pass the path directly to the one-step launcher:
+If BLAST+ is installed somewhere the launcher cannot find, pass the BLAST+ `bin`
+directory explicitly:
 
 ```powershell
 python run_COBLAST.py --blast-bin 'C:\Tools\ncbi-blast-2.17.0+\bin'
 ```
 
-Confirm BLAST+ is reachable:
+Useful launcher options:
 
 ```powershell
-& "$env:BLAST_BIN\blastn.exe" -version
+python run_COBLAST.py --check-only
+python run_COBLAST.py --skip-smoke
+python run_COBLAST.py --no-browser
+python run_COBLAST.py --port 5050
 ```
 
-## 5. Run the backend smoke test
-
-```powershell
-python smoke_test.py
-```
-
-Expected result: the smoke test creates toy nucleotide and protein databases,
-runs the supported BLAST programs, parses structured results, and exits without
-an error.
-
-## 6. Run the web interface
-
-```powershell
-python app.py
-```
+## 4. Confirm the app is local
 
 Open:
 
@@ -106,7 +82,59 @@ http://127.0.0.1:5000
 The Flask server should be reachable from the same machine only. Do not launch
 the app with a public host binding for external testing.
 
-## 7. Suggested tester workflow
+Remote BLAST is disabled. Query data and BLAST databases should remain local
+during prototype testing.
+
+## 5. Manual troubleshooting
+
+Use this section only if the one-step launcher fails.
+
+Check Python:
+
+```powershell
+python --version
+py -0p
+```
+
+If needed, install Python 3.11 or newer and rerun:
+
+```powershell
+py -3.11 run_COBLAST.py
+```
+
+Check BLAST+ manually:
+
+```powershell
+$env:BLAST_BIN = 'C:\Tools\ncbi-blast-2.17.0+\bin'
+& "$env:BLAST_BIN\blastn.exe" -version
+```
+
+Create the virtual environment manually:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+Run the backend smoke test manually:
+
+```powershell
+python smoke_test.py
+```
+
+Expected result: the smoke test creates toy nucleotide and protein databases,
+runs the supported BLAST programs, parses structured results, and exits without
+an error.
+
+Start the app manually:
+
+```powershell
+python app.py
+```
+
+## 6. Suggested tester workflow
 
 1. Paste or upload a small FASTA query.
 2. Choose a compatible BLAST program.
@@ -119,7 +147,7 @@ the app with a public host binding for external testing.
 8. Visit `/databases` and confirm registered databases can be checked, added,
    created from FASTA, and removed from the registry without deleting files.
 
-## 8. Reporting feedback
+## 7. Reporting feedback
 
 Please include:
 
