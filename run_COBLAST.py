@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
 import os
 from pathlib import Path
 import shutil
@@ -26,8 +27,58 @@ class LauncherError(RuntimeError):
     pass
 
 
-def project_root() -> Path:
+def is_frozen() -> bool:
+    return bool(getattr(sys, "frozen", False))
+
+
+def bundle_root() -> Path:
+    if is_frozen():
+        return Path(getattr(sys, "_MEIPASS")).resolve()
     return Path(__file__).resolve().parent
+
+
+@lru_cache(maxsize=1)
+def project_root() -> Path:
+    env_root = os.environ.get("COBLAST_PROJECT_ROOT")
+    candidates: list[Path] = []
+
+    if env_root:
+        candidates.append(Path(env_root))
+
+    if is_frozen():
+        exe_dir = Path(sys.executable).resolve().parent
+        candidates.extend([exe_dir, exe_dir.parent])
+    else:
+        candidates.append(Path(__file__).resolve().parent)
+
+    for candidate in candidates:
+        root = candidate.expanduser().resolve()
+        if (root / "app.py").exists() and (root / "requirements.txt").exists():
+            return root
+
+    searched = "\n".join(f"  - {candidate}" for candidate in candidates)
+    raise LauncherError(
+        "Could not locate the COBLAST project folder. Run this launcher from the "
+        "repository root, place run_COBLAST.exe in the repository root or dist "
+        "folder, or set COBLAST_PROJECT_ROOT.\n\n"
+        f"Searched:\n{searched}"
+    )
+
+
+def has_bundled_app() -> bool:
+    root = bundle_root()
+    return (
+        (root / "templates" / "index.html").exists()
+        and (root / "static" / "styles.css").exists()
+        and (root / "blast" / "bin" / tool_name("blastn")).exists()
+    )
+
+
+def standalone_data_dir() -> Path:
+    env_data_dir = os.environ.get("COBLAST_DATA_DIR")
+    if env_data_dir:
+        return Path(env_data_dir).expanduser().resolve()
+    return Path(sys.executable).resolve().parent / "COBLAST_data"
 
 
 def step(message: str) -> None:
@@ -38,6 +89,12 @@ def tool_name(name: str) -> str:
     return f"{name}.exe" if os.name == "nt" else name
 
 
+def display_command(command: list[str]) -> str:
+    if os.name == "nt":
+        return subprocess.list2cmdline(command)
+    return " ".join(command)
+
+
 def run_command(
     command: list[str],
     *,
@@ -45,7 +102,7 @@ def run_command(
     cwd: Path | None = None,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
-    printable = " ".join(command)
+    printable = display_command(command)
     print(f"  > {printable}", flush=True)
     completed = subprocess.run(
         command,
@@ -67,6 +124,101 @@ def require_supported_python() -> None:
             f"{APP_NAME} needs Python {version} or newer. "
             f"This script is running with Python {current} at {sys.executable}."
         )
+
+
+def python_probe(command: list[str]) -> tuple[Path, tuple[int, int, int]] | None:
+    try:
+        completed = subprocess.run(
+            command
+            + [
+                "-c",
+                (
+                    "import sys; "
+                    "print(sys.executable); "
+                    "print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if completed.returncode != 0:
+        return None
+
+    lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return None
+
+    try:
+        version = tuple(int(part) for part in lines[1].split(".")[:3])
+    except ValueError:
+        return None
+
+    if len(version) != 3 or version < (*MIN_PYTHON, 0):
+        return None
+
+    return Path(lines[0]), version
+
+
+def candidate_python_commands(cli_python: str | None) -> list[list[str]]:
+    candidates: list[list[str]] = []
+
+    if cli_python:
+        candidates.append([cli_python])
+
+    env_python = os.environ.get("COBLAST_PYTHON") or os.environ.get("PYTHON")
+    if env_python:
+        candidates.append([env_python])
+
+    if not is_frozen():
+        candidates.append([sys.executable])
+
+    if os.name == "nt":
+        candidates.extend(
+            [
+                ["py", "-3.13"],
+                ["py", "-3.12"],
+                ["py", "-3.11"],
+                ["py", "-3"],
+            ]
+        )
+
+    for name in ("python", "python3"):
+        path = shutil.which(name)
+        if path:
+            candidates.append([path])
+
+    unique: list[list[str]] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = "\0".join(candidate)
+        if key not in seen:
+            seen.add(key)
+            unique.append(candidate)
+    return unique
+
+
+def find_host_python(cli_python: str | None) -> list[str]:
+    searched: list[str] = []
+    for command in candidate_python_commands(cli_python):
+        searched.append(display_command(command))
+        if python_probe(command) is not None:
+            return command
+
+    version = ".".join(str(part) for part in MIN_PYTHON)
+    searched_text = "\n".join(f"  - {command}" for command in searched)
+    raise LauncherError(
+        f"Could not find a usable Python {version}+ installation to create .venv.\n"
+        "Install Python, or rerun with:\n"
+        "  run_COBLAST.exe --python \"C:\\Path\\To\\python.exe\"\n\n"
+        f"Tried:\n{searched_text}"
+    )
+
+
+def bundled_blast_bin() -> Path:
+    return bundle_root() / "blast" / "bin"
 
 
 def candidate_blast_bins(cli_blast_bin: str | None) -> list[Path]:
@@ -161,16 +313,10 @@ def venv_python() -> Path:
 
 
 def python_is_usable(python_path: Path) -> bool:
-    completed = subprocess.run(
-        [str(python_path), "--version"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return completed.returncode == 0
+    return python_probe([str(python_path)]) is not None
 
 
-def ensure_virtualenv() -> Path:
+def ensure_virtualenv(host_python: list[str] | None) -> Path:
     step("Creating or reusing the Python virtual environment")
     python_path = venv_python()
 
@@ -179,7 +325,9 @@ def ensure_virtualenv() -> Path:
         shutil.rmtree(venv_dir())
 
     if not python_path.exists():
-        run_command([sys.executable, "-m", "venv", str(venv_dir())])
+        if host_python is None:
+            raise LauncherError("A Python installation is required to create .venv.")
+        run_command(host_python + ["-m", "venv", str(venv_dir())])
 
     if not python_path.exists():
         raise LauncherError(f"Virtual environment Python was not created at {python_path}")
@@ -216,6 +364,17 @@ def run_smoke_test(python_path: Path, env: dict[str, str], skip_smoke: bool) -> 
 
     step("Running backend smoke test")
     run_command([str(python_path), str(smoke_test)], env=env)
+
+
+def run_standalone_smoke_test(skip_smoke: bool) -> None:
+    if skip_smoke:
+        step("Skipping backend smoke test")
+        return
+
+    step("Running bundled backend smoke test")
+    from smoke_test import main as smoke_main
+
+    smoke_main()
 
 
 def start_app(
@@ -255,6 +414,56 @@ def start_app(
             process.wait()
 
 
+def start_standalone_app(
+    *,
+    port: int,
+    open_browser: bool,
+    check_only: bool,
+) -> None:
+    if check_only:
+        step("Check-only mode complete")
+        return
+
+    url = f"http://127.0.0.1:{port}"
+    os.environ["BLAST_FLASK_PORT"] = str(port)
+
+    step(f"Starting the bundled local interface at {url}")
+    from app import app as flask_app
+    from config import FLASK_HOST, flask_port
+
+    if open_browser:
+        time.sleep(2)
+        webbrowser.open(url)
+
+    print("\nCOBLAST is running. Press Ctrl+C in this terminal to stop it.")
+    flask_app.run(host=FLASK_HOST, port=flask_port(), debug=False)
+
+
+def run_standalone(args: argparse.Namespace) -> int:
+    data_dir = standalone_data_dir()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["COBLAST_DATA_DIR"] = str(data_dir)
+
+    if args.blast_bin:
+        blast_bin = Path(args.blast_bin).expanduser().resolve()
+    else:
+        blast_bin = bundled_blast_bin()
+    os.environ["BLAST_BIN"] = str(blast_bin)
+
+    print(f"{APP_NAME} standalone bundle")
+    print(f"  Bundle: {bundle_root()}")
+    print(f"  Data:   {data_dir}")
+
+    verify_blast(blast_bin, os.environ.copy())
+    run_standalone_smoke_test(args.skip_smoke)
+    start_standalone_app(
+        port=args.port,
+        open_browser=not args.no_browser,
+        check_only=args.check_only,
+    )
+    return 0
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -265,6 +474,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--blast-bin",
         help="Path to the NCBI BLAST+ bin directory. Overrides BLAST_BIN.",
+    )
+    parser.add_argument(
+        "--python",
+        help=(
+            "Path to a Python 3.11+ executable used to create .venv. "
+            "Useful when running run_COBLAST.exe on a machine with multiple Python versions."
+        ),
     )
     parser.add_argument(
         "--port",
@@ -302,12 +518,20 @@ def main() -> int:
             raise LauncherError("Port must be between 1 and 65535.")
 
         require_supported_python()
+        if is_frozen() and has_bundled_app():
+            return run_standalone(args)
+
+        host_python = (
+            None
+            if venv_python().exists() and python_is_usable(venv_python())
+            else find_host_python(args.python)
+        )
         blast_bin = find_blast_bin(args.blast_bin)
         env = os.environ.copy()
         env["BLAST_BIN"] = str(blast_bin)
 
         verify_blast(blast_bin, env)
-        python_path = ensure_virtualenv()
+        python_path = ensure_virtualenv(host_python)
         install_requirements(python_path, env, args.skip_install)
         run_smoke_test(python_path, env, args.skip_smoke)
         start_app(
@@ -324,6 +548,7 @@ def main() -> int:
             "\nTroubleshooting hints:\n"
             "  - On Windows, try: py -3.11 run_COBLAST.py\n"
             "  - Confirm Python is 3.11 or newer: python --version\n"
+            "  - For the .exe, pass --python if Windows finds the wrong Python.\n"
             "  - Confirm BLAST+ is installed and pass --blast-bin if needed.\n"
             "  - If dependency installation fails, check your internet connection and rerun.",
             file=sys.stderr,

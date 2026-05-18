@@ -44,6 +44,70 @@ python run_COBLAST.py --no-browser
 python run_COBLAST.py --port 5050
 ```
 
+## Windows .exe Launcher
+
+`run_COBLAST.py` can also be packaged as a standalone Windows executable with
+PyInstaller. The standalone executable bundles the Flask interface, Python
+dependencies, templates, static assets, toy sample data, and the required BLAST+
+executables. When launched, it extracts those bundled files to a temporary
+runtime folder, stores persistent app data beside the executable in
+`COBLAST_data`, starts Flask on `127.0.0.1`, and opens the browser.
+
+The standalone `.exe` does not bundle large user-created BLAST databases or
+clinical datasets. Those remain local files chosen or created by the user.
+
+For the current prototype, a prebuilt Windows executable may be provided at:
+
+```text
+release\COBLAST.exe
+```
+
+That file can be downloaded from GitHub and run directly on Windows. Because it
+is an unsigned research prototype executable, Windows SmartScreen or antivirus
+software may warn before first launch.
+
+Build the executable from a clean checkout on Windows:
+
+```powershell
+cd 'C:\Projects\blast_flask_app'
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install pyinstaller
+python build_standalone_exe.py --blast-bin 'C:\Tools\ncbi-blast-2.17.0+\bin'
+```
+
+The build helper writes the executable to:
+
+```text
+dist\COBLAST.exe
+```
+
+Test the executable before sharing it:
+
+```powershell
+.\dist\COBLAST.exe --check-only --skip-smoke --no-browser
+```
+
+Then run the app through the executable:
+
+```powershell
+.\dist\COBLAST.exe
+```
+
+If you need to override where app data are stored, set `COBLAST_DATA_DIR`:
+
+```powershell
+$env:COBLAST_DATA_DIR = 'C:\COBLAST_data'
+.\dist\COBLAST.exe
+```
+
+For GitHub distribution, prefer attaching `COBLAST.exe` to a GitHub Release.
+PyInstaller build folders and generated executables are ignored by Git by
+default, because the bundled executable may exceed GitHub's normal per-file
+repository size limit.
+
 ## Manual Setup
 
 Use these steps if you need to debug the installation manually.

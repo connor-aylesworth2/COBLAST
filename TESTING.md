@@ -36,6 +36,18 @@ git checkout codex/localhost-remote-safety
 
 ## 3. Run the one-step launcher
 
+If you were given the standalone Windows executable, download and run:
+
+```powershell
+.\COBLAST.exe
+```
+
+The standalone executable bundles the prototype interface, Python dependencies,
+toy sample data, and required BLAST+ executables. It stores runtime files beside
+the executable in `COBLAST_data`.
+
+If you are testing from a source-code checkout instead, use the Python launcher.
+
 Recommended setup and launch:
 
 ```powershell
