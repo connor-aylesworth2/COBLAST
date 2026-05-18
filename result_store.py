@@ -9,10 +9,11 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from blast_runner import BlastResult
+from config import resource_root, runtime_data_dir
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-RESULTS_DIR = PROJECT_ROOT / "instance" / "results"
+PROJECT_ROOT = resource_root()
+RESULTS_DIR = runtime_data_dir() / "results"
 
 RESULT_COLUMNS = [
     ("qseqid", "Query"),

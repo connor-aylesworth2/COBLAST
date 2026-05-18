@@ -15,6 +15,7 @@ dist/
 *.spec
 *.manifest
 /run_COBLAST.exe
+release/COBLAST_data/
 
 # Local configuration and secrets
 .env

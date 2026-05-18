@@ -31,6 +31,12 @@ def is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False))
 
 
+def bundle_root() -> Path:
+    if is_frozen():
+        return Path(getattr(sys, "_MEIPASS")).resolve()
+    return Path(__file__).resolve().parent
+
+
 @lru_cache(maxsize=1)
 def project_root() -> Path:
     env_root = os.environ.get("COBLAST_PROJECT_ROOT")
@@ -57,6 +63,22 @@ def project_root() -> Path:
         "folder, or set COBLAST_PROJECT_ROOT.\n\n"
         f"Searched:\n{searched}"
     )
+
+
+def has_bundled_app() -> bool:
+    root = bundle_root()
+    return (
+        (root / "templates" / "index.html").exists()
+        and (root / "static" / "styles.css").exists()
+        and (root / "blast" / "bin" / tool_name("blastn")).exists()
+    )
+
+
+def standalone_data_dir() -> Path:
+    env_data_dir = os.environ.get("COBLAST_DATA_DIR")
+    if env_data_dir:
+        return Path(env_data_dir).expanduser().resolve()
+    return Path(sys.executable).resolve().parent / "COBLAST_data"
 
 
 def step(message: str) -> None:
@@ -193,6 +215,10 @@ def find_host_python(cli_python: str | None) -> list[str]:
         "  run_COBLAST.exe --python \"C:\\Path\\To\\python.exe\"\n\n"
         f"Tried:\n{searched_text}"
     )
+
+
+def bundled_blast_bin() -> Path:
+    return bundle_root() / "blast" / "bin"
 
 
 def candidate_blast_bins(cli_blast_bin: str | None) -> list[Path]:
@@ -340,6 +366,17 @@ def run_smoke_test(python_path: Path, env: dict[str, str], skip_smoke: bool) -> 
     run_command([str(python_path), str(smoke_test)], env=env)
 
 
+def run_standalone_smoke_test(skip_smoke: bool) -> None:
+    if skip_smoke:
+        step("Skipping backend smoke test")
+        return
+
+    step("Running bundled backend smoke test")
+    from smoke_test import main as smoke_main
+
+    smoke_main()
+
+
 def start_app(
     python_path: Path,
     env: dict[str, str],
@@ -375,6 +412,56 @@ def start_app(
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+
+
+def start_standalone_app(
+    *,
+    port: int,
+    open_browser: bool,
+    check_only: bool,
+) -> None:
+    if check_only:
+        step("Check-only mode complete")
+        return
+
+    url = f"http://127.0.0.1:{port}"
+    os.environ["BLAST_FLASK_PORT"] = str(port)
+
+    step(f"Starting the bundled local interface at {url}")
+    from app import app as flask_app
+    from config import FLASK_HOST, flask_port
+
+    if open_browser:
+        time.sleep(2)
+        webbrowser.open(url)
+
+    print("\nCOBLAST is running. Press Ctrl+C in this terminal to stop it.")
+    flask_app.run(host=FLASK_HOST, port=flask_port(), debug=False)
+
+
+def run_standalone(args: argparse.Namespace) -> int:
+    data_dir = standalone_data_dir()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["COBLAST_DATA_DIR"] = str(data_dir)
+
+    if args.blast_bin:
+        blast_bin = Path(args.blast_bin).expanduser().resolve()
+    else:
+        blast_bin = bundled_blast_bin()
+    os.environ["BLAST_BIN"] = str(blast_bin)
+
+    print(f"{APP_NAME} standalone bundle")
+    print(f"  Bundle: {bundle_root()}")
+    print(f"  Data:   {data_dir}")
+
+    verify_blast(blast_bin, os.environ.copy())
+    run_standalone_smoke_test(args.skip_smoke)
+    start_standalone_app(
+        port=args.port,
+        open_browser=not args.no_browser,
+        check_only=args.check_only,
+    )
+    return 0
 
 
 def parse_args() -> argparse.Namespace:
@@ -431,6 +518,9 @@ def main() -> int:
             raise LauncherError("Port must be between 1 and 65535.")
 
         require_supported_python()
+        if is_frozen() and has_bundled_app():
+            return run_standalone(args)
+
         host_python = (
             None
             if venv_python().exists() and python_is_usable(venv_python())

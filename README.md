@@ -46,18 +46,25 @@ python run_COBLAST.py --port 5050
 
 ## Windows .exe Launcher
 
-`run_COBLAST.py` can also be packaged as a Windows executable named
-`run_COBLAST.exe` with PyInstaller. The executable is a launcher for this
-repository: it finds the COBLAST project folder, checks BLAST+, creates or reuses
-`.venv`, installs `requirements.txt`, runs the smoke test, starts Flask on
-`127.0.0.1`, and opens the browser.
+`run_COBLAST.py` can also be packaged as a standalone Windows executable with
+PyInstaller. The standalone executable bundles the Flask interface, Python
+dependencies, templates, static assets, toy sample data, and the required BLAST+
+executables. When launched, it extracts those bundled files to a temporary
+runtime folder, stores persistent app data beside the executable in
+`COBLAST_data`, starts Flask on `127.0.0.1`, and opens the browser.
 
-The `.exe` does not bundle BLAST+ or the full application database files. For a
-fresh machine, testers should still have:
+The standalone `.exe` does not bundle large user-created BLAST databases or
+clinical datasets. Those remain local files chosen or created by the user.
 
-- the COBLAST repository files
-- NCBI BLAST+ installed or extracted locally
-- Python 3.11 or newer available for first-time `.venv` creation
+For the current prototype, a prebuilt Windows executable may be provided at:
+
+```text
+release\COBLAST.exe
+```
+
+That file can be downloaded from GitHub and run directly on Windows. Because it
+is an unsigned research prototype executable, Windows SmartScreen or antivirus
+software may warn before first launch.
 
 Build the executable from a clean checkout on Windows:
 
@@ -68,44 +75,38 @@ python -m venv .venv
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python -m pip install pyinstaller
-python -m PyInstaller --onefile --name run_COBLAST run_COBLAST.py
+python build_standalone_exe.py --blast-bin 'C:\Tools\ncbi-blast-2.17.0+\bin'
 ```
 
-PyInstaller writes the executable to:
+The build helper writes the executable to:
 
 ```text
-dist\run_COBLAST.exe
+dist\COBLAST.exe
 ```
 
 Test the executable before sharing it:
 
 ```powershell
-.\dist\run_COBLAST.exe --check-only --skip-smoke --no-browser
+.\dist\COBLAST.exe --check-only --skip-smoke --no-browser
 ```
 
 Then run the app through the executable:
 
 ```powershell
-.\dist\run_COBLAST.exe
+.\dist\COBLAST.exe
 ```
 
-If the executable is copied outside the repository, set the project root:
+If you need to override where app data are stored, set `COBLAST_DATA_DIR`:
 
 ```powershell
-$env:COBLAST_PROJECT_ROOT = 'C:\Projects\blast_flask_app'
-.\run_COBLAST.exe
+$env:COBLAST_DATA_DIR = 'C:\COBLAST_data'
+.\dist\COBLAST.exe
 ```
 
-If Windows finds the wrong Python when the executable tries to create `.venv`,
-pass a Python 3.11+ executable explicitly:
-
-```powershell
-.\dist\run_COBLAST.exe --python 'C:\Users\<your-username>\AppData\Local\Programs\Python\Python312\python.exe'
-```
-
-For GitHub distribution, prefer attaching `run_COBLAST.exe` to a GitHub Release
-or sharing it in a zip that also contains the repository files. PyInstaller
-build folders and generated executables are ignored by Git.
+For GitHub distribution, prefer attaching `COBLAST.exe` to a GitHub Release.
+PyInstaller build folders and generated executables are ignored by Git by
+default, because the bundled executable may exceed GitHub's normal per-file
+repository size limit.
 
 ## Manual Setup
 

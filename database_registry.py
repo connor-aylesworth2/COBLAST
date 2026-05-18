@@ -10,14 +10,14 @@ import shlex
 import sqlite3
 import subprocess
 
-from config import blast_exe
+from config import blast_exe, resource_path, resource_root, runtime_data_dir
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-INSTANCE_DIR = PROJECT_ROOT / "instance"
+PROJECT_ROOT = resource_root()
+INSTANCE_DIR = runtime_data_dir()
 REGISTRY_PATH = INSTANCE_DIR / "database_registry.sqlite"
 MANAGED_DATABASE_DIR = INSTANCE_DIR / "databases"
-SAMPLE_DATA_DIR = PROJECT_ROOT / "sample_data"
+SAMPLE_DATA_DIR = resource_path("sample_data")
 
 DB_TYPES = {"nucl", "prot"}
 DB_CATEGORIES = {"viral", "human", "eToL-V", "toy", "custom"}

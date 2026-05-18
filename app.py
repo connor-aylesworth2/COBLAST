@@ -15,12 +15,16 @@ from database_registry import (
     verify_database,
 )
 from result_store import load_result, result_rows_as_delimited, save_result
-from config import FLASK_HOST, flask_port
+from config import FLASK_HOST, flask_port, resource_path, resource_root
 
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=str(resource_path("templates")),
+    static_folder=str(resource_path("static")),
+)
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = resource_root()
 
 
 def redirect_to_databases(message: str = "", error: str = ""):

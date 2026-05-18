@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import sys
 
 
 DEFAULT_BLAST_BIN = Path(r"C:\Program Files\NCBI\blast-2.17.0+\bin")
@@ -9,8 +10,39 @@ REMOTE_BLAST_ENABLED = False
 DISALLOWED_BLAST_OPTIONS = {"-remote"}
 
 
+def is_frozen() -> bool:
+    return bool(getattr(sys, "frozen", False))
+
+
+def resource_root() -> Path:
+    if is_frozen():
+        return Path(getattr(sys, "_MEIPASS")).resolve()
+    return Path(__file__).resolve().parent
+
+
+def resource_path(*parts: str) -> Path:
+    return resource_root().joinpath(*parts)
+
+
+def runtime_data_dir() -> Path:
+    env_data_dir = os.environ.get("COBLAST_DATA_DIR")
+    if env_data_dir:
+        return Path(env_data_dir).expanduser().resolve()
+    if is_frozen():
+        return Path(sys.executable).resolve().parent / "COBLAST_data"
+    return resource_root() / "instance"
+
+
 def blast_bin_dir() -> Path:
-    return Path(os.environ.get("BLAST_BIN", DEFAULT_BLAST_BIN))
+    env_blast_bin = os.environ.get("BLAST_BIN")
+    if env_blast_bin:
+        return Path(env_blast_bin)
+
+    bundled_blast_bin = resource_path("blast", "bin")
+    if bundled_blast_bin.exists():
+        return bundled_blast_bin
+
+    return DEFAULT_BLAST_BIN
 
 
 def blast_exe(name: str) -> Path:
