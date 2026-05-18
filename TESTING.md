@@ -67,6 +67,10 @@ The launcher checks BLAST+, creates `.venv` if needed, installs
 http://127.0.0.1:5000
 ```
 
+If another local process is already using port `5000`, the launcher or
+standalone `.exe` will print a different `127.0.0.1` address. Use the address
+shown in the newest launcher window.
+
 If BLAST+ is installed somewhere the launcher cannot find, pass the BLAST+ `bin`
 directory explicitly:
 
@@ -90,6 +94,8 @@ Open:
 ```text
 http://127.0.0.1:5000
 ```
+
+If the launcher printed a different port, open that address instead.
 
 The Flask server should be reachable from the same machine only. Do not launch
 the app with a public host binding for external testing.
@@ -120,6 +126,11 @@ Check BLAST+ manually:
 $env:BLAST_BIN = 'C:\Tools\ncbi-blast-2.17.0+\bin'
 & "$env:BLAST_BIN\blastn.exe" -version
 ```
+
+If the browser reports that BLAST+ is missing from `C:\Program Files\NCBI` after
+running the standalone `.exe`, close any older COBLAST/Flask windows and reopen
+the newest address printed by the `.exe`. That message usually comes from an
+older local server still occupying port `5000`.
 
 Create the virtual environment manually:
 

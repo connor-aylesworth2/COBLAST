@@ -28,6 +28,9 @@ The launcher checks BLAST+, creates `.venv` if needed, installs
 http://127.0.0.1:5000
 ```
 
+If another local process is already using port `5000`, the launcher chooses the
+next available `127.0.0.1` port and prints the exact address to open.
+
 If BLAST+ is installed somewhere the launcher cannot find, pass the BLAST+ `bin`
 directory explicitly:
 
@@ -52,6 +55,9 @@ dependencies, templates, static assets, toy sample data, and the required BLAST+
 executables. When launched, it extracts those bundled files to a temporary
 runtime folder, stores persistent app data beside the executable in
 `COBLAST_data`, starts Flask on `127.0.0.1`, and opens the browser.
+If port `5000` is already occupied by another local Flask/COBLAST session, the
+`.exe` moves to the next available local port and prints the address in its
+terminal window.
 
 The standalone `.exe` does not bundle large user-created BLAST databases or
 clinical datasets. Those remain local files chosen or created by the user.
@@ -203,6 +209,11 @@ If BLAST+ is not found, either set `BLAST_BIN` or pass `--blast-bin`:
 $env:BLAST_BIN = 'C:\Tools\ncbi-blast-2.17.0+\bin'
 python run_COBLAST.py
 ```
+
+If the browser shows an error looking for BLAST+ under `C:\Program Files\NCBI`
+after launching the standalone `.exe`, close older COBLAST/Flask terminal
+windows and open the address printed by the newest `.exe` window. That usually
+means the browser was still pointed at a stale local server on port `5000`.
 
 The app also seeds a local SQLite registry and managed toy BLAST databases under:
 

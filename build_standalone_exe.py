@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 
 
 REQUIRED_BLAST_FILES = [
@@ -54,6 +55,7 @@ def add_data_arg(source: Path, destination: str) -> str:
 
 def build_command(blast_bin: Path, name: str) -> list[str]:
     root = project_root()
+    workpath = Path(tempfile.gettempdir()) / f"coblast_pyinstaller_{os.getpid()}"
     required_paths = [
         root / "run_COBLAST.py",
         root / "app.py",
@@ -81,8 +83,18 @@ def build_command(blast_bin: Path, name: str) -> list[str]:
         "--onefile",
         "--name",
         name,
+        "--workpath",
+        str(workpath),
+        "--distpath",
+        str(root / "dist"),
         "--collect-submodules",
-        "Bio",
+        "Bio.SearchIO",
+        "--collect-submodules",
+        "Bio.SeqIO",
+        "--exclude-module",
+        "tkinter",
+        "--exclude-module",
+        "_tkinter",
         "--hidden-import",
         "app",
         "--hidden-import",
