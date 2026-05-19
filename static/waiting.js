@@ -57,7 +57,6 @@
       <div class="working-page">
         <header class="working-ncbi-header">
           <div class="working-ncbi-inner">
-            <div class="working-logo-mark">CO</div>
             <div class="working-logo-text">
               <strong>COBLAST+</strong>
               <span>Clinician-oriented BLAST+</span>
@@ -78,8 +77,6 @@
           </div>
         </div>
         <main class="working-status-page">
-          <h2 class="working-format-title">Format Request Status</h2>
-          <p class="working-format-link">[Formatting options]</p>
           <h3 class="working-job-title">Job Title: <span>Working</span></h3>
 
           <table class="working-status-table">

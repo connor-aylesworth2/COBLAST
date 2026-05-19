@@ -419,32 +419,7 @@ pre {
 .working-ncbi-inner {
   align-items: center;
   display: flex;
-  gap: 12px;
   min-height: 98px;
-}
-
-.working-logo-mark {
-  align-items: center;
-  background: #ffffff;
-  border-radius: 5px;
-  color: #245a8d;
-  display: flex;
-  font-size: 1.45rem;
-  font-weight: 700;
-  height: 48px;
-  justify-content: center;
-  position: relative;
-  width: 72px;
-}
-
-.working-logo-mark::after {
-  border-bottom: 24px solid transparent;
-  border-left: 12px solid #ffffff;
-  border-top: 24px solid transparent;
-  content: "";
-  position: absolute;
-  right: -12px;
-  top: 0;
 }
 
 .working-logo-text {
@@ -506,25 +481,11 @@ pre {
   padding: 0 20px 48px;
 }
 
-.working-format-title {
-  color: #111111;
-  font-size: 1rem;
-  margin: 0;
-  padding: 0 0 6px;
-  text-align: center;
-}
-
-.working-format-link {
-  color: #004b8d;
-  font-size: 0.9rem;
-  margin: 18px 0 22px;
-}
-
 .working-job-title {
   border-bottom: 1px solid #d2d2d2;
   color: #0b5a72;
   font-size: 1rem;
-  margin: 0 -20px 28px;
+  margin: 28px -20px 28px;
   padding: 0 20px 2px;
 }
 
