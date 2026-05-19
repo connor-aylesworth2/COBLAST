@@ -15,10 +15,24 @@
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
 
-    if (hours > 0) {
-      return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-    }
-    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  function formatDateTime(date) {
+    return date.toLocaleString(undefined, {
+      weekday: "short",
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  }
+
+  function localRequestId() {
+    const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+    return `LOCAL-${Date.now().toString(36).toUpperCase()}-${suffix}`;
   }
 
   function messagesForForm(form) {
@@ -40,16 +54,79 @@
     overlay.setAttribute("role", "status");
     overlay.setAttribute("aria-live", "polite");
     overlay.innerHTML = `
-      <div class="working-dialog">
-        <div class="working-spinner" aria-hidden="true"></div>
-        <div class="working-copy">
-          <h2 class="working-title">Working</h2>
-          <p class="working-message">Starting local job.</p>
-          <p class="working-elapsed">Elapsed time: 0:00</p>
-          <div class="working-progress" aria-hidden="true">
-            <span></span>
+      <div class="working-page">
+        <header class="working-ncbi-header">
+          <div class="working-ncbi-inner">
+            <div class="working-logo-mark">CO</div>
+            <div class="working-logo-text">
+              <strong>COBLAST+</strong>
+              <span>Clinician-oriented BLAST+</span>
+            </div>
+          </div>
+        </header>
+        <div class="working-nav-strip">
+          <div class="working-nav-inner">
+            <div class="working-breadcrumb">
+              <strong>COBLAST+</strong> &raquo; local job &raquo; <span class="working-rid-breadcrumb">RID-LOCAL</span>
+            </div>
+            <nav class="working-links" aria-label="Waiting page navigation">
+              <span>Home</span>
+              <span>Recent Results</span>
+              <span>Saved Strategies</span>
+              <span>Help</span>
+            </nav>
           </div>
         </div>
+        <main class="working-status-page">
+          <h2 class="working-format-title">Format Request Status</h2>
+          <p class="working-format-link">[Formatting options]</p>
+          <h3 class="working-job-title">Job Title: <span>Working</span></h3>
+
+          <table class="working-status-table">
+            <tbody>
+              <tr>
+                <th>Request ID</th>
+                <td class="working-request-id">LOCAL</td>
+              </tr>
+              <tr>
+                <th>Status</th>
+                <td class="working-status">Searching</td>
+              </tr>
+              <tr>
+                <th>Submitted at</th>
+                <td class="working-submitted-at"></td>
+              </tr>
+              <tr>
+                <th>Current time</th>
+                <td class="working-current-time"></td>
+              </tr>
+              <tr>
+                <th>Time since submission</th>
+                <td class="working-elapsed">00:00:00</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p class="working-message">This page will be automatically updated in <strong>2</strong> seconds until the local job is done.</p>
+          <p class="working-detail">Starting local job.</p>
+        </main>
+        <footer class="working-footer">
+          <div class="working-footer-bar">COBLAST+</div>
+          <div class="working-footer-body">
+            <div>
+              <strong>Local BLAST+ interface</strong>
+              <span>Runs on this computer only</span>
+            </div>
+            <div>
+              <strong>Privacy</strong>
+              <span>Remote BLAST disabled</span>
+            </div>
+            <div>
+              <strong>Job status</strong>
+              <span>Keep this window open</span>
+            </div>
+          </div>
+        </footer>
       </div>
     `;
     document.body.appendChild(overlay);
@@ -60,29 +137,42 @@
     const currentOverlay = ensureOverlay();
     const title = form.dataset.waitTitle || "Working";
     const messages = messagesForForm(form);
-    const titleNode = currentOverlay.querySelector(".working-title");
-    const messageNode = currentOverlay.querySelector(".working-message");
+    const requestId = localRequestId();
+    const submittedAt = new Date();
+    const breadcrumbNode = currentOverlay.querySelector(".working-rid-breadcrumb");
+    const titleNode = currentOverlay.querySelector(".working-job-title span");
+    const requestIdNode = currentOverlay.querySelector(".working-request-id");
+    const statusNode = currentOverlay.querySelector(".working-status");
+    const submittedAtNode = currentOverlay.querySelector(".working-submitted-at");
+    const currentTimeNode = currentOverlay.querySelector(".working-current-time");
     const elapsedNode = currentOverlay.querySelector(".working-elapsed");
+    const detailNode = currentOverlay.querySelector(".working-detail");
     let messageIndex = 0;
-    const startedAt = Date.now();
 
     clearInterval(elapsedTimer);
     clearInterval(messageTimer);
 
+    breadcrumbNode.textContent = `RID-${requestId}`;
     titleNode.textContent = title;
-    messageNode.textContent = messages[messageIndex];
-    elapsedNode.textContent = "Elapsed time: 0:00";
+    requestIdNode.textContent = requestId;
+    statusNode.textContent = "Searching";
+    submittedAtNode.textContent = formatDateTime(submittedAt);
+    currentTimeNode.textContent = formatDateTime(submittedAt);
+    elapsedNode.textContent = "00:00:00";
+    detailNode.textContent = messages[messageIndex];
     currentOverlay.classList.add("is-visible");
     document.body.classList.add("is-waiting");
 
     elapsedTimer = setInterval(() => {
-      const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
-      elapsedNode.textContent = `Elapsed time: ${formatElapsed(elapsedSeconds)}`;
+      const now = new Date();
+      const elapsedSeconds = Math.floor((now.getTime() - submittedAt.getTime()) / 1000);
+      currentTimeNode.textContent = formatDateTime(now);
+      elapsedNode.textContent = formatElapsed(elapsedSeconds);
     }, 1000);
 
     messageTimer = setInterval(() => {
       messageIndex = (messageIndex + 1) % messages.length;
-      messageNode.textContent = messages[messageIndex];
+      detailNode.textContent = messages[messageIndex];
     }, 9000);
   }
 
