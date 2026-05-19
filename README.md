@@ -249,6 +249,12 @@ not need to open advanced settings for normal local searches:
 The advanced timeout field can still override these defaults for a specific
 run. The current maximum accepted timeout is 3,600 seconds, or 1 hour.
 
+When a BLAST search, database verification, or database creation job is running,
+the interface shows a waiting screen with elapsed time and status messages. For
+large FASTA files, database creation may still take many minutes because the
+current prototype waits for `makeblastdb` to finish before returning to the
+database page.
+
 The results table reports the top BLAST hits with query ID, subject ID, subject
 title, percent identity, alignment length, query coverage, E-value, and bit
 score.

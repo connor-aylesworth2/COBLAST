@@ -27,7 +27,14 @@
         <p class="error">{{ registry_error }}</p>
       {% endif %}
 
-      <form class="panel" method="post" action="/run-blast" enctype="multipart/form-data">
+      <form
+        class="panel"
+        method="post"
+        action="/run-blast"
+        enctype="multipart/form-data"
+        data-wait-title="Running BLAST search"
+        data-wait-messages="Preparing the query FASTA.|Starting the local BLAST+ executable.|Searching the selected local database.|Parsing structured BLAST results.|Large databases can take several minutes."
+      >
         <div class="panel__header">
           <h2 class="panel__title">Search Setup</h2>
         </div>
@@ -156,6 +163,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       </form>
     </main>
 
+    <script src="{{ url_for('static', filename='waiting.js') }}"></script>
     <script>
       const programRequirements = {
         {% for program, config in blast_programs.items() %}
