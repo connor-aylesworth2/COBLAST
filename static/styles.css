@@ -381,6 +381,245 @@ pre {
   white-space: nowrap;
 }
 
+.is-waiting {
+  overflow: hidden;
+}
+
+.working-overlay {
+  background: #ffffff;
+  display: none;
+  inset: 0;
+  overflow: auto;
+  position: fixed;
+  z-index: 1000;
+}
+
+.working-overlay.is-visible {
+  display: block;
+}
+
+.working-page {
+  background: #ffffff;
+  color: #111111;
+  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+}
+
+.working-ncbi-header {
+  background: #245a8d;
+  color: #ffffff;
+}
+
+.working-ncbi-inner,
+.working-nav-inner,
+.working-footer-body {
+  margin: 0 auto;
+  width: min(1230px, calc(100% - 32px));
+}
+
+.working-ncbi-inner {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  min-height: 98px;
+}
+
+.working-logo-mark {
+  align-items: center;
+  background: #ffffff;
+  border-radius: 5px;
+  color: #245a8d;
+  display: flex;
+  font-size: 1.45rem;
+  font-weight: 700;
+  height: 48px;
+  justify-content: center;
+  position: relative;
+  width: 72px;
+}
+
+.working-logo-mark::after {
+  border-bottom: 24px solid transparent;
+  border-left: 12px solid #ffffff;
+  border-top: 24px solid transparent;
+  content: "";
+  position: absolute;
+  right: -12px;
+  top: 0;
+}
+
+.working-logo-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.working-logo-text strong {
+  color: #ffffff;
+  font-size: 1.6rem;
+}
+
+.working-logo-text span {
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-style: italic;
+}
+
+.working-nav-strip {
+  background: #f1f1f1;
+  border-bottom: 1px solid #c9c9c9;
+  color: #004b8d;
+}
+
+.working-nav-inner {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  min-height: 50px;
+}
+
+.working-breadcrumb {
+  color: #555555;
+  font-size: 1.15rem;
+}
+
+.working-breadcrumb strong {
+  color: #555555;
+}
+
+.working-rid-breadcrumb {
+  color: #555555;
+  font-weight: 700;
+}
+
+.working-links {
+  display: flex;
+  gap: 20px;
+  white-space: nowrap;
+}
+
+.working-links span {
+  color: #004b8d;
+}
+
+.working-status-page {
+  min-height: 350px;
+  padding: 0 20px 48px;
+}
+
+.working-format-title {
+  color: #111111;
+  font-size: 1rem;
+  margin: 0;
+  padding: 0 0 6px;
+  text-align: center;
+}
+
+.working-format-link {
+  color: #004b8d;
+  font-size: 0.9rem;
+  margin: 18px 0 22px;
+}
+
+.working-job-title {
+  border-bottom: 1px solid #d2d2d2;
+  color: #0b5a72;
+  font-size: 1rem;
+  margin: 0 -20px 28px;
+  padding: 0 20px 2px;
+}
+
+.working-job-title span {
+  color: #0b5a72;
+  font-weight: 700;
+}
+
+.working-status-table {
+  border: 1px solid #c8c8c8;
+  border-collapse: collapse;
+  margin: 0 auto 28px;
+  width: min(100%, 1832px);
+}
+
+.working-status-table th,
+.working-status-table td {
+  border: 0;
+  color: #111111;
+  font-size: 0.88rem;
+  padding: 4px 6px;
+}
+
+.working-status-table tr:nth-child(odd) {
+  background: #eeeeee;
+}
+
+.working-status-table tr:nth-child(even) {
+  background: #dedede;
+}
+
+.working-status-table th {
+  font-weight: 400;
+  text-align: left;
+  width: 46%;
+}
+
+.working-status-table td {
+  font-weight: 400;
+}
+
+.working-request-id {
+  font-weight: 700 !important;
+}
+
+.working-message,
+.working-detail {
+  color: #111111;
+  font-size: 0.9rem;
+  margin: 0 auto 12px;
+  width: min(100%, 1832px);
+}
+
+.working-message strong {
+  font-weight: 700;
+}
+
+.working-detail {
+  color: #555555;
+}
+
+.working-footer {
+  margin-top: 8px;
+}
+
+.working-footer-bar {
+  background: #4a79ad;
+  color: #ffffff;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 14px 20px;
+  text-align: center;
+}
+
+.working-footer-body {
+  background: #245a8d;
+  color: #ffffff;
+  display: grid;
+  gap: 34px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding-bottom: 42px;
+  padding-top: 42px;
+}
+
+.working-footer-body strong,
+.working-footer-body span {
+  display: block;
+}
+
+.working-footer-body span {
+  margin-top: 8px;
+}
+
 @media (max-width: 720px) {
   .site-header__inner {
     align-items: flex-start;
@@ -394,5 +633,31 @@ pre {
 
   .panel {
     padding: 16px;
+  }
+
+  .working-ncbi-inner,
+  .working-nav-inner,
+  .working-footer-body {
+    width: min(100% - 20px, 1180px);
+  }
+
+  .working-nav-inner {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 0;
+  }
+
+  .working-links {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .working-status-table th {
+    width: 42%;
+  }
+
+  .working-footer-body {
+    grid-template-columns: 1fr;
   }
 }

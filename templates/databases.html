@@ -10,8 +10,8 @@
     <header class="site-header">
       <div class="site-header__inner">
         <div class="brand">
-          <span class="brand__name">Local BLAST+ Search</span>
-          <span class="brand__sub">Clinician-friendly local sequence search</span>
+          <span class="brand__name">COBLAST+</span>
+          <span class="brand__sub">Clinician-oriented BLAST+</span>
         </div>
         <nav class="nav">
           <a href="/">Run BLAST</a>
@@ -35,7 +35,13 @@
           <h2 class="panel__title">Registered Databases</h2>
         </div>
 
-        <form class="inline" method="post" action="/databases/verify-all">
+        <form
+          class="inline"
+          method="post"
+          action="/databases/verify-all"
+          data-wait-title="Verifying databases"
+          data-wait-messages="Checking registered database prefixes.|Running local BLAST+ database checks.|Updating database availability."
+        >
           <button type="submit" class="button-secondary">Verify All</button>
         </form>
 
@@ -69,7 +75,13 @@
                   <td>{{ database.last_verified_at }}</td>
                   <td>{{ database.db_prefix_path }}</td>
                   <td class="actions">
-                    <form class="inline" method="post" action="/databases/{{ database.id }}/verify">
+                    <form
+                      class="inline"
+                      method="post"
+                      action="/databases/{{ database.id }}/verify"
+                      data-wait-title="Verifying database"
+                      data-wait-messages="Checking the BLAST database prefix.|Reading database metadata.|Updating database status."
+                    >
                       <button type="submit" class="button-secondary">Verify</button>
                     </form>
                     <form class="inline" method="post" action="/databases/{{ database.id }}/remove">
@@ -90,7 +102,12 @@
       <details>
         <summary>Add Existing BLAST Database</summary>
         <div class="details-body">
-          <form method="post" action="/databases/register">
+          <form
+            method="post"
+            action="/databases/register"
+            data-wait-title="Adding database"
+            data-wait-messages="Checking the BLAST database prefix.|Reading database metadata.|Adding the database to the local registry."
+          >
             <div class="grid">
               <div class="field">
                 <label for="register_display_name">Display name</label>
@@ -134,7 +151,12 @@
       <details>
         <summary>Create BLAST Database From FASTA</summary>
         <div class="details-body">
-          <form method="post" action="/databases/create">
+          <form
+            method="post"
+            action="/databases/create"
+            data-wait-title="Creating BLAST database"
+            data-wait-messages="Starting makeblastdb.|Reading the source FASTA file.|Writing local BLAST index files.|Large FASTA files can take several minutes or longer.|Keep this window open until the database finishes."
+          >
             <div class="grid">
               <div class="field">
                 <label for="create_display_name">Display name</label>
@@ -175,5 +197,6 @@
         </div>
       </details>
     </main>
+    <script src="{{ url_for('static', filename='waiting.js') }}"></script>
   </body>
 </html>
