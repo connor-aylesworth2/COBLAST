@@ -251,10 +251,185 @@ The database-management page is available at:
 http://127.0.0.1:5000/databases
 ```
 
+If the launcher printed a different local address, use that same address with
+`/databases` added to the end.
+
 From that page, users can view registered databases, check availability, see
 database type, add an existing BLAST database, create a new BLAST database from
 FASTA with `makeblastdb`, and remove a database from the registry without
 deleting BLAST files.
+
+## Adding Clinician Databases
+
+In the intended local-use workflow, the clinician's sequencing data can be made
+into a local BLAST database. The clinician can then paste or upload one query
+sequence at a time, choose the compatible database, and run BLAST locally.
+
+Before adding data, decide whether the database is nucleotide or protein:
+
+- use `nucl` for DNA/RNA sequencing FASTA files and run `blastn` or `tblastn`
+- use `prot` for protein FASTA files and run `blastp` or `blastx`
+
+The input database file must be FASTA. If the sequencing data are still in
+FASTQ format, convert or export them to FASTA before using the current
+prototype.
+
+Useful field meanings:
+
+- `Display name`: the readable name shown in the database dropdown
+- `Database type`: `nucl` or `prot`; this controls which BLAST programs can use it
+- `Category`: broad grouping such as `human`, `viral`, `eToL-V`, `toy`, or `custom`
+- `Source FASTA path`: the local path to the FASTA file used to create the database
+- `BLAST database prefix path`: the path prefix passed to BLAST with `-db`
+- `Description`: short text shown to help users choose the right database
+
+The BLAST database prefix is not usually a single visible file. For example, if
+`makeblastdb` creates files named:
+
+```text
+C:\COBLAST_data\databases\patient_001_reads.nhr
+C:\COBLAST_data\databases\patient_001_reads.nin
+C:\COBLAST_data\databases\patient_001_reads.nsq
+```
+
+then the database prefix path is:
+
+```text
+C:\COBLAST_data\databases\patient_001_reads
+```
+
+### Create a New Database From a FASTA File
+
+Use this when the clinician has sequencing data as a FASTA file and wants this
+prototype to run `makeblastdb` for them.
+
+1. Save the FASTA file somewhere local and stable, for example:
+
+   ```text
+   C:\COBLAST_data\input\patient_001_reads.fasta
+   ```
+
+2. Start COBLAST and open the local browser address printed by the launcher.
+
+3. Open the database-management page:
+
+   ```text
+   http://127.0.0.1:5000/databases
+   ```
+
+4. Expand `Create BLAST Database From FASTA`.
+
+5. Enter a clear `Display name`, for example:
+
+   ```text
+   Patient 001 sequencing reads
+   ```
+
+6. Choose the correct `Database type`:
+
+   ```text
+   nucl
+   ```
+
+   Use `nucl` for DNA/RNA sequencing reads. Use `prot` only if the FASTA
+   contains protein sequences.
+
+7. Choose a `Category`, usually `human` or `custom` for clinician-provided
+   sequencing data.
+
+8. Paste the full FASTA path into `Source FASTA path`, for example:
+
+   ```text
+   C:\COBLAST_data\input\patient_001_reads.fasta
+   ```
+
+9. Leave `Output database prefix path` blank unless you want to choose the exact
+   database location. If left blank, COBLAST stores the database under its local
+   managed database folder.
+
+10. Add a short `Description`, for example:
+
+    ```text
+    Local nucleotide database created from patient 001 sequencing reads.
+    ```
+
+11. Select `Create Database`.
+
+12. Confirm that the new row appears under `Registered Databases` with status
+    `available`. If needed, select `Verify` for that database or `Verify All`.
+
+13. Return to `Run BLAST`, choose a compatible search type, choose the new
+    database from the dropdown, paste or upload the query FASTA, and select
+    `Run BLAST`.
+
+### Add an Existing BLAST Database
+
+Use this when a database has already been created outside COBLAST with
+`makeblastdb` or another BLAST+ database-preparation workflow.
+
+1. Locate the BLAST database files on the local machine.
+
+   Nucleotide databases usually include files such as:
+
+   ```text
+   .nhr
+   .nin
+   .nsq
+   ```
+
+   Protein databases usually include files such as:
+
+   ```text
+   .phr
+   .pin
+   .psq
+   ```
+
+2. Identify the database prefix path by removing those BLAST file extensions.
+   For example, these files:
+
+   ```text
+   D:\BLAST_Databases\viral_panel.nhr
+   D:\BLAST_Databases\viral_panel.nin
+   D:\BLAST_Databases\viral_panel.nsq
+   ```
+
+   should be registered with this prefix:
+
+   ```text
+   D:\BLAST_Databases\viral_panel
+   ```
+
+3. Start COBLAST and open the database-management page:
+
+   ```text
+   http://127.0.0.1:5000/databases
+   ```
+
+4. Expand `Add Existing BLAST Database`.
+
+5. Enter a `Display name`, choose the correct `Database type`, and choose a
+   `Category`.
+
+6. Paste the prefix into `BLAST database prefix path`. Do not paste the `.nin`,
+   `.nsq`, `.pin`, or `.psq` file path itself.
+
+7. If known, paste the original FASTA path into `Source FASTA path`. This field
+   is helpful for record keeping but is optional when registering an existing
+   database.
+
+8. Add a short `Description` that will help the clinician choose the database
+   later.
+
+9. Select `Add Database`.
+
+10. Confirm that the database status is `available`. If it is `missing` or
+    `invalid`, check that the prefix path is correct and that the database type
+    matches the files being registered.
+
+Removing a database from the database-management page removes it from the
+COBLAST registry only. It does not delete the FASTA file or the BLAST database
+files from disk.
 
 ## Current supported BLAST programs
 
