@@ -97,7 +97,7 @@ def run_blast_route():
             max_target_seqs=request.form.get("max_target_seqs") or None,
             word_size=request.form.get("word_size") or None,
             perc_identity=request.form.get("perc_identity") or None,
-            timeout_seconds=request.form.get("timeout_seconds") or 60,
+            timeout_seconds=request.form.get("timeout_seconds") or None,
         )
     except Exception as exc:
         return render_template("results.html", error=str(exc), result=None), 400

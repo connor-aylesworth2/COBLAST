@@ -83,6 +83,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
                   type="radio"
                   name="sensitivity_preset"
                   value="{{ preset }}"
+                  data-timeout-seconds="{{ config.timeout_seconds }}"
                   {% if preset == "standard" %}checked{% endif %}
                 >
                 <span class="preset-card">
@@ -132,7 +133,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
               </div>
               <div class="field">
                 <label for="timeout_seconds">Timeout seconds</label>
-                <input id="timeout_seconds" name="timeout_seconds" inputmode="numeric" value="60">
+                <input id="timeout_seconds" name="timeout_seconds" inputmode="numeric" placeholder="Preset default">
               </div>
             </div>
 
@@ -168,6 +169,8 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       const databaseTitle = document.getElementById("database_title");
       const taskSelect = document.getElementById("task");
       const percentIdentity = document.getElementById("perc_identity");
+      const timeoutSeconds = document.getElementById("timeout_seconds");
+      const presetInputs = document.querySelectorAll('input[name="sensitivity_preset"]');
 
       function updateDatabaseDetails() {
         const option = databaseSelect.selectedOptions[0];
@@ -217,13 +220,23 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         }
       }
 
+      function updateTimeoutPlaceholder() {
+        const selectedPreset = document.querySelector('input[name="sensitivity_preset"]:checked');
+        const presetTimeout = selectedPreset ? selectedPreset.dataset.timeoutSeconds : "600";
+        timeoutSeconds.placeholder = `Preset default: ${presetTimeout} seconds`;
+      }
+
       programSelect.addEventListener("change", () => {
         updateCompatibleDatabases();
         updateAdvancedAvailability();
       });
       databaseSelect.addEventListener("change", updateDatabaseDetails);
+      for (const presetInput of presetInputs) {
+        presetInput.addEventListener("change", updateTimeoutPlaceholder);
+      }
       updateCompatibleDatabases();
       updateAdvancedAvailability();
+      updateTimeoutPlaceholder();
     </script>
   </body>
 </html>

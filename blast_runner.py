@@ -70,24 +70,30 @@ BLAST_OUTPUT_FORMATS = {
     "tabular": "6 " + " ".join(OUTFMT6_FIELDS),
     "xml": "5",
 }
+FAST_TIMEOUT_SECONDS = 300
+DEFAULT_TIMEOUT_SECONDS = 600
+SENSITIVE_TIMEOUT_SECONDS = 900
 SENSITIVITY_PRESETS = {
     "standard": {
         "label": "Standard",
         "description": "Balanced default for routine sequence checks.",
         "evalue": "10",
         "max_target_seqs": "50",
+        "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
     },
     "sensitive": {
         "label": "Sensitive",
         "description": "Keeps weaker candidate matches for review.",
         "evalue": "100",
         "max_target_seqs": "100",
+        "timeout_seconds": SENSITIVE_TIMEOUT_SECONDS,
     },
     "fast": {
         "label": "Fast",
         "description": "Returns a smaller hit list for quick checks.",
         "evalue": "10",
         "max_target_seqs": "10",
+        "timeout_seconds": FAST_TIMEOUT_SECONDS,
     },
 }
 NUCLEOTIDE_ALPHABET = set("ACGTRYSWKMBDHVNU")
@@ -411,6 +417,13 @@ def parse_bounded_int(name: str, value: str | None, minimum: int, maximum: int) 
     return str(number)
 
 
+def preset_timeout_seconds(sensitivity_preset: str) -> str:
+    if sensitivity_preset not in SENSITIVITY_PRESETS:
+        allowed = ", ".join(SENSITIVITY_PRESETS)
+        raise ValueError(f"Unsupported sensitivity preset: {sensitivity_preset}. Choose one of: {allowed}.")
+    return str(SENSITIVITY_PRESETS[sensitivity_preset]["timeout_seconds"])
+
+
 def parse_percent_identity(program: str, value: str | None) -> str | None:
     cleaned = optional_text(value)
     if cleaned is None:
@@ -476,7 +489,7 @@ def run_blast(
     sequence: str,
     database: str | Path,
     program: str = "blastn",
-    timeout_seconds: int = 60,
+    timeout_seconds: int | str | None = None,
     task: str | None = None,
     output_format: str = "tabular",
     sensitivity_preset: str = "standard",
@@ -490,9 +503,12 @@ def run_blast(
         raise ValueError(f"Unsupported BLAST program: {program}. Choose one of: {allowed}.")
     if output_format not in BLAST_OUTPUT_FORMATS:
         raise ValueError(f"Unsupported BLAST output format: {output_format}")
+    timeout_value = str(timeout_seconds) if timeout_seconds is not None else None
+    if optional_text(timeout_value) is None:
+        timeout_value = preset_timeout_seconds(sensitivity_preset)
     timeout = parse_bounded_int(
         "Timeout",
-        str(timeout_seconds),
+        timeout_value,
         1,
         TIMEOUT_SECONDS_LIMIT,
     )
@@ -569,7 +585,7 @@ def run_blast(
 def run_blastn(
     sequence: str,
     database: str | Path,
-    timeout_seconds: int = 60,
+    timeout_seconds: int | str | None = None,
     task: str = "blastn-short",
     output_format: str = "tabular",
     sensitivity_preset: str = "standard",

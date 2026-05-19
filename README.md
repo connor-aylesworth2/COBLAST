@@ -239,6 +239,16 @@ Advanced settings are collapsed by default and include E-value, maximum target
 sequences, word size, BLASTN task, minimum percent identity, output parser
 format, timeout, and raw database details.
 
+Search timeout defaults are tied to the sensitivity preset so routine users do
+not need to open advanced settings for normal local searches:
+
+- `fast`: 300 seconds, or 5 minutes
+- `standard`: 600 seconds, or 10 minutes
+- `sensitive`: 900 seconds, or 15 minutes
+
+The advanced timeout field can still override these defaults for a specific
+run. The current maximum accepted timeout is 3,600 seconds, or 1 hour.
+
 The results table reports the top BLAST hits with query ID, subject ID, subject
 title, percent identity, alignment length, query coverage, E-value, and bit
 score.
