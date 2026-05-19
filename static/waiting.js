@@ -110,23 +110,6 @@
           <p class="working-message">This page will be automatically updated in <strong>2</strong> seconds until the local job is done.</p>
           <p class="working-detail">Starting local job.</p>
         </main>
-        <footer class="working-footer">
-          <div class="working-footer-bar">COBLAST+</div>
-          <div class="working-footer-body">
-            <div>
-              <strong>Local BLAST+ interface</strong>
-              <span>Runs on this computer only</span>
-            </div>
-            <div>
-              <strong>Privacy</strong>
-              <span>Remote BLAST disabled</span>
-            </div>
-            <div>
-              <strong>Job status</strong>
-              <span>Keep this window open</span>
-            </div>
-          </div>
-        </footer>
       </div>
     `;
     document.body.appendChild(overlay);
