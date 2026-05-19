@@ -411,8 +411,7 @@ pre {
 }
 
 .working-ncbi-inner,
-.working-nav-inner,
-.working-footer-body {
+.working-nav-inner {
   margin: 0 auto;
   width: min(1230px, calc(100% - 32px));
 }
@@ -420,32 +419,7 @@ pre {
 .working-ncbi-inner {
   align-items: center;
   display: flex;
-  gap: 12px;
   min-height: 98px;
-}
-
-.working-logo-mark {
-  align-items: center;
-  background: #ffffff;
-  border-radius: 5px;
-  color: #245a8d;
-  display: flex;
-  font-size: 1.45rem;
-  font-weight: 700;
-  height: 48px;
-  justify-content: center;
-  position: relative;
-  width: 72px;
-}
-
-.working-logo-mark::after {
-  border-bottom: 24px solid transparent;
-  border-left: 12px solid #ffffff;
-  border-top: 24px solid transparent;
-  content: "";
-  position: absolute;
-  right: -12px;
-  top: 0;
 }
 
 .working-logo-text {
@@ -507,25 +481,11 @@ pre {
   padding: 0 20px 48px;
 }
 
-.working-format-title {
-  color: #111111;
-  font-size: 1rem;
-  margin: 0;
-  padding: 0 0 6px;
-  text-align: center;
-}
-
-.working-format-link {
-  color: #004b8d;
-  font-size: 0.9rem;
-  margin: 18px 0 22px;
-}
-
 .working-job-title {
   border-bottom: 1px solid #d2d2d2;
   color: #0b5a72;
   font-size: 1rem;
-  margin: 0 -20px 28px;
+  margin: 28px -20px 28px;
   padding: 0 20px 2px;
 }
 
@@ -587,39 +547,6 @@ pre {
   color: #555555;
 }
 
-.working-footer {
-  margin-top: 8px;
-}
-
-.working-footer-bar {
-  background: #4a79ad;
-  color: #ffffff;
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  padding: 14px 20px;
-  text-align: center;
-}
-
-.working-footer-body {
-  background: #245a8d;
-  color: #ffffff;
-  display: grid;
-  gap: 34px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  padding-bottom: 42px;
-  padding-top: 42px;
-}
-
-.working-footer-body strong,
-.working-footer-body span {
-  display: block;
-}
-
-.working-footer-body span {
-  margin-top: 8px;
-}
-
 @media (max-width: 720px) {
   .site-header__inner {
     align-items: flex-start;
@@ -636,8 +563,7 @@ pre {
   }
 
   .working-ncbi-inner,
-  .working-nav-inner,
-  .working-footer-body {
+  .working-nav-inner {
     width: min(100% - 20px, 1180px);
   }
 
@@ -657,7 +583,4 @@ pre {
     width: 42%;
   }
 
-  .working-footer-body {
-    grid-template-columns: 1fr;
-  }
 }

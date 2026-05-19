@@ -57,7 +57,6 @@
       <div class="working-page">
         <header class="working-ncbi-header">
           <div class="working-ncbi-inner">
-            <div class="working-logo-mark">CO</div>
             <div class="working-logo-text">
               <strong>COBLAST+</strong>
               <span>Clinician-oriented BLAST+</span>
@@ -78,8 +77,6 @@
           </div>
         </div>
         <main class="working-status-page">
-          <h2 class="working-format-title">Format Request Status</h2>
-          <p class="working-format-link">[Formatting options]</p>
           <h3 class="working-job-title">Job Title: <span>Working</span></h3>
 
           <table class="working-status-table">
@@ -110,23 +107,6 @@
           <p class="working-message">This page will be automatically updated in <strong>2</strong> seconds until the local job is done.</p>
           <p class="working-detail">Starting local job.</p>
         </main>
-        <footer class="working-footer">
-          <div class="working-footer-bar">COBLAST+</div>
-          <div class="working-footer-body">
-            <div>
-              <strong>Local BLAST+ interface</strong>
-              <span>Runs on this computer only</span>
-            </div>
-            <div>
-              <strong>Privacy</strong>
-              <span>Remote BLAST disabled</span>
-            </div>
-            <div>
-              <strong>Job status</strong>
-              <span>Keep this window open</span>
-            </div>
-          </div>
-        </footer>
       </div>
     `;
     document.body.appendChild(overlay);
