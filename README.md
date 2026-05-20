@@ -1,17 +1,53 @@
 # Local Flask + BLAST+ Prototype
 
-This is a minimal local Flask wrapper designed to work with pre-installed NCBI BLAST+ executables.
-It validates FASTA input with Biopython, runs allowlisted BLAST+ programs through
-`subprocess`, and parses BLAST tabular/XML output with `Bio.SearchIO`.
-The browser interface uses an NCBI-inspired colour palette and keeps routine
-clinician-facing controls separate from advanced BLAST parameters.
+## Tester Quick Start: Use the Release Folder First
 
-## Quick Start
+Most Windows testers should start with the files in the `release` subdirectory,
+not the source-code setup below. The release folder contains:
+
+```text
+release\COBLAST.exe
+release\README.md
+```
+
+Download or copy the `release` folder, read `release\README.md`, then run:
+
+```powershell
+.\COBLAST.exe
+```
+
+The standalone Windows executable bundles the local Flask interface, Python
+dependencies, templates, static assets, toy sample data, and the required NCBI
+BLAST+ executables. It starts a local server bound to `127.0.0.1`, opens the
+browser, and stores runtime files beside the executable in `COBLAST_data`.
+
+Because this is an unsigned research prototype executable, Windows SmartScreen
+or antivirus software may warn before first launch. The `.exe` is intended for
+agreed Windows prototype testing only. It is not the correct entry point for
+Linux or macOS testing; those environments should use the source-code workflow
+below with a local BLAST+ installation.
+
+## What COBLAST Does
+
+COBLAST is a minimal local Flask wrapper for NCBI BLAST+. It validates FASTA
+input with Biopython, runs allowlisted BLAST+ programs through `subprocess`, and
+parses BLAST tabular/XML output with `Bio.SearchIO`. The browser interface uses
+an NCBI-inspired colour palette and keeps routine clinician-facing controls
+separate from advanced BLAST parameters.
+
+The Windows release executable bundles the required BLAST+ executables. When
+running from source, COBLAST expects compatible NCBI BLAST+ command-line tools
+to be installed locally or supplied with `BLAST_BIN`.
+
+## Source-code Quick Start
+
+Use this section if you are developing COBLAST, testing from source, or running
+on Linux/macOS.
 
 The easiest way to set up and launch the local interface is:
 
 ```powershell
-cd 'C:\Projects\blast_flask_app'
+cd 'C:\path\to\COBLAST-'
 python run_COBLAST.py
 ```
 
@@ -75,7 +111,7 @@ software may warn before first launch.
 Build the executable from a clean checkout on Windows:
 
 ```powershell
-cd 'C:\Projects\blast_flask_app'
+cd 'C:\path\to\COBLAST-'
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
@@ -131,7 +167,7 @@ Expected output includes `blastn: 2.17.0+`.
 Install Python first if `python --version` does not work in your own PowerShell.
 
 ```powershell
-cd 'C:\Projects\blast_flask_app'
+cd 'C:\path\to\COBLAST-'
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
