@@ -8,6 +8,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import webbrowser
 
@@ -142,6 +143,34 @@ def choose_available_port(requested_port: int) -> int:
         f"Could not find an available localhost port near {requested_port}. "
         "Close any existing COBLAST/Flask windows and try again."
     )
+
+
+def open_browser_url(url: str) -> None:
+    try:
+        opened = webbrowser.open(url)
+    except Exception as exc:
+        print(
+            f"  Could not open the browser automatically: {exc}\n"
+            f"  Open this address manually instead: {url}",
+            flush=True,
+        )
+        return
+
+    if not opened:
+        print(
+            "  Could not open the browser automatically.\n"
+            f"  Open this address manually instead: {url}",
+            flush=True,
+        )
+
+
+def open_browser_later(url: str, delay_seconds: float = 2.0) -> None:
+    def opener() -> None:
+        time.sleep(delay_seconds)
+        open_browser_url(url)
+
+    thread = threading.Thread(target=opener, daemon=True)
+    thread.start()
 
 
 def require_supported_python() -> None:
@@ -316,13 +345,27 @@ def verify_blast(blast_bin: Path, env: dict[str, str]) -> None:
             f"BLAST+ bin directory is missing required tool(s): {', '.join(missing)}"
         )
 
-    completed = subprocess.run(
-        [str(blast_bin / tool_name("blastn")), "-version"],
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    blastn_path = blast_bin / tool_name("blastn")
+    try:
+        completed = subprocess.run(
+            [str(blastn_path), "-version"],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise LauncherError(
+            "Windows could not run the BLAST+ executable bundled with COBLAST.\n"
+            f"Tried: {blastn_path}\n\n"
+            f"Original error: {exc}\n\n"
+            "Common causes are antivirus quarantine, Windows SmartScreen, AppLocker, "
+            "running from inside a ZIP file, or a protected/network-synced folder. "
+            "Move the release folder to a normal local folder such as C:\\COBLAST, "
+            "extract it fully, right-click COBLAST.exe > Properties > Unblock if "
+            "that checkbox is present, then run again."
+        ) from exc
+
     output = (completed.stdout or completed.stderr).strip()
     if completed.returncode != 0:
         raise LauncherError(f"Could not run blastn -version:\n{output}")
@@ -429,9 +472,8 @@ def start_app(
     process = subprocess.Popen([str(python_path), str(app)], env=env, cwd=str(project_root()))
     try:
         if open_browser:
-            time.sleep(2)
-            webbrowser.open(url)
-        print("\nCOBLAST is running. Press Ctrl+C in this terminal to stop it.")
+            open_browser_later(url)
+        print(f"\nCOBLAST is running at {url}. Press Ctrl+C in this terminal to stop it.")
         process.wait()
     except KeyboardInterrupt:
         print("\nStopping COBLAST...")
@@ -462,10 +504,9 @@ def start_standalone_app(
     from config import FLASK_HOST, flask_port
 
     if open_browser:
-        time.sleep(2)
-        webbrowser.open(url)
+        open_browser_later(url)
 
-    print("\nCOBLAST is running. Press Ctrl+C in this terminal to stop it.")
+    print(f"\nCOBLAST is running at {url}. Press Ctrl+C in this terminal to stop it.")
     flask_app.run(host=FLASK_HOST, port=flask_port(), debug=False)
 
 
@@ -581,6 +622,19 @@ def main() -> int:
             "  - For the .exe, pass --python if Windows finds the wrong Python.\n"
             "  - Confirm BLAST+ is installed and pass --blast-bin if needed.\n"
             "  - If dependency installation fails, check your internet connection and rerun.",
+            file=sys.stderr,
+        )
+        return 1
+    except OSError as exc:
+        print(f"\n{APP_NAME} could not start because Windows denied access:\n{exc}", file=sys.stderr)
+        print(
+            "\nTroubleshooting hints:\n"
+            "  - Extract the release folder fully before running COBLAST.exe.\n"
+            "  - Move the release folder to a local folder such as C:\\COBLAST.\n"
+            "  - Right-click COBLAST.exe > Properties > Unblock, if Windows shows that checkbox.\n"
+            "  - Rerun from PowerShell with: .\\COBLAST.exe --check-only --skip-smoke --no-browser\n"
+            "  - If your organization manages the computer, ask IT whether unsigned apps or "
+            "temporary bundled executables are blocked.",
             file=sys.stderr,
         )
         return 1

@@ -27,6 +27,23 @@ agreed Windows prototype testing only. It is not the correct entry point for
 Linux or macOS testing; those environments should use the source-code workflow
 below with a local BLAST+ installation.
 
+If Windows reports that it cannot access the specified device, path, or file,
+extract the release folder fully, move it to a simple local folder such as
+`C:\COBLAST`, right-click `COBLAST.exe` > Properties > Unblock if available,
+and run this diagnostic command from PowerShell:
+
+```powershell
+.\COBLAST.exe --check-only --skip-smoke --no-browser
+```
+
+If that diagnostic succeeds but the browser launch still fails, run:
+
+```powershell
+.\COBLAST.exe --skip-smoke --no-browser
+```
+
+Then open the printed `http://127.0.0.1:...` address manually.
+
 ## What COBLAST Does
 
 COBLAST is a minimal local Flask wrapper for NCBI BLAST+. It validates FASTA
@@ -250,6 +267,29 @@ If the browser shows an error looking for BLAST+ under `C:\Program Files\NCBI`
 after launching the standalone `.exe`, close older COBLAST/Flask terminal
 windows and open the address printed by the newest `.exe` window. That usually
 means the browser was still pointed at a stale local server on port `5000`.
+
+If Windows says it cannot access the specified device, path, or file when the
+`.exe` starts, the most common causes are:
+
+- the `release` folder is still inside a ZIP preview
+- the executable is blocked by Windows because it came from the internet
+- antivirus or Windows SmartScreen has quarantined the unsigned prototype
+- an organization-managed device blocks unsigned apps or bundled executables
+- the app is being run from OneDrive, SharePoint, Teams, Outlook, a network
+  share, or another protected location
+
+Move the extracted `release` folder to `C:\COBLAST`, unblock the executable
+from Properties if that option appears, and run:
+
+```powershell
+.\COBLAST.exe --check-only --skip-smoke --no-browser
+```
+
+If the diagnostic names a blocked path under a temporary `_MEI...` folder, then
+Windows is likely blocking PyInstaller's bundled BLAST+ executables after
+COBLAST extracts them. That usually requires whitelisting the prototype,
+running on a less restricted test machine, or moving to a signed installer or
+one-folder distribution for later testing.
 
 The app also seeds a local SQLite registry and managed toy BLAST databases under:
 
