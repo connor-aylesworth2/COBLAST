@@ -167,6 +167,66 @@ PyInstaller build folders and generated executables are ignored by Git by
 default, because the bundled executable may exceed GitHub's normal per-file
 repository size limit.
 
+## Updating or Removing the Windows Test Build
+
+The current Windows test build does not use a formal installer. A tester's
+local COBLAST installation is simply the folder containing `COBLAST.exe` plus
+the persistent `COBLAST_data` folder beside it.
+
+To install a newer test version while keeping old registered databases and
+saved results:
+
+1. Close the COBLAST browser tab and the COBLAST terminal window.
+2. Find the old folder that contains `COBLAST.exe`.
+3. Back up the old `COBLAST_data` folder before replacing anything:
+
+```powershell
+Copy-Item -Recurse .\COBLAST_data .\COBLAST_data_backup_2026-05-20
+```
+
+4. Download and fully extract the new `release` folder.
+5. Move or copy the old `COBLAST_data` folder so it sits beside the new
+   `COBLAST.exe`:
+
+```text
+C:\COBLAST\COBLAST.exe
+C:\COBLAST\COBLAST_data\
+```
+
+6. Run a quick diagnostic from the new folder:
+
+```powershell
+.\COBLAST.exe --check-only --skip-smoke --no-browser
+```
+
+7. Start the new version:
+
+```powershell
+.\COBLAST.exe
+```
+
+If databases were created inside COBLAST's managed data folder, keeping
+`COBLAST_data` should preserve the registry, generated BLAST database files,
+and saved result exports. If databases were registered from external locations,
+those external FASTA or BLAST database files must remain at the same paths, or
+the database registry may show them as `missing`. Use the database-management
+page to verify databases after updating.
+
+If a tester used `COBLAST_DATA_DIR` to store data somewhere else, keep that
+custom data folder and set `COBLAST_DATA_DIR` again before launching the new
+version.
+
+To remove an old test version after confirming the new one works:
+
+1. Back up `COBLAST_data` if any old databases or results should be retained.
+2. Delete the old folder containing the old `COBLAST.exe`.
+3. Delete the old `COBLAST_data` folder only if those databases and results are
+   no longer needed.
+
+COBLAST does not install Windows services, browser extensions, or system-wide
+BLAST settings. Uninstalling the test build is therefore folder removal unless
+the tester manually created shortcuts or environment variables.
+
 ## Manual Setup
 
 Use these steps if you need to debug the installation manually.
