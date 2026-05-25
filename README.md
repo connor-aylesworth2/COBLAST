@@ -411,6 +411,75 @@ database type, add an existing BLAST database, create a new BLAST database from
 FASTA with `makeblastdb`, and remove a database from the registry without
 deleting BLAST files.
 
+## SRA Pilot and Batch Workflow
+
+The prototype now includes two stepwise tools for exploring patient SRA-scale
+questions locally before choosing a larger storage or compute strategy.
+
+Open the SRA workbench at:
+
+```text
+http://127.0.0.1:5000/sra
+```
+
+The workbench scans local SRA project folders from:
+
+- `COBLAST_SRA_DIR`, if set
+- `SRA_DATA_DIR`, if set
+- `COBLAST_data\sra` in standalone/runtime-data mode
+- a sibling `SRA_data` folder beside the source checkout, when present
+
+For a clinician-supplied SRA, the current local-first prototype assumes the SRA
+or derived FASTA stays in a stable local folder or controlled local data drive.
+COBLAST does not upload patient libraries to NCBI, Galaxy, RNASEQ.COM, or a
+commercial server. Those remain separate deployment decisions.
+
+The SRA workbench can:
+
+- list local `.sra`, FASTA, and BLAST database artifacts
+- register an existing SRA-derived BLAST database prefix
+- create a small pilot BLAST database from the first N records of an existing
+  FASTA file
+- use SRA Toolkit `fastq-dump` to convert a limited number of spots from a local
+  `.sra` file into a pilot FASTA, when `SRA_TOOLKIT_BIN` is set or a sibling
+  `sratoolkit` folder is present
+
+The intended first simulation is deliberately small:
+
+1. Put one SRA project under a scanned folder such as:
+
+   ```text
+   C:\COBLAST_data\sra\patient_001\patient_001.sra
+   ```
+
+2. If a full FASTA already exists, use `Create Pilot DB` with a small record
+   count such as `1000`.
+
+3. If only `.sra` exists, use `Create Pilot FASTA` first, then create a pilot
+   database from the generated FASTA after the page refreshes.
+
+4. Run a normal BLAST query against that pilot database.
+
+5. Compare the displayed runtime estimate with the observed runtime.
+
+For many patients, open the batch BLAST page at:
+
+```text
+http://127.0.0.1:5000/batch-blast
+```
+
+Batch BLAST runs one query against multiple selected registered databases
+sequentially. This is the prototype path for testing the "100 patients" problem:
+prepare or register each patient as a local nucleotide BLAST database, select
+the compatible databases, and run the batch. The page shows a rough size-based
+runtime range before launch, saves individual per-database results, and exports
+the aggregate hit table as CSV or TSV.
+
+The runtime estimate is only a planning aid. Real runtime depends on query
+length, database size, BLAST program, sensitivity settings, disk speed, CPU, and
+sequence composition. Use small local pilots to calibrate expectations before
+running full SRA-derived databases.
+
 ## Adding Clinician Databases
 
 In the intended local-use workflow, the clinician's sequencing data can be made

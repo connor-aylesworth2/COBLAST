@@ -26,7 +26,7 @@ MANAGED_DATABASE_DIR = INSTANCE_DIR / "databases"
 SAMPLE_DATA_DIR = resource_path("sample_data")
 
 DB_TYPES = {"nucl", "prot"}
-DB_CATEGORIES = {"viral", "human", "eToL-V", "toy", "custom"}
+DB_CATEGORIES = {"viral", "human", "eToL-V", "toy", "sra", "custom"}
 DB_STATUSES = {"available", "missing", "invalid"}
 
 

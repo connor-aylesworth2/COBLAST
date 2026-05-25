@@ -21,8 +21,24 @@ from database_registry import (
     remove_database,
     verify_database,
 )
-from result_store import load_result, result_rows_as_delimited, save_result
+from result_store import (
+    batch_rows_as_delimited,
+    load_batch_result,
+    load_result,
+    result_rows_as_delimited,
+    save_batch_result,
+    save_result,
+)
 from config import FLASK_HOST, flask_port, resource_path, resource_root
+from runtime_estimator import database_storage_bytes, format_bytes, format_duration
+from sra_workflow import (
+    configured_sra_roots,
+    convert_sra_to_pilot_fasta,
+    create_pilot_database_from_fasta,
+    discover_sra_projects,
+    register_sra_blast_database,
+    sra_toolkit_bin,
+)
 
 
 app = Flask(
@@ -43,6 +59,31 @@ def redirect_to_databases(message: str = "", error: str = ""):
     if error:
         params["error"] = error
     return redirect(url_for("databases_page", **params))
+
+
+def redirect_to_sra(message: str = "", error: str = ""):
+    """Send users back to the SRA workbench with optional status text."""
+    params = {}
+    if message:
+        params["message"] = message
+    if error:
+        params["error"] = error
+    return redirect(url_for("sra_page", **params))
+
+
+def database_options():
+    """Attach local storage-size metadata to registered database rows."""
+    options = []
+    for database in list_databases():
+        storage_bytes = database_storage_bytes(database.db_prefix_path)
+        options.append(
+            {
+                "database": database,
+                "storage_bytes": storage_bytes,
+                "storage_label": format_bytes(storage_bytes),
+            }
+        )
+    return options
 
 
 @app.get("/")
@@ -117,11 +158,24 @@ def run_blast_route():
             timeout_seconds=request.form.get("timeout_seconds") or None,
         )
     except Exception as exc:
-        return render_template("results.html", error=str(exc), result=None), 400
+        return render_template(
+            "results.html",
+            error=str(exc),
+            result=None,
+            format_bytes=format_bytes,
+            format_duration=format_duration,
+        ), 400
 
     # Persist a JSON copy so the results page can offer CSV/TSV downloads.
     run_id = save_result(result)
-    return render_template("results.html", error=None, result=result, run_id=run_id)
+    return render_template(
+        "results.html",
+        error=None,
+        result=result,
+        run_id=run_id,
+        format_bytes=format_bytes,
+        format_duration=format_duration,
+    )
 
 
 @app.get("/results/<run_id>.<file_format>")
@@ -146,6 +200,172 @@ def download_results(run_id: str, file_format: str):
     )
 
 
+@app.get("/batch-results/<batch_id>.<file_format>")
+def download_batch_results(batch_id: str, file_format: str):
+    """Download saved batch results as CSV or TSV."""
+    if file_format not in {"csv", "tsv"}:
+        abort(404)
+
+    try:
+        batch_data = load_batch_result(batch_id)
+    except FileNotFoundError:
+        abort(404)
+
+    delimiter = "," if file_format == "csv" else "\t"
+    body = batch_rows_as_delimited(batch_data, delimiter=delimiter)
+    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
+    filename = f"batch_blast_results_{batch_id}.{file_format}"
+    return Response(
+        body,
+        mimetype=mimetype,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.get("/batch-blast")
+def batch_blast_page():
+    """Render the multi-database BLAST form."""
+    try:
+        ensure_demo_databases()
+        options = database_options()
+        registry_error = None
+    except Exception as exc:
+        options = []
+        registry_error = str(exc)
+
+    return render_template(
+        "batch.html",
+        blast_programs=BLAST_PROGRAMS,
+        sensitivity_presets=SENSITIVITY_PRESETS,
+        database_options=options,
+        error=request.args.get("error") or registry_error,
+        message=request.args.get("message", ""),
+    )
+
+
+@app.post("/batch-blast")
+def run_batch_blast_route():
+    """Run one query against multiple registered local databases sequentially."""
+    sequence = request.form.get("sequence", "")
+    uploaded_query = request.files.get("sequence_file")
+    if uploaded_query and uploaded_query.filename:
+        sequence = uploaded_query.read().decode("utf-8-sig")
+
+    program = request.form.get("program", "blastn")
+    database_ids = request.form.getlist("database_ids")
+    output_format = request.form.get("output_format", "tabular")
+    sensitivity_preset = request.form.get("sensitivity_preset", "standard")
+
+    if not database_ids:
+        return render_template(
+            "batch.html",
+            blast_programs=BLAST_PROGRAMS,
+            sensitivity_presets=SENSITIVITY_PRESETS,
+            database_options=database_options(),
+            error="Choose at least one database for the batch run.",
+            message="",
+        ), 400
+
+    database_results = []
+    total_runtime_seconds = 0.0
+    total_hits = 0
+    query_count = 0
+    query_total_length = 0
+
+    for raw_database_id in database_ids:
+        try:
+            database = get_database(int(raw_database_id))
+            required_db_type = str(BLAST_PROGRAMS[program]["db_type"])
+            if database.db_type != required_db_type:
+                raise ValueError(
+                    f"{database.display_name} is {database.db_type}, but {program} requires {required_db_type}."
+                )
+            if database.status != "available":
+                raise ValueError(f"{database.display_name} is marked as {database.status}.")
+
+            result = run_blast(
+                sequence=sequence,
+                database=database.db_prefix_path,
+                program=program,
+                output_format=output_format,
+                sensitivity_preset=sensitivity_preset,
+                task=request.form.get("task") or None,
+                evalue=request.form.get("evalue") or None,
+                max_target_seqs=request.form.get("max_target_seqs") or None,
+                word_size=request.form.get("word_size") or None,
+                perc_identity=request.form.get("perc_identity") or None,
+                timeout_seconds=request.form.get("timeout_seconds") or None,
+            )
+            run_id = save_result(result)
+            total_runtime_seconds += result.runtime_seconds
+            total_hits += len(result.hits)
+            query_count = result.query_count
+            query_total_length = result.query_total_length
+            database_results.append(
+                {
+                    "database_id": database.id,
+                    "display_name": database.display_name,
+                    "db_prefix_path": database.db_prefix_path,
+                    "database_total_bytes": result.database_total_bytes,
+                    "database_size_label": format_bytes(result.database_total_bytes),
+                    "returncode": result.returncode,
+                    "runtime_seconds": result.runtime_seconds,
+                    "estimated_runtime_seconds": result.estimated_runtime_seconds,
+                    "estimated_runtime_low_seconds": result.estimated_runtime_low_seconds,
+                    "estimated_runtime_high_seconds": result.estimated_runtime_high_seconds,
+                    "estimated_runtime_note": result.estimated_runtime_note,
+                    "hit_count": len(result.hits),
+                    "hits": result.hits,
+                    "run_id": run_id,
+                    "error": "",
+                }
+            )
+        except Exception as exc:
+            display_name = f"Database {raw_database_id}"
+            try:
+                display_name = get_database(int(raw_database_id)).display_name
+            except Exception:
+                pass
+            database_results.append(
+                {
+                    "database_id": raw_database_id,
+                    "display_name": display_name,
+                    "db_prefix_path": "",
+                    "database_total_bytes": 0,
+                    "database_size_label": "unknown",
+                    "returncode": "",
+                    "runtime_seconds": "",
+                    "estimated_runtime_seconds": None,
+                    "estimated_runtime_low_seconds": None,
+                    "estimated_runtime_high_seconds": None,
+                    "estimated_runtime_note": "",
+                    "hit_count": 0,
+                    "hits": [],
+                    "run_id": "",
+                    "error": str(exc),
+                }
+            )
+
+    payload = {
+        "program": program,
+        "output_format": output_format,
+        "sensitivity_preset": sensitivity_preset,
+        "query_count": query_count,
+        "query_total_length": query_total_length,
+        "total_runtime_seconds": total_runtime_seconds,
+        "total_hits": total_hits,
+        "database_results": database_results,
+    }
+    batch_id = save_batch_result(payload)
+    payload["batch_id"] = batch_id
+    return render_template(
+        "batch_results.html",
+        batch=payload,
+        error=None,
+        format_duration=format_duration,
+    )
+
+
 @app.get("/databases")
 def databases_page():
     """Render the database registry and database-management forms."""
@@ -165,6 +385,70 @@ def databases_page():
         error=request.args.get("error") or registry_error,
         message=request.args.get("message", ""),
     )
+
+
+@app.get("/sra")
+def sra_page():
+    """Render local SRA discovery and pilot-database controls."""
+    try:
+        projects = discover_sra_projects()
+        error = request.args.get("error", "")
+    except Exception as exc:
+        projects = []
+        error = request.args.get("error") or str(exc)
+
+    toolkit_bin = sra_toolkit_bin()
+    return render_template(
+        "sra.html",
+        projects=projects,
+        sra_roots=[str(path) for path in configured_sra_roots()],
+        sra_toolkit_bin=str(toolkit_bin) if toolkit_bin else "",
+        message=request.args.get("message", ""),
+        error=error,
+    )
+
+
+@app.post("/sra/register-db")
+def register_sra_database_route():
+    """Register an existing SRA-derived BLAST database prefix."""
+    try:
+        database = register_sra_blast_database(
+            accession=request.form.get("accession", ""),
+            db_prefix_path=request.form.get("db_prefix_path", ""),
+        )
+    except Exception as exc:
+        return redirect_to_sra(error=str(exc))
+    return redirect_to_sra(message=f"Registered {database.display_name}.")
+
+
+@app.post("/sra/create-pilot")
+def create_sra_pilot_route():
+    """Create a small sampled BLAST database from an existing SRA FASTA file."""
+    try:
+        max_records = int(request.form.get("max_records", "1000"))
+        database = create_pilot_database_from_fasta(
+            accession=request.form.get("accession", ""),
+            source_fasta_path=request.form.get("source_fasta_path", ""),
+            max_records=max_records,
+        )
+    except Exception as exc:
+        return redirect_to_sra(error=str(exc))
+    return redirect_to_sra(message=f"Created pilot database {database.display_name}.")
+
+
+@app.post("/sra/convert-pilot")
+def convert_sra_pilot_route():
+    """Convert a limited number of spots from local SRA to pilot FASTA."""
+    try:
+        max_spots = int(request.form.get("max_spots", "1000"))
+        fasta_path = convert_sra_to_pilot_fasta(
+            accession=request.form.get("accession", ""),
+            sra_path=request.form.get("sra_path", ""),
+            max_spots=max_spots,
+        )
+    except Exception as exc:
+        return redirect_to_sra(error=str(exc))
+    return redirect_to_sra(message=f"Created pilot FASTA: {fasta_path}")
 
 
 @app.post("/databases/register")

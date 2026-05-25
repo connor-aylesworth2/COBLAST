@@ -17,6 +17,7 @@ from time import perf_counter
 from typing import Any
 
 from config import DISALLOWED_BLAST_OPTIONS, REMOTE_BLAST_ENABLED, blast_exe
+from runtime_estimator import database_storage_bytes, estimate_blast_runtime_seconds
 
 try:
     from Bio import SearchIO, SeqIO
@@ -145,9 +146,15 @@ class BlastResult:
     stdout: str
     stderr: str
     command: list[str]
+    database_path: str
+    database_total_bytes: int
     output_format: str
     program: str
     runtime_seconds: float
+    estimated_runtime_seconds: float | None
+    estimated_runtime_low_seconds: float | None
+    estimated_runtime_high_seconds: float | None
+    estimated_runtime_note: str
     query_type: str
     query_count: int
     query_total_length: int
@@ -588,6 +595,13 @@ def run_blast(
         expected_type=str(program_config["query_type"]),
     )
     db_path = str(database)
+    database_total_bytes = database_storage_bytes(db_path)
+    runtime_estimate = estimate_blast_runtime_seconds(
+        program=program,
+        query_total_length=query.total_length,
+        database_bytes=database_total_bytes,
+        sensitivity_preset=sensitivity_preset,
+    )
 
     with tempfile.TemporaryDirectory(prefix="blast_flask_") as tmpdir:
         query_path = Path(tmpdir) / "query.fasta"
@@ -630,9 +644,15 @@ def run_blast(
         stdout=completed.stdout,
         stderr=completed.stderr,
         command=cmd,
+        database_path=db_path,
+        database_total_bytes=database_total_bytes,
         output_format=output_format,
         program=program,
         runtime_seconds=runtime_seconds,
+        estimated_runtime_seconds=runtime_estimate.seconds if runtime_estimate else None,
+        estimated_runtime_low_seconds=runtime_estimate.low_seconds if runtime_estimate else None,
+        estimated_runtime_high_seconds=runtime_estimate.high_seconds if runtime_estimate else None,
+        estimated_runtime_note=runtime_estimate.note if runtime_estimate else "",
         query_type=query.sequence_type,
         query_count=len(query.records),
         query_total_length=query.total_length,

@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Batch BLAST</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <div class="brand">
+          <span class="brand__name">COBLAST+</span>
+          <span class="brand__sub">Clinician-oriented BLAST+</span>
+        </div>
+        <nav class="nav">
+          <a href="/">Run BLAST</a>
+          <a href="/batch-blast">Batch BLAST</a>
+          <a href="/sra">SRA Workbench</a>
+          <a href="/databases">Databases</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="page">
+      <h1 class="page-title">Batch BLAST</h1>
+
+      {% if message %}
+        <p class="message">{{ message }}</p>
+      {% endif %}
+      {% if error %}
+        <p class="error">{{ error }}</p>
+      {% endif %}
+
+      <form
+        class="panel"
+        method="post"
+        action="/batch-blast"
+        enctype="multipart/form-data"
+        data-wait-title="Running batch BLAST"
+        data-wait-messages="Preparing the shared query FASTA.|Running selected databases one at a time.|Saving per-database results.|Aggregating hits for export.|Large SRA-derived databases can take a long time."
+      >
+        <div class="panel__header">
+          <h2 class="panel__title">Batch Setup</h2>
+        </div>
+
+        <div class="field">
+          <label for="sequence">Query input</label>
+          <textarea id="sequence" name="sequence">&gt;query
+ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTA</textarea>
+        </div>
+
+        <div class="field">
+          <label for="sequence_file">Query upload</label>
+          <input class="file-input" id="sequence_file" name="sequence_file" type="file" accept=".fa,.fasta,.fna,.faa,.txt">
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label for="program">Search type</label>
+            <select id="program" name="program">
+              {% for program, config in blast_programs.items() %}
+                <option value="{{ program }}">{{ config.label }} - {{ config.description }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="field">
+            <span class="field-label">Batch estimate</span>
+            <div class="summary-item">
+              <span id="batch_estimate_count">0 selected</span>
+              <strong id="batch_estimate_time">unknown</strong>
+              <span id="batch_estimate_size">0 B</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Sensitivity preset</span>
+          <div class="preset-group">
+            {% for preset, config in sensitivity_presets.items() %}
+              <label class="preset-option">
+                <input
+                  type="radio"
+                  name="sensitivity_preset"
+                  value="{{ preset }}"
+                  data-timeout-seconds="{{ config.timeout_seconds }}"
+                  {% if preset == "standard" %}checked{% endif %}
+                >
+                <span class="preset-card">
+                  <strong>{{ config.label }}</strong>
+                  <span class="muted">{{ config.description }}</span>
+                </span>
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <section class="database-picker">
+          <div class="section-header">
+            <h2 class="section-title">Databases</h2>
+            <div class="button-row button-row--compact">
+              <button type="button" class="button-secondary" id="select_compatible">Select compatible</button>
+              <button type="button" class="button-secondary" id="clear_databases">Clear</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Select</th>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Size</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for option in database_options %}
+                  <tr
+                    class="database-row"
+                    data-db-type="{{ option.database.db_type }}"
+                    data-storage-bytes="{{ option.storage_bytes }}"
+                  >
+                    <td>
+                      <input
+                        class="database-checkbox"
+                        type="checkbox"
+                        name="database_ids"
+                        value="{{ option.database.id }}"
+                        {% if option.database.status != "available" %}disabled{% endif %}
+                      >
+                    </td>
+                    <td>
+                      <strong>{{ option.database.display_name }}</strong>
+                      {% if option.database.description %}
+                        <br><span class="muted">{{ option.database.description }}</span>
+                      {% endif %}
+                    </td>
+                    <td>{{ option.database.db_type }}</td>
+                    <td class="status-{{ option.database.status }}">{{ option.database.status }}</td>
+                    <td>{{ option.storage_label }}</td>
+                  </tr>
+                {% else %}
+                  <tr>
+                    <td colspan="5">No databases are registered.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <details>
+          <summary>Advanced settings</summary>
+          <div class="details-body">
+            <div class="grid">
+              <div class="field">
+                <label for="evalue">E-value threshold</label>
+                <input id="evalue" name="evalue" inputmode="decimal" placeholder="Preset default">
+              </div>
+              <div class="field">
+                <label for="max_target_seqs">Maximum target sequences</label>
+                <input id="max_target_seqs" name="max_target_seqs" inputmode="numeric" placeholder="Preset default">
+              </div>
+              <div class="field">
+                <label for="word_size">Word size</label>
+                <input id="word_size" name="word_size" inputmode="numeric">
+              </div>
+              <div class="field">
+                <label for="perc_identity">Minimum percent identity</label>
+                <input id="perc_identity" name="perc_identity" inputmode="decimal">
+              </div>
+              <div class="field">
+                <label for="task">BLASTN task</label>
+                <select id="task" name="task">
+                  <option value="">Program default</option>
+                  {% for task in blast_programs["blastn"].allowed_tasks | sort %}
+                    <option value="{{ task }}">{{ task }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="field">
+                <label for="output_format">Parser/output format</label>
+                <select id="output_format" name="output_format">
+                  <option value="tabular">Tabular output parsed by Bio.SearchIO</option>
+                  <option value="xml">XML output parsed by Bio.SearchIO</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="timeout_seconds">Timeout seconds per database</label>
+                <input id="timeout_seconds" name="timeout_seconds" inputmode="numeric" placeholder="Preset default">
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <div class="button-row">
+          <button type="submit">Run Batch</button>
+          <a class="button button-secondary" href="/sra">SRA Workbench</a>
+        </div>
+      </form>
+    </main>
+
+    <script src="{{ url_for('static', filename='waiting.js') }}"></script>
+    <script>
+      const programRequirements = {
+        {% for program, config in blast_programs.items() %}
+          "{{ program }}": "{{ config.db_type }}",
+        {% endfor %}
+      };
+      const programMultipliers = {
+        blastn: 1,
+        blastp: 0.8,
+        blastx: 2,
+        tblastn: 2.4,
+      };
+      const presetMultipliers = {
+        fast: 0.6,
+        standard: 1,
+        sensitive: 1.8,
+      };
+
+      const programSelect = document.getElementById("program");
+      const sequenceInput = document.getElementById("sequence");
+      const rows = document.querySelectorAll(".database-row");
+      const checkboxes = document.querySelectorAll(".database-checkbox");
+      const presetInputs = document.querySelectorAll('input[name="sensitivity_preset"]');
+      const countNode = document.getElementById("batch_estimate_count");
+      const timeNode = document.getElementById("batch_estimate_time");
+      const sizeNode = document.getElementById("batch_estimate_size");
+      const taskSelect = document.getElementById("task");
+      const percentIdentity = document.getElementById("perc_identity");
+      const timeoutSeconds = document.getElementById("timeout_seconds");
+
+      function queryLength() {
+        return sequenceInput.value
+          .split("\n")
+          .filter((line) => !line.trim().startsWith(">"))
+          .join("")
+          .replace(/\s+/g, "")
+          .length;
+      }
+
+      function formatBytes(bytes) {
+        let size = bytes;
+        for (const unit of ["B", "KB", "MB", "GB", "TB"]) {
+          if (size < 1024 || unit === "TB") {
+            return unit === "B" ? `${Math.round(size)} B` : `${size.toFixed(1)} ${unit}`;
+          }
+          size = size / 1024;
+        }
+        return `${size.toFixed(1)} TB`;
+      }
+
+      function formatDuration(seconds) {
+        if (!Number.isFinite(seconds) || seconds <= 0) {
+          return "unknown";
+        }
+        if (seconds < 60) {
+          return `${Math.round(seconds)} sec`;
+        }
+        const minutes = seconds / 60;
+        if (minutes < 60) {
+          return `${minutes.toFixed(1)} min`;
+        }
+        const hours = minutes / 60;
+        if (hours < 48) {
+          return `${hours.toFixed(1)} hr`;
+        }
+        return `${(hours / 24).toFixed(1)} days`;
+      }
+
+      function selectedPreset() {
+        return document.querySelector('input[name="sensitivity_preset"]:checked')?.value || "standard";
+      }
+
+      function updateCompatibility() {
+        const requiredDbType = programRequirements[programSelect.value];
+        for (const row of rows) {
+          const checkbox = row.querySelector(".database-checkbox");
+          const compatible = row.dataset.dbType === requiredDbType;
+          row.hidden = !compatible;
+          checkbox.disabled = !compatible || row.querySelector("[class^='status-']")?.textContent !== "available";
+          if (!compatible) {
+            checkbox.checked = false;
+          }
+        }
+        updateAdvancedAvailability();
+        updateTimeoutPlaceholder();
+        updateEstimate();
+      }
+
+      function updateAdvancedAvailability() {
+        const isBlastn = programSelect.value === "blastn";
+        taskSelect.disabled = !isBlastn;
+        percentIdentity.disabled = !isBlastn;
+        if (!isBlastn) {
+          taskSelect.value = "";
+          percentIdentity.value = "";
+        }
+      }
+
+      function updateTimeoutPlaceholder() {
+        const selected = document.querySelector('input[name="sensitivity_preset"]:checked');
+        const presetTimeout = selected ? selected.dataset.timeoutSeconds : "600";
+        timeoutSeconds.placeholder = `Preset default: ${presetTimeout} seconds`;
+      }
+
+      function updateEstimate() {
+        let selectedCount = 0;
+        let totalBytes = 0;
+        for (const checkbox of checkboxes) {
+          if (checkbox.checked && !checkbox.disabled) {
+            selectedCount += 1;
+            totalBytes += Number(checkbox.closest(".database-row").dataset.storageBytes || 0);
+          }
+        }
+
+        const databaseGb = totalBytes / 1000000000;
+        const queryKb = Math.max(queryLength() / 1000, 0.05);
+        const seconds = 2 * selectedCount
+          + databaseGb
+          * queryKb
+          * (programMultipliers[programSelect.value] || 1)
+          * (presetMultipliers[selectedPreset()] || 1)
+          * 90;
+
+        countNode.textContent = `${selectedCount} selected`;
+        timeNode.textContent = selectedCount ? `${formatDuration(seconds / 3)} to ${formatDuration(seconds * 3)}` : "unknown";
+        sizeNode.textContent = formatBytes(totalBytes);
+      }
+
+      document.getElementById("select_compatible").addEventListener("click", () => {
+        for (const checkbox of checkboxes) {
+          checkbox.checked = !checkbox.disabled && !checkbox.closest(".database-row").hidden;
+        }
+        updateEstimate();
+      });
+      document.getElementById("clear_databases").addEventListener("click", () => {
+        for (const checkbox of checkboxes) {
+          checkbox.checked = false;
+        }
+        updateEstimate();
+      });
+
+      programSelect.addEventListener("change", updateCompatibility);
+      sequenceInput.addEventListener("input", updateEstimate);
+      for (const checkbox of checkboxes) {
+        checkbox.addEventListener("change", updateEstimate);
+      }
+      for (const presetInput of presetInputs) {
+        presetInput.addEventListener("change", updateEstimate);
+        presetInput.addEventListener("change", updateTimeoutPlaceholder);
+      }
+      updateCompatibility();
+    </script>
+  </body>
+</html>

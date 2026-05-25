@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Batch BLAST Results</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <div class="brand">
+          <span class="brand__name">COBLAST+</span>
+          <span class="brand__sub">Clinician-oriented BLAST+</span>
+        </div>
+        <nav class="nav">
+          <a href="/">Run BLAST</a>
+          <a href="/batch-blast">Batch BLAST</a>
+          <a href="/sra">SRA Workbench</a>
+          <a href="/databases">Databases</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="page">
+      <h1 class="page-title">Batch Results</h1>
+
+      {% if error %}
+        <p class="error">{{ error }}</p>
+      {% elif batch %}
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="panel__title">Batch Summary</h2>
+          </div>
+          <div class="summary-list">
+            <div class="summary-item">
+              <span>Program</span>
+              {{ batch.program }}
+            </div>
+            <div class="summary-item">
+              <span>Databases</span>
+              {{ batch.database_results | length }}
+            </div>
+            <div class="summary-item">
+              <span>Total Runtime</span>
+              {{ "%.3f"|format(batch.total_runtime_seconds) }} seconds
+            </div>
+            <div class="summary-item">
+              <span>Query</span>
+              {{ batch.query_count }} record(s), {{ batch.query_total_length }} bases/residues
+            </div>
+            <div class="summary-item">
+              <span>Total Hits</span>
+              {{ batch.total_hits }}
+            </div>
+            <div class="summary-item">
+              <span>Preset</span>
+              {{ batch.sensitivity_preset }}
+            </div>
+          </div>
+
+          {% if batch.batch_id %}
+            <div class="button-row">
+              <a class="button button-secondary" href="{{ url_for('download_batch_results', batch_id=batch.batch_id, file_format='csv') }}">Download CSV</a>
+              <a class="button button-secondary" href="{{ url_for('download_batch_results', batch_id=batch.batch_id, file_format='tsv') }}">Download TSV</a>
+              <a class="button button-secondary" href="/batch-blast">New Batch</a>
+            </div>
+          {% endif %}
+        </section>
+
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="panel__title">Database Runs</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Database</th>
+                  <th>Size</th>
+                  <th>Runtime</th>
+                  <th>Estimate</th>
+                  <th>Hits</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for database_result in batch.database_results %}
+                  <tr>
+                    <td>
+                      <strong>{{ database_result.display_name }}</strong>
+                      {% if database_result.run_id %}
+                        <br><a href="{{ url_for('download_results', run_id=database_result.run_id, file_format='csv') }}">CSV for this database</a>
+                      {% endif %}
+                    </td>
+                    <td>{{ database_result.database_size_label }}</td>
+                    <td>
+                      {% if database_result.runtime_seconds != "" %}
+                        {{ "%.3f"|format(database_result.runtime_seconds) }} seconds
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if database_result.estimated_runtime_seconds %}
+                        {{ format_duration(database_result.estimated_runtime_low_seconds) }}
+                        to
+                        {{ format_duration(database_result.estimated_runtime_high_seconds) }}
+                      {% else %}
+                        unknown
+                      {% endif %}
+                    </td>
+                    <td>{{ database_result.hit_count }}</td>
+                    <td>
+                      {% if database_result.error %}
+                        <span class="status-invalid">{{ database_result.error }}</span>
+                      {% else %}
+                        Return code {{ database_result.returncode }}
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="panel__title">Aggregated Hits</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Database</th>
+                  <th>Query</th>
+                  <th>Subject</th>
+                  <th>Subject title</th>
+                  <th>% identity</th>
+                  <th>Length</th>
+                  <th>Query coverage</th>
+                  <th>E-value</th>
+                  <th>Bit score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% set hit_rows = namespace(count=0) %}
+                {% for database_result in batch.database_results %}
+                  {% for hit in database_result.hits %}
+                    {% set hit_rows.count = hit_rows.count + 1 %}
+                    <tr>
+                      <td>{{ database_result.display_name }}</td>
+                      <td>{{ hit.qseqid }}</td>
+                      <td>{{ hit.sseqid }}</td>
+                      <td>{{ hit.stitle }}</td>
+                      <td>{{ hit.pident }}</td>
+                      <td>{{ hit.length }}</td>
+                      <td>{{ hit.qcovs }}</td>
+                      <td>{{ hit.evalue }}</td>
+                      <td>{{ hit.bitscore }}</td>
+                    </tr>
+                  {% endfor %}
+                {% endfor %}
+                {% if hit_rows.count == 0 %}
+                  <tr>
+                    <td colspan="9">No hits returned.</td>
+                  </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {% endif %}
+    </main>
+  </body>
+</html>

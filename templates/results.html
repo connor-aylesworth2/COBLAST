@@ -16,6 +16,8 @@
         </div>
         <nav class="nav">
           <a href="/">Run BLAST</a>
+          <a href="/batch-blast">Batch BLAST</a>
+          <a href="/sra">SRA Workbench</a>
           <a href="/databases">Databases</a>
         </nav>
       </div>
@@ -45,6 +47,20 @@
             <div class="summary-item">
               <span>Runtime</span>
               {{ "%.3f"|format(result.runtime_seconds) }} seconds
+            </div>
+            <div class="summary-item">
+              <span>Estimate</span>
+              {% if result.estimated_runtime_seconds %}
+                {{ format_duration(result.estimated_runtime_low_seconds) }}
+                to
+                {{ format_duration(result.estimated_runtime_high_seconds) }}
+              {% else %}
+                unknown
+              {% endif %}
+            </div>
+            <div class="summary-item">
+              <span>Database Size</span>
+              {{ format_bytes(result.database_total_bytes) }}
             </div>
             <div class="summary-item">
               <span>Query</span>

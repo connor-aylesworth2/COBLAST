@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SRA Workbench</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <div class="brand">
+          <span class="brand__name">COBLAST+</span>
+          <span class="brand__sub">Clinician-oriented BLAST+</span>
+        </div>
+        <nav class="nav">
+          <a href="/">Run BLAST</a>
+          <a href="/batch-blast">Batch BLAST</a>
+          <a href="/sra">SRA Workbench</a>
+          <a href="/databases">Databases</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="page">
+      <h1 class="page-title">SRA Workbench</h1>
+
+      {% if message %}
+        <p class="message">{{ message }}</p>
+      {% endif %}
+      {% if error %}
+        <p class="error">{{ error }}</p>
+      {% endif %}
+
+      <section class="panel">
+        <div class="panel__header">
+          <h2 class="panel__title">Local Inputs</h2>
+        </div>
+        <div class="summary-list">
+          <div class="summary-item">
+            <span>SRA Toolkit</span>
+            {% if sra_toolkit_bin %}
+              {{ sra_toolkit_bin }}
+            {% else %}
+              Not found
+            {% endif %}
+          </div>
+          <div class="summary-item">
+            <span>Project folders scanned</span>
+            {{ sra_roots | length }}
+          </div>
+          <div class="summary-item">
+            <span>Projects found</span>
+            {{ projects | length }}
+          </div>
+        </div>
+
+        <details>
+          <summary>Scanned folders</summary>
+          <div class="details-body">
+            {% for root in sra_roots %}
+              <pre>{{ root }}</pre>
+            {% endfor %}
+          </div>
+        </details>
+      </section>
+
+      <section class="panel">
+        <div class="panel__header">
+          <h2 class="panel__title">SRA Projects</h2>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Status</th>
+                <th>Stored Data</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for project in projects %}
+                <tr>
+                  <td>
+                    <strong>{{ project.accession }}</strong>
+                    <br><span class="muted">{{ project.root_path }}</span>
+                  </td>
+                  <td>{{ project.status }}</td>
+                  <td>
+                    <div>{{ project.total_size_label }} total</div>
+                    <div>{{ project.blast_database_size_label }} BLASTDB</div>
+                    <details>
+                      <summary>Files</summary>
+                      <div class="details-body details-body--compact">
+                        {% for sra_file in project.sra_files %}
+                          <p><strong>SRA</strong><br>{{ sra_file.path }}<br><span class="muted">{{ sra_file.size_label }}</span></p>
+                        {% endfor %}
+                        {% for fasta_file in project.fasta_files %}
+                          <p><strong>FASTA</strong><br>{{ fasta_file.path }}<br><span class="muted">{{ fasta_file.size_label }}</span></p>
+                        {% endfor %}
+                        {% for prefix in project.blast_prefixes %}
+                          <p><strong>BLAST prefix</strong><br>{{ prefix }}</p>
+                        {% endfor %}
+                      </div>
+                    </details>
+                  </td>
+                  <td class="actions actions--stacked">
+                    {% for prefix in project.blast_prefixes %}
+                      <form class="mini-form" method="post" action="/sra/register-db">
+                        <input type="hidden" name="accession" value="{{ project.accession }}">
+                        <input type="hidden" name="db_prefix_path" value="{{ prefix }}">
+                        <button type="submit" class="button-secondary">Register BLASTDB</button>
+                      </form>
+                    {% endfor %}
+
+                    {% for fasta_file in project.fasta_files %}
+                      <form
+                        class="mini-form"
+                        method="post"
+                        action="/sra/create-pilot"
+                        data-wait-title="Creating SRA pilot database"
+                        data-wait-messages="Sampling FASTA records.|Writing a smaller pilot FASTA.|Running makeblastdb.|Registering the pilot database."
+                      >
+                        <input type="hidden" name="accession" value="{{ project.accession }}">
+                        <input type="hidden" name="source_fasta_path" value="{{ fasta_file.path }}">
+                        <label for="pilot_records_{{ loop.index }}_{{ project.accession }}">Pilot reads</label>
+                        <input id="pilot_records_{{ loop.index }}_{{ project.accession }}" name="max_records" inputmode="numeric" value="1000">
+                        <button type="submit" class="button-secondary">Create Pilot DB</button>
+                      </form>
+                    {% endfor %}
+
+                    {% for sra_file in project.sra_files %}
+                      <form
+                        class="mini-form"
+                        method="post"
+                        action="/sra/convert-pilot"
+                        data-wait-title="Converting SRA pilot"
+                        data-wait-messages="Starting SRA Toolkit.|Reading local SRA spots.|Writing pilot FASTA.|Large SRA files can take time even for small samples."
+                      >
+                        <input type="hidden" name="accession" value="{{ project.accession }}">
+                        <input type="hidden" name="sra_path" value="{{ sra_file.path }}">
+                        <label for="pilot_spots_{{ loop.index }}_{{ project.accession }}">Pilot spots</label>
+                        <input id="pilot_spots_{{ loop.index }}_{{ project.accession }}" name="max_spots" inputmode="numeric" value="1000">
+                        <button type="submit" class="button-secondary">Create Pilot FASTA</button>
+                      </form>
+                    {% endfor %}
+                  </td>
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="4">No local SRA projects were found.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='waiting.js') }}"></script>
+  </body>
+</html>
