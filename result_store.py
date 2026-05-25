@@ -1,3 +1,9 @@
+"""Small JSON result store used for CSV/TSV downloads.
+
+Search results are rendered immediately, but saving a copy lets the results page
+serve export links without rerunning BLAST.
+"""
+
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -16,6 +22,7 @@ PROJECT_ROOT = resource_root()
 RESULTS_DIR = runtime_data_dir() / "results"
 
 RESULT_COLUMNS = [
+    # The first value is the internal hit key; the second is the export header.
     ("qseqid", "Query"),
     ("sseqid", "Subject"),
     ("stitle", "Subject title"),
@@ -28,6 +35,7 @@ RESULT_COLUMNS = [
 
 
 def result_path(run_id: str) -> Path:
+    """Resolve a saved result path after validating the UUID-like run id."""
     try:
         safe_id = str(UUID(run_id))
     except ValueError as exc:
@@ -36,6 +44,7 @@ def result_path(run_id: str) -> Path:
 
 
 def save_result(result: BlastResult) -> str:
+    """Serialize one BlastResult to JSON and return its generated run id."""
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     run_id = str(uuid4())
     payload = asdict(result)
@@ -50,6 +59,7 @@ def save_result(result: BlastResult) -> str:
 
 
 def load_result(run_id: str) -> dict:
+    """Load a previously saved result payload."""
     path = result_path(run_id)
     if not path.exists():
         raise FileNotFoundError("Result not found.")
@@ -57,6 +67,7 @@ def load_result(run_id: str) -> dict:
 
 
 def result_rows_as_delimited(result_data: dict, delimiter: str) -> str:
+    """Render saved hits as CSV or TSV text."""
     buffer = io.StringIO()
     writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
     writer.writerow([label for _, label in RESULT_COLUMNS])

@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   </head>
   <body>
+    {# Same header/navigation structure as the search and results pages. #}
     <header class="site-header">
       <div class="site-header__inner">
         <div class="brand">
@@ -23,6 +24,7 @@
     <main class="page">
       <h1 class="page-title">Databases</h1>
 
+      {# Messages/errors are passed via query parameters after POST redirects. #}
       {% if message %}
         <p class="message">{{ message }}</p>
       {% endif %}
@@ -35,6 +37,7 @@
           <h2 class="panel__title">Registered Databases</h2>
         </div>
 
+        {# Verifying checks every registry entry against local BLAST+ files. #}
         <form
           class="inline"
           method="post"
@@ -60,6 +63,7 @@
               </tr>
             </thead>
             <tbody>
+              {# database_registry.RegisteredDatabase rows are rendered here. #}
               {% for database in databases %}
                 <tr>
                   <td>
@@ -75,6 +79,7 @@
                   <td>{{ database.last_verified_at }}</td>
                   <td>{{ database.db_prefix_path }}</td>
                   <td class="actions">
+                    {# Per-row verify updates status/metadata for one database. #}
                     <form
                       class="inline"
                       method="post"
@@ -84,6 +89,7 @@
                     >
                       <button type="submit" class="button-secondary">Verify</button>
                     </form>
+                    {# Remove deletes the registry row, not the BLAST index files. #}
                     <form class="inline" method="post" action="/databases/{{ database.id }}/remove">
                       <button type="submit" class="button-danger">Remove</button>
                     </form>
@@ -99,6 +105,7 @@
         </div>
       </section>
 
+      {# Registering records an existing BLAST database prefix in SQLite. #}
       <details>
         <summary>Add Existing BLAST Database</summary>
         <div class="details-body">
@@ -148,6 +155,7 @@
         </div>
       </details>
 
+      {# Creating runs makeblastdb first, then stores the new prefix in SQLite. #}
       <details>
         <summary>Create BLAST Database From FASTA</summary>
         <div class="details-body">

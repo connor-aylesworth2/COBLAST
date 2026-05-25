@@ -1,3 +1,10 @@
+"""Flask entry point for the local COBLAST+ web interface.
+
+This module keeps the web layer deliberately thin: routes collect form input,
+delegate BLAST/database work to helper modules, and render templates with the
+objects those helpers return.
+"""
+
 from pathlib import Path
 
 from flask import Flask, Response, abort, redirect, render_template, request, url_for
@@ -20,6 +27,7 @@ from config import FLASK_HOST, flask_port, resource_path, resource_root
 
 app = Flask(
     __name__,
+    # resource_path works both from source and from a PyInstaller bundle.
     template_folder=str(resource_path("templates")),
     static_folder=str(resource_path("static")),
 )
@@ -28,6 +36,7 @@ PROJECT_ROOT = resource_root()
 
 
 def redirect_to_databases(message: str = "", error: str = ""):
+    """Send users back to the database page with optional status text."""
     params = {}
     if message:
         params["message"] = message
@@ -38,7 +47,9 @@ def redirect_to_databases(message: str = "", error: str = ""):
 
 @app.get("/")
 def index():
+    """Render the main search form."""
     try:
+        # Demo databases make first-run testing possible without manual setup.
         ensure_demo_databases()
         databases = list_databases()
         registry_error = None
@@ -57,11 +68,14 @@ def index():
 
 @app.post("/run-blast")
 def run_blast_route():
+    """Validate search options, run BLAST locally, and show parsed results."""
     sequence = request.form.get("sequence", "")
     uploaded_query = request.files.get("sequence_file")
     if uploaded_query and uploaded_query.filename:
+        # UTF-8 with BOM support keeps FASTA uploads from Windows editors usable.
         sequence = uploaded_query.read().decode("utf-8-sig")
 
+    # Form fields arrive as strings; blast_runner owns numeric validation.
     program = request.form.get("program", "blastn")
     database_id = request.form.get("database_id", "")
     output_format = request.form.get("output_format", "tabular")
@@ -75,6 +89,7 @@ def run_blast_route():
 
         database = get_database(int(database_id))
         required_db_type = str(BLAST_PROGRAMS[program]["db_type"])
+        # The UI filters incompatible databases, but the server still enforces it.
         if database.db_type != required_db_type:
             raise ValueError(
                 f"{BLAST_PROGRAMS[program]['label']} requires a {required_db_type} "
@@ -86,6 +101,8 @@ def run_blast_route():
                 "Verify it on the Databases page before running BLAST."
             )
 
+        # run_blast writes a temporary query file, calls the local BLAST+ binary,
+        # parses stdout, and returns a serializable BlastResult dataclass.
         result = run_blast(
             sequence=sequence,
             database=database.db_prefix_path,
@@ -102,12 +119,14 @@ def run_blast_route():
     except Exception as exc:
         return render_template("results.html", error=str(exc), result=None), 400
 
+    # Persist a JSON copy so the results page can offer CSV/TSV downloads.
     run_id = save_result(result)
     return render_template("results.html", error=None, result=result, run_id=run_id)
 
 
 @app.get("/results/<run_id>.<file_format>")
 def download_results(run_id: str, file_format: str):
+    """Download a saved result table as CSV or TSV."""
     if file_format not in {"csv", "tsv"}:
         abort(404)
 
@@ -129,6 +148,7 @@ def download_results(run_id: str, file_format: str):
 
 @app.get("/databases")
 def databases_page():
+    """Render the database registry and database-management forms."""
     try:
         ensure_demo_databases()
         databases = list_databases()
@@ -149,6 +169,7 @@ def databases_page():
 
 @app.post("/databases/register")
 def register_database_route():
+    """Register an existing BLAST database prefix without modifying its files."""
     try:
         register_existing_database(
             display_name=request.form.get("display_name", ""),
@@ -166,6 +187,7 @@ def register_database_route():
 
 @app.post("/databases/create")
 def create_database_route():
+    """Create BLAST index files from a FASTA file, then register the result."""
     try:
         create_database_from_fasta(
             display_name=request.form.get("display_name", ""),
@@ -183,6 +205,7 @@ def create_database_route():
 
 @app.post("/databases/<int:database_id>/verify")
 def verify_database_route(database_id: int):
+    """Refresh one database's status by asking BLAST+ for its metadata."""
     try:
         database = verify_database(database_id)
     except Exception as exc:
@@ -194,6 +217,7 @@ def verify_database_route(database_id: int):
 
 @app.post("/databases/verify-all")
 def verify_all_databases_route():
+    """Refresh every registered database status."""
     try:
         for database in list_databases():
             verify_database(database.id)
@@ -204,6 +228,7 @@ def verify_all_databases_route():
 
 @app.post("/databases/<int:database_id>/remove")
 def remove_database_route(database_id: int):
+    """Remove a database from the registry only; BLAST index files remain."""
     try:
         remove_database(database_id)
     except Exception as exc:

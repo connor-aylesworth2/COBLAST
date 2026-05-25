@@ -1,4 +1,5 @@
 :root {
+  /* NCBI-inspired palette and shared sizing tokens used across the app. */
   --ncbi-blue: #0071bc;
   --ncbi-blue-dark: #205493;
   --ncbi-blue-darker: #112e51;
@@ -20,6 +21,7 @@
 }
 
 body {
+  /* The interface uses a calm document-style layout rather than a landing page. */
   margin: 0;
   background: var(--ncbi-gray-cool);
   color: var(--ncbi-text);
@@ -37,6 +39,7 @@ a:hover {
 }
 
 .site-header {
+  /* Persistent navigation bar shared by all templates. */
   background: var(--ncbi-blue-darker);
   color: #ffffff;
   border-bottom: 4px solid var(--ncbi-blue);
@@ -44,6 +47,7 @@ a:hover {
 
 .site-header__inner,
 .page {
+  /* Keep content readable on wide screens while preserving mobile gutters. */
   width: min(1180px, calc(100% - 32px));
   margin: 0 auto;
 }
@@ -103,6 +107,7 @@ a:hover {
 }
 
 .panel {
+  /* Panels frame major working areas: forms, summaries, and tables. */
   background: var(--surface);
   border: 1px solid var(--ncbi-gray-border);
   border-radius: var(--radius);
@@ -123,6 +128,7 @@ a:hover {
 }
 
 .grid {
+  /* Forms use responsive columns that collapse naturally on small screens. */
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
@@ -143,6 +149,7 @@ label,
 input,
 select,
 textarea {
+  /* Native controls keep browser accessibility behavior with consistent styling. */
   width: 100%;
   border: 1px solid #8ba6c1;
   border-radius: 4px;
@@ -228,12 +235,14 @@ button:hover,
 }
 
 .preset-group {
+  /* Presets act like selectable cards while retaining real radio inputs. */
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
 }
 
 .preset-option input {
+  /* The radio remains accessible, but the visual target is the card beside it. */
   position: absolute;
   opacity: 0;
   pointer-events: none;
@@ -260,6 +269,7 @@ button:hover,
 }
 
 details {
+  /* Advanced sections stay collapsed until the user needs extra controls. */
   border: 1px solid var(--ncbi-gray-border);
   border-radius: var(--radius);
   margin-top: 18px;
@@ -282,6 +292,7 @@ summary {
 .error,
 .warning,
 .info {
+  /* Shared alert spacing; color variants below communicate status. */
   border-radius: var(--radius);
   margin: 0 0 16px;
   padding: 12px;
@@ -307,6 +318,7 @@ summary {
 }
 
 .table-wrap {
+  /* Wide BLAST tables should scroll horizontally instead of breaking layout. */
   overflow-x: auto;
 }
 
@@ -335,6 +347,7 @@ tr:nth-child(even) {
 }
 
 .summary-list {
+  /* Result metadata uses compact responsive tiles for quick scanning. */
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
@@ -382,10 +395,12 @@ pre {
 }
 
 .is-waiting {
+  /* Prevent background page scrolling while the full-screen wait overlay is open. */
   overflow: hidden;
 }
 
 .working-overlay {
+  /* Full-page local job overlay built by waiting.js during long form submits. */
   background: #ffffff;
   display: none;
   inset: 0;
@@ -399,6 +414,7 @@ pre {
 }
 
 .working-page {
+  /* The waiting screen intentionally resembles classic NCBI BLAST status pages. */
   background: #ffffff;
   color: #111111;
   font-family: Arial, Helvetica, sans-serif;
@@ -548,6 +564,7 @@ pre {
 }
 
 @media (max-width: 720px) {
+  /* Mobile adjustments keep header, tables, and waiting overlay readable. */
   .site-header__inner {
     align-items: flex-start;
     flex-direction: column;

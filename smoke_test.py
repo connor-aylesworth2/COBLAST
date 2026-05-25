@@ -1,3 +1,9 @@
+"""Minimal backend smoke test for COBLAST+.
+
+The launcher uses this to prove that BLAST+, FASTA validation, and parsing work
+before opening the web interface.
+"""
+
 from pathlib import Path
 import subprocess
 import tempfile
@@ -17,6 +23,7 @@ TOY_PROTEIN_SEQUENCE = "MAMAPRTEINSTRING"
 
 
 def build_database(fasta_path: Path, db_prefix: Path, dbtype: str) -> None:
+    """Create a tiny BLAST database from a generated FASTA file."""
     db_prefix.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         str(blast_exe("makeblastdb")),
@@ -31,6 +38,7 @@ def build_database(fasta_path: Path, db_prefix: Path, dbtype: str) -> None:
 
 
 def ensure_toy_db() -> None:
+    """Write toy nucleotide/protein FASTA files and index them with makeblastdb."""
     DB_PREFIX.parent.mkdir(parents=True, exist_ok=True)
     NT_SAMPLE_FASTA.write_text(
         f">toy_sequence_1\n{TOY_SEQUENCE}\n"
@@ -48,6 +56,7 @@ def ensure_toy_db() -> None:
 
 
 def exercise_validation() -> None:
+    """Check accepted nucleotide/protein input and one rejected bad nucleotide."""
     nucleotide = validate_fasta_input(f">nt\nAUGCRYSWKMBDHVN", "nucleotide")
     protein = validate_fasta_input(f">protein\n{TOY_PROTEIN_SEQUENCE}", "protein")
     print(f"validated_nucleotide={nucleotide.total_length}")
@@ -60,6 +69,7 @@ def exercise_validation() -> None:
 
 
 def main() -> None:
+    """Run all supported BLAST programs against the toy databases."""
     ensure_toy_db()
     exercise_validation()
 

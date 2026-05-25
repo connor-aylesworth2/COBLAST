@@ -1,3 +1,10 @@
+"""Build a PyInstaller standalone COBLAST+ executable.
+
+The generated executable bundles the Flask source files, sample data, and the
+required BLAST+ binaries so the interface can start on machines without a local
+checkout.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -10,6 +17,7 @@ import tempfile
 
 
 REQUIRED_BLAST_FILES = [
+    # These executables are necessary for every supported search/database path.
     "blastn.exe",
     "blastp.exe",
     "blastx.exe",
@@ -18,6 +26,7 @@ REQUIRED_BLAST_FILES = [
     "blastdbcmd.exe",
 ]
 OPTIONAL_BLAST_FILES = [
+    # Include supporting files when they exist, but do not fail older installs.
     "blastn.exe.manifest",
     "blastp.exe.manifest",
     "blastx.exe.manifest",
@@ -30,10 +39,12 @@ OPTIONAL_BLAST_FILES = [
 
 
 def project_root() -> Path:
+    """Return the repository root that contains this build script."""
     return Path(__file__).resolve().parent
 
 
 def default_blast_bin() -> Path:
+    """Choose the default BLAST+ bin folder used by the build command."""
     env_blast_bin = os.environ.get("BLAST_BIN")
     if env_blast_bin:
         return Path(env_blast_bin).expanduser().resolve()
@@ -41,19 +52,23 @@ def default_blast_bin() -> Path:
 
 
 def check_file(path: Path) -> None:
+    """Fail early when a required source or binary file is missing."""
     if not path.exists():
         raise FileNotFoundError(path)
 
 
 def pyinstaller_separator() -> str:
+    """Return the source/destination separator used by PyInstaller on this OS."""
     return ";" if os.name == "nt" else ":"
 
 
 def add_data_arg(source: Path, destination: str) -> str:
+    """Format a PyInstaller --add-data/--add-binary argument."""
     return f"{source}{pyinstaller_separator()}{destination}"
 
 
 def build_command(blast_bin: Path, name: str) -> list[str]:
+    """Assemble the PyInstaller command for the standalone executable."""
     root = project_root()
     workpath = Path(tempfile.gettempdir()) / f"coblast_pyinstaller_{os.getpid()}"
     required_paths = [
@@ -75,6 +90,7 @@ def build_command(blast_bin: Path, name: str) -> list[str]:
     for filename in REQUIRED_BLAST_FILES:
         check_file(blast_bin / filename)
 
+    # A temp workpath keeps PyInstaller intermediate files out of the repo.
     command = [
         sys.executable,
         "-m",
@@ -125,6 +141,7 @@ def build_command(blast_bin: Path, name: str) -> list[str]:
 
 
 def parse_args() -> argparse.Namespace:
+    """Read build-time options for BLAST+ location and executable name."""
     parser = argparse.ArgumentParser(
         description="Build a standalone COBLAST Windows executable with bundled BLAST+."
     )
@@ -142,6 +159,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    """Run PyInstaller and print the built executable path when successful."""
     args = parse_args()
     blast_bin = Path(args.blast_bin).expanduser().resolve()
     print(f"Bundling BLAST+ from: {blast_bin}")

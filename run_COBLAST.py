@@ -1,3 +1,10 @@
+"""Command-line launcher for the COBLAST+ local interface.
+
+This script prepares the runtime environment, checks BLAST+, optionally builds
+or reuses a virtual environment, runs a smoke test, and starts the Flask app.
+When packaged with PyInstaller it can also run as a standalone bundle.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -26,14 +33,18 @@ REQUIRED_BLAST_TOOLS = (
 
 
 class LauncherError(RuntimeError):
+    """Expected setup/startup failures that should be shown cleanly to users."""
+
     pass
 
 
 def is_frozen() -> bool:
+    """Return True when this launcher is running from a PyInstaller executable."""
     return bool(getattr(sys, "frozen", False))
 
 
 def bundle_root() -> Path:
+    """Locate read-only files packaged beside or inside the launcher."""
     if is_frozen():
         return Path(getattr(sys, "_MEIPASS")).resolve()
     return Path(__file__).resolve().parent
@@ -41,6 +52,7 @@ def bundle_root() -> Path:
 
 @lru_cache(maxsize=1)
 def project_root() -> Path:
+    """Find the repository/app root from env, executable location, or script path."""
     env_root = os.environ.get("COBLAST_PROJECT_ROOT")
     candidates: list[Path] = []
 
@@ -58,6 +70,7 @@ def project_root() -> Path:
         if (root / "app.py").exists() and (root / "requirements.txt").exists():
             return root
 
+    # The searched list is included because most support issues are path-related.
     searched = "\n".join(f"  - {candidate}" for candidate in candidates)
     raise LauncherError(
         "Could not locate the COBLAST project folder. Run this launcher from the "
@@ -68,6 +81,7 @@ def project_root() -> Path:
 
 
 def has_bundled_app() -> bool:
+    """Detect whether the frozen executable contains the full Flask app bundle."""
     root = bundle_root()
     return (
         (root / "templates" / "index.html").exists()
@@ -77,6 +91,7 @@ def has_bundled_app() -> bool:
 
 
 def standalone_data_dir() -> Path:
+    """Choose the mutable data directory for a standalone executable."""
     env_data_dir = os.environ.get("COBLAST_DATA_DIR")
     if env_data_dir:
         return Path(env_data_dir).expanduser().resolve()
@@ -84,14 +99,17 @@ def standalone_data_dir() -> Path:
 
 
 def step(message: str) -> None:
+    """Print a visible progress heading in the terminal."""
     print(f"\n[{APP_NAME}] {message}", flush=True)
 
 
 def tool_name(name: str) -> str:
+    """Add .exe suffix on Windows when checking BLAST+ tools."""
     return f"{name}.exe" if os.name == "nt" else name
 
 
 def display_command(command: list[str]) -> str:
+    """Format a command for humans without changing the command that runs."""
     if os.name == "nt":
         return subprocess.list2cmdline(command)
     return " ".join(command)
@@ -104,6 +122,7 @@ def run_command(
     cwd: Path | None = None,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
+    """Run a setup command and turn non-zero exits into LauncherError."""
     printable = display_command(command)
     print(f"  > {printable}", flush=True)
     completed = subprocess.run(
@@ -119,6 +138,7 @@ def run_command(
 
 
 def port_is_available(port: int) -> bool:
+    """Check whether localhost can bind to the requested port."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
             sock.bind(("127.0.0.1", port))
@@ -128,6 +148,7 @@ def port_is_available(port: int) -> bool:
 
 
 def choose_available_port(requested_port: int) -> int:
+    """Use the requested port or the next nearby free localhost port."""
     if port_is_available(requested_port):
         return requested_port
 
@@ -146,6 +167,7 @@ def choose_available_port(requested_port: int) -> int:
 
 
 def open_browser_url(url: str) -> None:
+    """Try to open the local app URL, falling back to terminal instructions."""
     try:
         opened = webbrowser.open(url)
     except Exception as exc:
@@ -165,6 +187,7 @@ def open_browser_url(url: str) -> None:
 
 
 def open_browser_later(url: str, delay_seconds: float = 2.0) -> None:
+    """Open the browser shortly after Flask starts listening."""
     def opener() -> None:
         time.sleep(delay_seconds)
         open_browser_url(url)
@@ -174,6 +197,7 @@ def open_browser_later(url: str, delay_seconds: float = 2.0) -> None:
 
 
 def require_supported_python() -> None:
+    """Ensure the current launcher process is running on supported Python."""
     if sys.version_info < MIN_PYTHON:
         version = ".".join(str(part) for part in MIN_PYTHON)
         current = ".".join(str(part) for part in sys.version_info[:3])
@@ -184,6 +208,7 @@ def require_supported_python() -> None:
 
 
 def python_probe(command: list[str]) -> tuple[Path, tuple[int, int, int]] | None:
+    """Return executable path/version when a Python command is usable."""
     try:
         completed = subprocess.run(
             command
@@ -220,6 +245,7 @@ def python_probe(command: list[str]) -> tuple[Path, tuple[int, int, int]] | None
 
 
 def candidate_python_commands(cli_python: str | None) -> list[list[str]]:
+    """Build an ordered, de-duplicated list of Python commands to try."""
     candidates: list[list[str]] = []
 
     if cli_python:
@@ -233,6 +259,7 @@ def candidate_python_commands(cli_python: str | None) -> list[list[str]]:
         candidates.append([sys.executable])
 
     if os.name == "nt":
+        # The Windows py launcher is often the most reliable way to select 3.11+.
         candidates.extend(
             [
                 ["py", "-3.13"],
@@ -258,6 +285,7 @@ def candidate_python_commands(cli_python: str | None) -> list[list[str]]:
 
 
 def find_host_python(cli_python: str | None) -> list[str]:
+    """Find a host Python capable of creating the virtual environment."""
     searched: list[str] = []
     for command in candidate_python_commands(cli_python):
         searched.append(display_command(command))
@@ -275,10 +303,12 @@ def find_host_python(cli_python: str | None) -> list[str]:
 
 
 def bundled_blast_bin() -> Path:
+    """Return the BLAST+ bin path inside a standalone bundle."""
     return bundle_root() / "blast" / "bin"
 
 
 def candidate_blast_bins(cli_blast_bin: str | None) -> list[Path]:
+    """Build an ordered, de-duplicated list of BLAST+ bin folders to try."""
     root = project_root()
     candidates: list[Path] = []
 
@@ -316,6 +346,7 @@ def candidate_blast_bins(cli_blast_bin: str | None) -> list[Path]:
 
 
 def missing_blast_tools(blast_bin: Path) -> list[str]:
+    """List required BLAST+ executables missing from a candidate bin folder."""
     return [
         tool_name(tool)
         for tool in REQUIRED_BLAST_TOOLS
@@ -324,6 +355,7 @@ def missing_blast_tools(blast_bin: Path) -> list[str]:
 
 
 def find_blast_bin(cli_blast_bin: str | None) -> Path:
+    """Find a BLAST+ bin folder containing every required executable."""
     for candidate in candidate_blast_bins(cli_blast_bin):
         if candidate.exists() and not missing_blast_tools(candidate):
             return candidate
@@ -338,6 +370,7 @@ def find_blast_bin(cli_blast_bin: str | None) -> Path:
 
 
 def verify_blast(blast_bin: Path, env: dict[str, str]) -> None:
+    """Confirm BLAST+ can run before the web interface starts."""
     step("Checking BLAST+ executables")
     missing = missing_blast_tools(blast_bin)
     if missing:
@@ -347,6 +380,7 @@ def verify_blast(blast_bin: Path, env: dict[str, str]) -> None:
 
     blastn_path = blast_bin / tool_name("blastn")
     try:
+        # Running blastn -version catches blocked/quarantined executables early.
         completed = subprocess.run(
             [str(blastn_path), "-version"],
             env=env,
@@ -374,24 +408,29 @@ def verify_blast(blast_bin: Path, env: dict[str, str]) -> None:
 
 
 def venv_dir() -> Path:
+    """Location of the source-checkout virtual environment."""
     return project_root() / ".venv"
 
 
 def venv_python() -> Path:
+    """Return the platform-specific Python executable inside .venv."""
     if os.name == "nt":
         return venv_dir() / "Scripts" / "python.exe"
     return venv_dir() / "bin" / "python"
 
 
 def python_is_usable(python_path: Path) -> bool:
+    """Check whether an existing virtualenv Python still works."""
     return python_probe([str(python_path)]) is not None
 
 
 def ensure_virtualenv(host_python: list[str] | None) -> Path:
+    """Create or repair the local virtual environment, then return its Python."""
     step("Creating or reusing the Python virtual environment")
     python_path = venv_python()
 
     if python_path.exists() and not python_is_usable(python_path):
+        # Virtualenvs can break when moved between machines or Python versions.
         print("  Existing .venv looks stale or broken; rebuilding it.")
         shutil.rmtree(venv_dir())
 
@@ -411,6 +450,7 @@ def ensure_virtualenv(host_python: list[str] | None) -> Path:
 
 
 def install_requirements(python_path: Path, env: dict[str, str], skip_install: bool) -> None:
+    """Install/update dependencies unless the caller opted out."""
     if skip_install:
         step("Skipping dependency installation")
         return
@@ -425,6 +465,7 @@ def install_requirements(python_path: Path, env: dict[str, str], skip_install: b
 
 
 def run_smoke_test(python_path: Path, env: dict[str, str], skip_smoke: bool) -> None:
+    """Run the backend smoke test in source-checkout mode."""
     if skip_smoke:
         step("Skipping backend smoke test")
         return
@@ -438,6 +479,7 @@ def run_smoke_test(python_path: Path, env: dict[str, str], skip_smoke: bool) -> 
 
 
 def run_standalone_smoke_test(skip_smoke: bool) -> None:
+    """Run the backend smoke test inside a standalone bundle."""
     if skip_smoke:
         step("Skipping backend smoke test")
         return
@@ -456,6 +498,7 @@ def start_app(
     open_browser: bool,
     check_only: bool,
 ) -> None:
+    """Start Flask from source mode using the prepared virtual environment."""
     if check_only:
         step("Check-only mode complete")
         return
@@ -466,6 +509,7 @@ def start_app(
 
     port = choose_available_port(port)
     url = f"http://127.0.0.1:{port}"
+    # The Flask app reads this via config.flask_port().
     env["BLAST_FLASK_PORT"] = str(port)
 
     step(f"Starting the local interface at {url}")
@@ -491,12 +535,14 @@ def start_standalone_app(
     open_browser: bool,
     check_only: bool,
 ) -> None:
+    """Start Flask directly from the packaged executable process."""
     if check_only:
         step("Check-only mode complete")
         return
 
     port = choose_available_port(port)
     url = f"http://127.0.0.1:{port}"
+    # In standalone mode the app runs in this process, so os.environ is enough.
     os.environ["BLAST_FLASK_PORT"] = str(port)
 
     step(f"Starting the bundled local interface at {url}")
@@ -511,6 +557,7 @@ def start_standalone_app(
 
 
 def run_standalone(args: argparse.Namespace) -> int:
+    """Set up environment variables and run the bundled app path."""
     data_dir = standalone_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
     os.environ["COBLAST_DATA_DIR"] = str(data_dir)
@@ -536,6 +583,7 @@ def run_standalone(args: argparse.Namespace) -> int:
 
 
 def parse_args() -> argparse.Namespace:
+    """Define command-line flags for setup, checks, and startup behavior."""
     parser = argparse.ArgumentParser(
         description=(
             "Set up the COBLAST virtual environment, verify BLAST+, run the smoke "
@@ -583,6 +631,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    """Launcher workflow used by both script and executable entry points."""
     args = parse_args()
     try:
         if args.port < 1 or args.port > 65535:
@@ -592,6 +641,8 @@ def main() -> int:
         if is_frozen() and has_bundled_app():
             return run_standalone(args)
 
+        # Source mode needs a host Python to create .venv unless a good .venv
+        # already exists from an earlier launch.
         host_python = (
             None
             if venv_python().exists() and python_is_usable(venv_python())
