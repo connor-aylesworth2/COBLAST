@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   </head>
   <body>
+    {# Shared page header; links route to the two main Flask views. #}
     <header class="site-header">
       <div class="site-header__inner">
         <div class="brand">
@@ -15,6 +16,8 @@
         </div>
         <nav class="nav">
           <a href="/">Run BLAST</a>
+          <a href="/batch-blast">Batch BLAST</a>
+          <a href="/sra">SRA Workbench</a>
           <a href="/databases">Databases</a>
         </nav>
       </div>
@@ -23,10 +26,12 @@
     <main class="page">
       <h1 class="page-title">Run BLAST</h1>
 
+      {# Registry errors happen before the form can list available databases. #}
       {% if registry_error %}
         <p class="error">{{ registry_error }}</p>
       {% endif %}
 
+      {# The data-wait-* attributes are read by static/waiting.js on submit. #}
       <form
         class="panel"
         method="post"
@@ -41,6 +46,7 @@
 
         <div class="field">
           <label for="sequence">Query input</label>
+          {# Default toy sequence gives a first-time user something runnable. #}
           <textarea id="sequence" name="sequence">&gt;query
 ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTA</textarea>
         </div>
@@ -54,6 +60,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
           <div class="field">
             <label for="program">Search type</label>
             <select id="program" name="program">
+              {# BLAST program metadata comes directly from blast_runner.BLAST_PROGRAMS. #}
               {% for program, config in blast_programs.items() %}
                 <option value="{{ program }}">{{ config.label }} - {{ config.description }}</option>
               {% endfor %}
@@ -64,6 +71,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
             <label for="database_id">Database</label>
             <select id="database_id" name="database_id">
               <option value="">No compatible database available</option>
+              {# JavaScript uses these data attributes to filter and show details. #}
               {% for database in databases %}
                 {% if database.status == "available" %}
                   <option
@@ -84,6 +92,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         <div class="field">
           <span class="field-label">Sensitivity preset</span>
           <div class="preset-group">
+            {# Presets provide default e-value, max target, and timeout behavior. #}
             {% for preset, config in sensitivity_presets.items() %}
               <label class="preset-option">
                 <input
@@ -105,6 +114,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         <details>
           <summary>Advanced settings</summary>
           <div class="details-body">
+            {# Empty advanced inputs mean "use the selected preset default". #}
             <div class="grid">
               <div class="field">
                 <label for="evalue">E-value threshold</label>
@@ -165,6 +175,8 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
 
     <script src="{{ url_for('static', filename='waiting.js') }}"></script>
     <script>
+      // Server-rendered map used to keep the database dropdown compatible with
+      // the selected BLAST program without another network request.
       const programRequirements = {
         {% for program, config in blast_programs.items() %}
           "{{ program }}": "{{ config.db_type }}",
@@ -181,6 +193,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       const presetInputs = document.querySelectorAll('input[name="sensitivity_preset"]');
 
       function updateDatabaseDetails() {
+        // Mirror the selected option's metadata into the read-only detail fields.
         const option = databaseSelect.selectedOptions[0];
         if (!option || !option.value) {
           databaseDescription.textContent = "";
@@ -194,6 +207,8 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       }
 
       function updateCompatibleDatabases() {
+        // Hide incompatible database choices so, for example, BLASTP only sees
+        // protein databases while BLASTN/TBLASTN see nucleotide databases.
         const requiredDbType = programRequirements[programSelect.value];
         let firstCompatible = null;
 
@@ -219,6 +234,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       }
 
       function updateAdvancedAvailability() {
+        // These two advanced controls only apply to BLASTN in blast_runner.py.
         const isBlastn = programSelect.value === "blastn";
         taskSelect.disabled = !isBlastn;
         percentIdentity.disabled = !isBlastn;
@@ -229,6 +245,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       }
 
       function updateTimeoutPlaceholder() {
+        // Keep the placeholder synchronized with the selected preset's timeout.
         const selectedPreset = document.querySelector('input[name="sensitivity_preset"]:checked');
         const presetTimeout = selectedPreset ? selectedPreset.dataset.timeoutSeconds : "600";
         timeoutSeconds.placeholder = `Preset default: ${presetTimeout} seconds`;

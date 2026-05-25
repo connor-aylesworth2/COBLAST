@@ -1,3 +1,9 @@
+"""SQLite-backed registry for local BLAST databases.
+
+The registry stores metadata about databases the user can search, while the
+actual BLAST index files stay on disk wherever they were created or registered.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,12 +26,14 @@ MANAGED_DATABASE_DIR = INSTANCE_DIR / "databases"
 SAMPLE_DATA_DIR = resource_path("sample_data")
 
 DB_TYPES = {"nucl", "prot"}
-DB_CATEGORIES = {"viral", "human", "eToL-V", "toy", "custom"}
+DB_CATEGORIES = {"viral", "human", "eToL-V", "toy", "sra", "custom"}
 DB_STATUSES = {"available", "missing", "invalid"}
 
 
 @dataclass(frozen=True)
 class RegisteredDatabase:
+    """One row from the local database registry."""
+
     id: int
     display_name: str
     db_type: str
@@ -44,10 +52,12 @@ class RegisteredDatabase:
 
 
 def utc_now() -> str:
+    """Timestamp registry changes in a timezone-aware ISO format."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def registry_connection() -> sqlite3.Connection:
+    """Open a registry connection and return rows by column name."""
     INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(REGISTRY_PATH)
     conn.row_factory = sqlite3.Row
@@ -55,6 +65,7 @@ def registry_connection() -> sqlite3.Connection:
 
 
 def init_registry() -> None:
+    """Create the database registry table on first use."""
     with registry_connection() as conn:
         conn.execute(
             """
@@ -80,6 +91,7 @@ def init_registry() -> None:
 
 
 def row_to_database(row: sqlite3.Row) -> RegisteredDatabase:
+    """Convert a sqlite Row into the dataclass used by Flask templates."""
     return RegisteredDatabase(
         id=row["id"],
         display_name=row["display_name"],
@@ -100,6 +112,7 @@ def row_to_database(row: sqlite3.Row) -> RegisteredDatabase:
 
 
 def validate_db_type(db_type: str) -> str:
+    """Normalize and validate the BLAST database type."""
     cleaned = db_type.strip().lower()
     if cleaned not in DB_TYPES:
         raise ValueError("Database type must be 'nucl' or 'prot'.")
@@ -107,6 +120,7 @@ def validate_db_type(db_type: str) -> str:
 
 
 def validate_category(category: str) -> str:
+    """Normalize and validate the registry category."""
     cleaned = category.strip() or "custom"
     if cleaned not in DB_CATEGORIES:
         raise ValueError(
@@ -116,11 +130,13 @@ def validate_category(category: str) -> str:
 
 
 def slugify(value: str) -> str:
+    """Create a safe filename-ish stem for managed database prefixes."""
     slug = re.sub(r"[^a-zA-Z0-9]+", "_", value.strip()).strip("_").lower()
     return slug or "blast_database"
 
 
 def get_windows_short_path(path: Path) -> str:
+    """Return an 8.3 short path when Windows exposes one."""
     if os.name != "nt":
         return str(path)
 
@@ -141,6 +157,7 @@ def get_windows_short_path(path: Path) -> str:
 
 
 def blast_safe_path(path: str | Path) -> str:
+    """Resolve paths and avoid BLAST+ issues with spaces on Windows."""
     resolved = Path(path).expanduser().resolve()
     if os.name != "nt" or " " not in str(resolved):
         return str(resolved)
@@ -156,10 +173,12 @@ def blast_safe_path(path: str | Path) -> str:
 
 
 def command_to_string(command: list[str]) -> str:
+    """Persist commands as readable strings in the registry."""
     return " ".join(shlex.quote(part) for part in command)
 
 
 def blast_version() -> str:
+    """Ask the local BLAST+ install for its version string."""
     completed = subprocess.run(
         [str(blast_exe("blastn")), "-version"],
         capture_output=True,
@@ -170,6 +189,7 @@ def blast_version() -> str:
 
 
 def parse_blastdbcmd_info(stdout: str) -> tuple[str, int | None]:
+    """Extract database title and sequence count from blastdbcmd -info."""
     title = ""
     sequence_count: int | None = None
 
@@ -186,6 +206,7 @@ def parse_blastdbcmd_info(stdout: str) -> tuple[str, int | None]:
 
 
 def verify_database_prefix(db_prefix_path: str | Path) -> dict[str, str | int | None]:
+    """Check whether a BLAST database prefix is readable by blastdbcmd."""
     db_prefix = blast_safe_path(db_prefix_path)
     completed = subprocess.run(
         [str(blast_exe("blastdbcmd")), "-db", db_prefix, "-info"],
@@ -213,6 +234,7 @@ def verify_database_prefix(db_prefix_path: str | Path) -> dict[str, str | int | 
 
 
 def list_databases() -> list[RegisteredDatabase]:
+    """Return all registered databases sorted for display."""
     init_registry()
     with registry_connection() as conn:
         rows = conn.execute(
@@ -222,6 +244,7 @@ def list_databases() -> list[RegisteredDatabase]:
 
 
 def list_compatible_databases(required_db_type: str) -> list[RegisteredDatabase]:
+    """Return available databases that match a BLAST program's db type."""
     required_db_type = validate_db_type(required_db_type)
     return [
         database
@@ -231,6 +254,7 @@ def list_compatible_databases(required_db_type: str) -> list[RegisteredDatabase]
 
 
 def get_database_by_prefix(db_prefix_path: str | Path) -> RegisteredDatabase | None:
+    """Find a database row by its normalized BLAST prefix path."""
     init_registry()
     prefix = blast_safe_path(db_prefix_path)
     with registry_connection() as conn:
@@ -242,6 +266,7 @@ def get_database_by_prefix(db_prefix_path: str | Path) -> RegisteredDatabase | N
 
 
 def get_database(database_id: int) -> RegisteredDatabase:
+    """Look up a registered database by primary key."""
     init_registry()
     with registry_connection() as conn:
         row = conn.execute(
@@ -264,6 +289,7 @@ def upsert_database(
     makeblastdb_command: str = "",
     notes: str = "",
 ) -> RegisteredDatabase:
+    """Insert or update registry metadata for a BLAST database prefix."""
     init_registry()
     if not display_name.strip():
         raise ValueError("Enter a database display name.")
@@ -280,9 +306,11 @@ def upsert_database(
     status = str(verified["status"])
     registry_notes = notes.strip()
     if verified["notes"]:
+        # Preserve user notes but append the latest BLAST+ verification message.
         registry_notes = "\n".join(part for part in [registry_notes, str(verified["notes"])] if part)
 
     with registry_connection() as conn:
+        # Prefix path is unique because it identifies a specific BLAST database.
         conn.execute(
             """
             INSERT INTO blast_databases (
@@ -350,6 +378,7 @@ def register_existing_database(
     category: str = "custom",
     notes: str = "",
 ) -> RegisteredDatabase:
+    """Public wrapper for registering databases that already exist on disk."""
     return upsert_database(
         display_name=display_name,
         db_type=db_type,
@@ -371,6 +400,7 @@ def create_database_from_fasta(
     category: str = "custom",
     notes: str = "",
 ) -> RegisteredDatabase:
+    """Run makeblastdb for a source FASTA and register the new prefix."""
     db_type = validate_db_type(db_type)
     category = validate_category(category)
     if not display_name.strip():
@@ -385,6 +415,7 @@ def create_database_from_fasta(
     if db_prefix_path:
         prefix = Path(db_prefix_path).expanduser().resolve()
     else:
+        # Managed databases live under the app data directory by default.
         prefix = MANAGED_DATABASE_DIR / slugify(display_name)
     prefix.parent.mkdir(parents=True, exist_ok=True)
 
@@ -419,6 +450,7 @@ def create_database_from_fasta(
 
 
 def verify_database(database_id: int) -> RegisteredDatabase:
+    """Refresh metadata and availability for one registered database."""
     database = get_database(database_id)
     verified = verify_database_prefix(database.db_prefix_path)
     now = utc_now()
@@ -450,12 +482,14 @@ def verify_database(database_id: int) -> RegisteredDatabase:
 
 
 def remove_database(database_id: int) -> None:
+    """Delete the registry row without deleting user-owned BLAST files."""
     init_registry()
     with registry_connection() as conn:
         conn.execute("DELETE FROM blast_databases WHERE id = ?", (database_id,))
 
 
 def ensure_demo_databases() -> None:
+    """Create/register tiny toy databases so a fresh checkout can be tested."""
     demo_databases = [
         {
             "display_name": "Toy Nucleotide Test Database",
@@ -485,6 +519,7 @@ def ensure_demo_databases() -> None:
 
         existing = get_database_by_prefix(prefix)
         if existing is not None:
+            # Reuse the existing toy database if it still verifies cleanly.
             verified = verify_database(existing.id)
             if verified.status == "available":
                 continue

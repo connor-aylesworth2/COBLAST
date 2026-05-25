@@ -1,4 +1,6 @@
 (function () {
+  // This file gives long-running POST forms an immediate full-screen status
+  // page, then lets the normal form submission continue in the background.
   const DEFAULT_MESSAGES = [
     "Preparing the local job.",
     "Working locally on this machine.",
@@ -11,6 +13,7 @@
   let messageTimer = null;
 
   function formatElapsed(totalSeconds) {
+    // Render elapsed time in the same HH:MM:SS style as remote BLAST pages.
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
@@ -19,6 +22,7 @@
   }
 
   function formatDateTime(date) {
+    // Locale-aware formatting keeps the display familiar on different machines.
     return date.toLocaleString(undefined, {
       weekday: "short",
       year: "numeric",
@@ -31,11 +35,13 @@
   }
 
   function localRequestId() {
+    // Local jobs do not have real NCBI RIDs, so generate a readable stand-in.
     const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
     return `LOCAL-${Date.now().toString(36).toUpperCase()}-${suffix}`;
   }
 
   function messagesForForm(form) {
+    // Forms can customize progress messages with a pipe-separated data attribute.
     const rawMessages = form.dataset.waitMessages || "";
     const messages = rawMessages
       .split("|")
@@ -45,11 +51,13 @@
   }
 
   function ensureOverlay() {
+    // Lazily build the overlay once, then reuse it for every waiting form.
     if (overlay) {
       return overlay;
     }
 
     overlay = document.createElement("div");
+    // role/status and aria-live announce progress changes to assistive tech.
     overlay.className = "working-overlay";
     overlay.setAttribute("role", "status");
     overlay.setAttribute("aria-live", "polite");
@@ -114,6 +122,7 @@
   }
 
   function showWaitingScreen(form) {
+    // Populate the overlay from the submitted form's data attributes.
     const currentOverlay = ensureOverlay();
     const title = form.dataset.waitTitle || "Working";
     const messages = messagesForForm(form);
@@ -132,6 +141,7 @@
     clearInterval(elapsedTimer);
     clearInterval(messageTimer);
 
+    // Reset every changing field so repeat submissions start from a clean state.
     breadcrumbNode.textContent = `RID-${requestId}`;
     titleNode.textContent = title;
     requestIdNode.textContent = requestId;
@@ -144,6 +154,7 @@
     document.body.classList.add("is-waiting");
 
     elapsedTimer = setInterval(() => {
+      // Keep elapsed/current time moving while the Flask request is running.
       const now = new Date();
       const elapsedSeconds = Math.floor((now.getTime() - submittedAt.getTime()) / 1000);
       currentTimeNode.textContent = formatDateTime(now);
@@ -151,12 +162,14 @@
     }, 1000);
 
     messageTimer = setInterval(() => {
+      // Cycle through helpful messages so the user knows the page is alive.
       messageIndex = (messageIndex + 1) % messages.length;
       detailNode.textContent = messages[messageIndex];
     }, 9000);
   }
 
   function attachWaitingScreens() {
+    // Any form with data-wait-title opts into the waiting overlay behavior.
     const forms = document.querySelectorAll("form[data-wait-title]");
     for (const form of forms) {
       form.addEventListener("submit", (event) => {
@@ -168,11 +181,13 @@
         form.dataset.waitSubmitted = "true";
         showWaitingScreen(form);
 
+        // Disable submit buttons to avoid duplicate BLAST jobs.
         for (const button of form.querySelectorAll("button[type='submit'], input[type='submit']")) {
           button.disabled = true;
         }
 
         window.setTimeout(() => {
+          // Calling the prototype submit avoids recursively firing this handler.
           HTMLFormElement.prototype.submit.call(form);
         }, 80);
       });
@@ -180,6 +195,7 @@
   }
 
   window.addEventListener("pageshow", () => {
+    // Browser back/forward cache can restore pages, so always hide stale overlay.
     document.body.classList.remove("is-waiting");
     if (overlay) {
       overlay.classList.remove("is-visible");

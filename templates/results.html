@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   </head>
   <body>
+    {# Same header/navigation structure as the search and database pages. #}
     <header class="site-header">
       <div class="site-header__inner">
         <div class="brand">
@@ -15,6 +16,8 @@
         </div>
         <nav class="nav">
           <a href="/">Run BLAST</a>
+          <a href="/batch-blast">Batch BLAST</a>
+          <a href="/sra">SRA Workbench</a>
           <a href="/databases">Databases</a>
         </nav>
       </div>
@@ -23,9 +26,11 @@
     <main class="page">
       <h1 class="page-title">Results</h1>
 
+      {# Route-level validation and BLAST errors render here with HTTP 400. #}
       {% if error %}
         <p class="error">{{ error }}</p>
       {% elif result %}
+        {# Summary values come from the BlastResult dataclass in blast_runner.py. #}
         <section class="panel">
           <div class="panel__header">
             <h2 class="panel__title">Search Summary</h2>
@@ -44,6 +49,20 @@
               {{ "%.3f"|format(result.runtime_seconds) }} seconds
             </div>
             <div class="summary-item">
+              <span>Estimate</span>
+              {% if result.estimated_runtime_seconds %}
+                {{ format_duration(result.estimated_runtime_low_seconds) }}
+                to
+                {{ format_duration(result.estimated_runtime_high_seconds) }}
+              {% else %}
+                unknown
+              {% endif %}
+            </div>
+            <div class="summary-item">
+              <span>Database Size</span>
+              {{ format_bytes(result.database_total_bytes) }}
+            </div>
+            <div class="summary-item">
               <span>Query</span>
               {{ result.query_count }} record(s), {{ result.query_total_length }} bases/residues
             </div>
@@ -60,6 +79,7 @@
           <details>
             <summary>Command and parameters</summary>
             <div class="details-body">
+              {# Showing the exact command makes runs easier to audit/reproduce. #}
               <pre>{{ result.command | join(" ") }}</pre>
               <div class="table-wrap">
                 <table>
@@ -83,6 +103,7 @@
           </details>
 
           {% if run_id %}
+            {# Export links use the saved JSON payload rather than rerunning BLAST. #}
             <div class="button-row">
               <a class="button button-secondary" href="{{ url_for('download_results', run_id=run_id, file_format='csv') }}">Download CSV</a>
               <a class="button button-secondary" href="{{ url_for('download_results', run_id=run_id, file_format='tsv') }}">Download TSV</a>
@@ -95,6 +116,7 @@
             <h2 class="panel__title">Results Table</h2>
           </div>
 
+          {# Hits are normalized dictionaries, regardless of tabular/XML output. #}
           {% if result.hits %}
             <div class="table-wrap">
               <table>
@@ -131,6 +153,7 @@
           {% endif %}
 
           {% if result.stderr %}
+            {# BLAST warnings/errors remain available even when parsed hits exist. #}
             <details>
               <summary>BLAST stderr</summary>
               <div class="details-body">

@@ -169,6 +169,10 @@ python app.py
 7. Download results as CSV and TSV.
 8. Visit `/databases` and confirm registered databases can be checked, added,
    created from FASTA, and removed from the registry without deleting files.
+9. Visit `/sra` and confirm local SRA/FASTA/BLASTDB projects are listed when
+   present under a scanned SRA folder.
+10. Visit `/batch-blast`, select compatible toy databases, run a small batch,
+    and confirm aggregate CSV/TSV downloads work.
 
 ## 7. Reporting feedback
 

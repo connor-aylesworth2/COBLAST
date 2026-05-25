@@ -1,3 +1,10 @@
+"""Validation, command construction, and parsing for local BLAST+ searches.
+
+The Flask routes pass plain form values into this module. The functions here
+normalize FASTA input, enforce safe local-only options, call the appropriate
+BLAST+ executable, and convert stdout into table rows for the interface.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -10,6 +17,7 @@ from time import perf_counter
 from typing import Any
 
 from config import DISALLOWED_BLAST_OPTIONS, REMOTE_BLAST_ENABLED, blast_exe
+from runtime_estimator import database_storage_bytes, estimate_blast_runtime_seconds
 
 try:
     from Bio import SearchIO, SeqIO
@@ -32,6 +40,9 @@ OUTFMT6_FIELDS = [
     "bitscore",
 ]
 ALLOWED_BLASTN_TASKS = {"blastn", "blastn-short", "dc-megablast", "megablast"}
+
+# Each program defines the query type users must submit and the database type
+# that must be selected. The UI reads this same mapping to filter databases.
 BLAST_PROGRAMS = {
     "blastn": {
         "label": "BLASTN",
@@ -67,6 +78,7 @@ BLAST_PROGRAMS = {
     },
 }
 BLAST_OUTPUT_FORMATS = {
+    # Format 6 is tabular; naming the columns keeps SearchIO parsing predictable.
     "tabular": "6 " + " ".join(OUTFMT6_FIELDS),
     "xml": "5",
 }
@@ -74,6 +86,8 @@ FAST_TIMEOUT_SECONDS = 300
 DEFAULT_TIMEOUT_SECONDS = 600
 SENSITIVE_TIMEOUT_SECONDS = 900
 SENSITIVITY_PRESETS = {
+    # Presets keep common searches one-click while advanced fields can override
+    # individual values later in build_blast_parameters.
     "standard": {
         "label": "Standard",
         "description": "Balanced default for routine sequence checks.",
@@ -107,12 +121,16 @@ TIMEOUT_SECONDS_LIMIT = 3_600
 
 @dataclass(frozen=True)
 class FastaRecordSummary:
+    """Small per-record summary used in the results page."""
+
     id: str
     length: int
 
 
 @dataclass(frozen=True)
 class FastaValidationResult:
+    """Normalized FASTA text plus metadata gathered during validation."""
+
     fasta: str
     sequence_type: str
     records: list[FastaRecordSummary]
@@ -121,14 +139,22 @@ class FastaValidationResult:
 
 @dataclass(frozen=True)
 class BlastResult:
+    """Complete outcome of one BLAST run, including command and parsed hits."""
+
     returncode: int
     hits: list[dict[str, str]]
     stdout: str
     stderr: str
     command: list[str]
+    database_path: str
+    database_total_bytes: int
     output_format: str
     program: str
     runtime_seconds: float
+    estimated_runtime_seconds: float | None
+    estimated_runtime_low_seconds: float | None
+    estimated_runtime_high_seconds: float | None
+    estimated_runtime_note: str
     query_type: str
     query_count: int
     query_total_length: int
@@ -137,6 +163,7 @@ class BlastResult:
 
 
 def require_biopython() -> None:
+    """Fail early with an installation hint if Biopython is unavailable."""
     if SearchIO is None or SeqIO is None:
         raise RuntimeError(
             "Biopython is required for FASTA validation and BLAST result parsing. "
@@ -145,10 +172,12 @@ def require_biopython() -> None:
 
 
 def wrap_sequence(sequence: str, width: int = FASTA_LINE_WIDTH) -> str:
+    """Wrap sequence text at a conventional FASTA line width."""
     return "\n".join(sequence[i : i + width] for i in range(0, len(sequence), width))
 
 
 def coerce_to_fasta_text(sequence: str) -> str:
+    """Accept either FASTA text or a bare sequence and return FASTA text."""
     cleaned = sequence.strip()
     if not cleaned:
         raise ValueError("Enter a FASTA sequence.")
@@ -157,6 +186,7 @@ def coerce_to_fasta_text(sequence: str) -> str:
     if normalized.lstrip().startswith(">"):
         return normalized
 
+    # A pasted sequence without a header is still valid input for the interface.
     raw_sequence = "".join(normalized.split())
     if not raw_sequence:
         raise ValueError("Enter a sequence with at least one residue or base.")
@@ -164,6 +194,7 @@ def coerce_to_fasta_text(sequence: str) -> str:
 
 
 def normalize_fasta_lines(fasta_text: str) -> str:
+    """Clean spacing, require headers, and uppercase sequence lines."""
     normalized_lines: list[str] = []
     seen_header = False
 
@@ -191,6 +222,7 @@ def normalize_fasta_lines(fasta_text: str) -> str:
 
 
 def invalid_characters(sequence: str, expected_type: str) -> set[str]:
+    """Return residues/bases that do not belong to the selected query type."""
     if expected_type == "nucleotide":
         return set(sequence) - NUCLEOTIDE_ALPHABET
     if expected_type == "protein":
@@ -202,6 +234,12 @@ def validate_fasta_input(
     sequence: str,
     expected_type: str = "nucleotide",
 ) -> FastaValidationResult:
+    """Parse and validate FASTA before BLAST sees it.
+
+    BLAST accepts a broad range of input, but the interface benefits from clear
+    errors and predictable normalized text. This also catches accidentally using
+    protein characters with nucleotide programs, or vice versa.
+    """
     require_biopython()
     if expected_type not in {"nucleotide", "protein"}:
         raise ValueError(f"Unsupported query sequence type: {expected_type}")
@@ -222,6 +260,7 @@ def validate_fasta_input(
     total_length = 0
 
     for record_number, record in enumerate(records, start=1):
+        # IDs need to be stable because they become the qseqid shown in tables.
         record_id = record.id.strip()
         if not record_id or record_id == "<unknown id>":
             raise ValueError(f"FASTA record {record_number} does not have a usable ID.")
@@ -247,6 +286,7 @@ def validate_fasta_input(
             )
 
         if expected_type == "nucleotide":
+            # U is allowed for pasted RNA-like inputs, then normalized to DNA.
             seq = seq.replace("U", "T")
 
         total_length += len(seq)
@@ -269,20 +309,24 @@ def validate_fasta_input(
 
 
 def validate_fasta(sequence: str, expected_type: str = "nucleotide") -> str:
+    """Compatibility wrapper for callers that only need normalized FASTA."""
     return validate_fasta_input(sequence, expected_type=expected_type).fasta
 
 
 def require_searchio() -> None:
+    """Alias used by parsing functions to make their dependency explicit."""
     require_biopython()
 
 
 def format_float(value: Any, decimals: int) -> str:
+    """Render optional numeric values for table cells."""
     if value is None:
         return ""
     return f"{float(value):.{decimals}f}"
 
 
 def format_evalue(value: Any) -> str:
+    """Render e-values consistently for the results table."""
     if value is None:
         return ""
     number = float(value)
@@ -292,6 +336,7 @@ def format_evalue(value: Any) -> str:
 
 
 def percent_identity(hsp: Any) -> float | None:
+    """Read percent identity from SearchIO, with a manual fallback."""
     if getattr(hsp, "ident_pct", None) is not None:
         return float(hsp.ident_pct)
 
@@ -303,6 +348,7 @@ def percent_identity(hsp: Any) -> float | None:
 
 
 def query_coverage(qresult: Any, hit: Any, hsp: Any) -> float | None:
+    """Read or calculate query coverage as a percentage."""
     if getattr(hit, "query_coverage", None) is not None:
         return float(hit.query_coverage)
 
@@ -314,6 +360,7 @@ def query_coverage(qresult: Any, hit: Any, hsp: Any) -> float | None:
 
 
 def subject_title(hit: Any, hsp: Any) -> str:
+    """Choose the most descriptive subject label available from SearchIO."""
     for candidate in (
         getattr(hit, "title", None),
         getattr(hit, "description", None),
@@ -327,6 +374,7 @@ def subject_title(hit: Any, hsp: Any) -> str:
 
 
 def searchio_results_to_hits(qresults: Iterable[Any]) -> list[dict[str, str]]:
+    """Flatten SearchIO query/hit/HSP objects into table-row dictionaries."""
     hits: list[dict[str, str]] = []
     for qresult in qresults:
         for hit in qresult:
@@ -347,6 +395,7 @@ def searchio_results_to_hits(qresults: Iterable[Any]) -> list[dict[str, str]]:
 
 
 def parse_blast_tabular(stdout: str) -> list[dict[str, str]]:
+    """Parse BLAST format-6 stdout into result rows."""
     require_searchio()
     if not stdout.strip():
         return []
@@ -355,6 +404,7 @@ def parse_blast_tabular(stdout: str) -> list[dict[str, str]]:
 
 
 def parse_blast_xml(stdout: str) -> list[dict[str, str]]:
+    """Parse BLAST XML stdout into result rows."""
     require_searchio()
     if not stdout.strip():
         return []
@@ -363,6 +413,7 @@ def parse_blast_xml(stdout: str) -> list[dict[str, str]]:
 
 
 def parse_blast_output(stdout: str, output_format: str = "tabular") -> list[dict[str, str]]:
+    """Dispatch to the parser that matches the selected output format."""
     if output_format == "tabular":
         return parse_blast_tabular(stdout)
     if output_format == "xml":
@@ -371,6 +422,7 @@ def parse_blast_output(stdout: str, output_format: str = "tabular") -> list[dict
 
 
 def enforce_local_blast_only(command: list[str]) -> None:
+    """Prevent accidental remote BLAST usage from this local-only prototype."""
     if REMOTE_BLAST_ENABLED:
         raise RuntimeError("Remote BLAST cannot be enabled for this local interface.")
 
@@ -385,6 +437,7 @@ def enforce_local_blast_only(command: list[str]) -> None:
 
 
 def optional_text(value: str | None) -> str | None:
+    """Normalize optional form fields so blank strings behave like missing data."""
     if value is None:
         return None
     cleaned = value.strip()
@@ -392,6 +445,7 @@ def optional_text(value: str | None) -> str | None:
 
 
 def parse_positive_float(name: str, value: str | None) -> str | None:
+    """Validate a positive numeric option and return its original string value."""
     cleaned = optional_text(value)
     if cleaned is None:
         return None
@@ -405,6 +459,7 @@ def parse_positive_float(name: str, value: str | None) -> str | None:
 
 
 def parse_bounded_int(name: str, value: str | None, minimum: int, maximum: int) -> str | None:
+    """Validate an integer option with inclusive minimum/maximum bounds."""
     cleaned = optional_text(value)
     if cleaned is None:
         return None
@@ -418,6 +473,7 @@ def parse_bounded_int(name: str, value: str | None, minimum: int, maximum: int) 
 
 
 def preset_timeout_seconds(sensitivity_preset: str) -> str:
+    """Return the timeout attached to the selected sensitivity preset."""
     if sensitivity_preset not in SENSITIVITY_PRESETS:
         allowed = ", ".join(SENSITIVITY_PRESETS)
         raise ValueError(f"Unsupported sensitivity preset: {sensitivity_preset}. Choose one of: {allowed}.")
@@ -425,6 +481,7 @@ def preset_timeout_seconds(sensitivity_preset: str) -> str:
 
 
 def parse_percent_identity(program: str, value: str | None) -> str | None:
+    """Validate BLASTN-only percent identity filtering."""
     cleaned = optional_text(value)
     if cleaned is None:
         return None
@@ -448,11 +505,13 @@ def build_blast_parameters(
     word_size: str | None,
     perc_identity: str | None,
 ) -> dict[str, str]:
+    """Merge preset defaults with user-supplied advanced BLAST options."""
     if sensitivity_preset not in SENSITIVITY_PRESETS:
         allowed = ", ".join(SENSITIVITY_PRESETS)
         raise ValueError(f"Unsupported sensitivity preset: {sensitivity_preset}. Choose one of: {allowed}.")
 
     preset = SENSITIVITY_PRESETS[sensitivity_preset]
+    # Start with a safe preset, then overlay validated advanced fields below.
     parameters = {
         "evalue": str(preset["evalue"]),
         "max_target_seqs": str(preset["max_target_seqs"]),
@@ -498,6 +557,7 @@ def run_blast(
     word_size: str | None = None,
     perc_identity: str | None = None,
 ) -> BlastResult:
+    """Run one local BLAST search and return both raw and parsed outputs."""
     if program not in BLAST_PROGRAMS:
         allowed = ", ".join(BLAST_PROGRAMS)
         raise ValueError(f"Unsupported BLAST program: {program}. Choose one of: {allowed}.")
@@ -506,6 +566,7 @@ def run_blast(
     timeout_value = str(timeout_seconds) if timeout_seconds is not None else None
     if optional_text(timeout_value) is None:
         timeout_value = preset_timeout_seconds(sensitivity_preset)
+    # subprocess.run enforces this timeout, so keep it bounded for the UI.
     timeout = parse_bounded_int(
         "Timeout",
         timeout_value,
@@ -515,6 +576,7 @@ def run_blast(
 
     program_config = BLAST_PROGRAMS[program]
     default_task = program_config["default_task"]
+    # Only BLASTN exposes task variants in this interface.
     selected_task = task if task is not None else default_task
     allowed_tasks = program_config["allowed_tasks"]
     if selected_task is not None and selected_task not in allowed_tasks:
@@ -533,9 +595,18 @@ def run_blast(
         expected_type=str(program_config["query_type"]),
     )
     db_path = str(database)
+    database_total_bytes = database_storage_bytes(db_path)
+    runtime_estimate = estimate_blast_runtime_seconds(
+        program=program,
+        query_total_length=query.total_length,
+        database_bytes=database_total_bytes,
+        sensitivity_preset=sensitivity_preset,
+    )
 
     with tempfile.TemporaryDirectory(prefix="blast_flask_") as tmpdir:
         query_path = Path(tmpdir) / "query.fasta"
+        # BLAST+ expects a file path for -query, so the pasted/uploaded sequence
+        # lives in a short-lived temporary FASTA file.
         query_path.write_text(query.fasta, encoding="utf-8")
 
         cmd = [
@@ -554,6 +625,8 @@ def run_blast(
         enforce_local_blast_only(cmd)
 
         start = perf_counter()
+        # Capture stdout/stderr so the interface can display parsed hits and
+        # still expose BLAST diagnostics when a run returns warnings/errors.
         completed = subprocess.run(
             cmd,
             capture_output=True,
@@ -571,9 +644,15 @@ def run_blast(
         stdout=completed.stdout,
         stderr=completed.stderr,
         command=cmd,
+        database_path=db_path,
+        database_total_bytes=database_total_bytes,
         output_format=output_format,
         program=program,
         runtime_seconds=runtime_seconds,
+        estimated_runtime_seconds=runtime_estimate.seconds if runtime_estimate else None,
+        estimated_runtime_low_seconds=runtime_estimate.low_seconds if runtime_estimate else None,
+        estimated_runtime_high_seconds=runtime_estimate.high_seconds if runtime_estimate else None,
+        estimated_runtime_note=runtime_estimate.note if runtime_estimate else "",
         query_type=query.sequence_type,
         query_count=len(query.records),
         query_total_length=query.total_length,
@@ -590,6 +669,7 @@ def run_blastn(
     output_format: str = "tabular",
     sensitivity_preset: str = "standard",
 ) -> BlastResult:
+    """Convenience wrapper retained for older blastn-only callers/tests."""
     return run_blast(
         sequence=sequence,
         database=database,
