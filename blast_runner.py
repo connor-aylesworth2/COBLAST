@@ -92,7 +92,7 @@ SENSITIVITY_PRESETS = {
         "label": "Standard",
         "description": "Balanced default for routine sequence checks.",
         "evalue": "10",
-        "max_target_seqs": "50",
+        "max_target_seqs": "5000",
         "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
     },
     "sensitive": {
