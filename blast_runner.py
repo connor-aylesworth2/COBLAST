@@ -320,7 +320,7 @@ def require_searchio() -> None:
 
 def format_float(value: Any, decimals: int) -> str:
     """Render optional numeric values for table cells."""
-    if value is None:
+    if value is None or value == "":
         return ""
     return f"{float(value):.{decimals}f}"
 
@@ -396,11 +396,34 @@ def searchio_results_to_hits(qresults: Iterable[Any]) -> list[dict[str, str]]:
 
 def parse_blast_tabular(stdout: str) -> list[dict[str, str]]:
     """Parse BLAST format-6 stdout into result rows."""
-    require_searchio()
     if not stdout.strip():
         return []
-    qresults = SearchIO.parse(StringIO(stdout), "blast-tab", fields=OUTFMT6_FIELDS)
-    return searchio_results_to_hits(qresults)
+
+    hits: list[dict[str, str]] = []
+    expected_column_count = len(OUTFMT6_FIELDS)
+    for line_number, raw_line in enumerate(stdout.splitlines(), start=1):
+        if not raw_line.strip():
+            continue
+        values = raw_line.rstrip("\n").split("\t")
+        if len(values) != expected_column_count:
+            raise ValueError(
+                "Could not parse BLAST tabular output on line "
+                f"{line_number}: expected {expected_column_count} columns, found {len(values)}."
+            )
+        row = dict(zip(OUTFMT6_FIELDS, values, strict=True))
+        hits.append(
+            {
+                "qseqid": row["qseqid"],
+                "sseqid": row["sseqid"],
+                "stitle": row["stitle"],
+                "pident": format_float(row["pident"], 3),
+                "length": row["length"],
+                "qcovs": format_float(row["qcovs"], 1),
+                "evalue": format_evalue(row["evalue"]),
+                "bitscore": format_float(row["bitscore"], 1),
+            }
+        )
+    return hits
 
 
 def parse_blast_xml(stdout: str) -> list[dict[str, str]]:
