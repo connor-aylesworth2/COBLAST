@@ -99,6 +99,8 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
                   type="radio"
                   name="sensitivity_preset"
                   value="{{ preset }}"
+                  data-evalue="{{ config.evalue }}"
+                  data-max-target-seqs="{{ config.max_target_seqs }}"
                   data-timeout-seconds="{{ config.timeout_seconds }}"
                   {% if preset == "standard" %}checked{% endif %}
                 >
@@ -118,11 +120,11 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
             <div class="grid">
               <div class="field">
                 <label for="evalue">E-value threshold</label>
-                <input id="evalue" name="evalue" inputmode="decimal" placeholder="Preset default">
+                <input id="evalue" name="evalue" inputmode="decimal" placeholder="Preset default: 10">
               </div>
               <div class="field">
                 <label for="max_target_seqs">Maximum target sequences per query</label>
-                <input id="max_target_seqs" name="max_target_seqs" inputmode="numeric" placeholder="Preset default">
+                <input id="max_target_seqs" name="max_target_seqs" inputmode="numeric" placeholder="Preset default: 5000">
               </div>
               <div class="field">
                 <label for="word_size">Word size</label>
@@ -188,6 +190,8 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       const databasePath = document.getElementById("database_path");
       const databaseTitle = document.getElementById("database_title");
       const taskSelect = document.getElementById("task");
+      const evalueInput = document.getElementById("evalue");
+      const maxTargetSeqs = document.getElementById("max_target_seqs");
       const percentIdentity = document.getElementById("perc_identity");
       const timeoutSeconds = document.getElementById("timeout_seconds");
       const presetInputs = document.querySelectorAll('input[name="sensitivity_preset"]');
@@ -244,10 +248,14 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         }
       }
 
-      function updateTimeoutPlaceholder() {
-        // Keep the placeholder synchronized with the selected preset's timeout.
+      function updatePresetPlaceholders() {
+        // Keep placeholders synchronized with the selected preset.
         const selectedPreset = document.querySelector('input[name="sensitivity_preset"]:checked');
+        const presetEvalue = selectedPreset ? selectedPreset.dataset.evalue : "10";
+        const presetMaxTargetSeqs = selectedPreset ? selectedPreset.dataset.maxTargetSeqs : "5000";
         const presetTimeout = selectedPreset ? selectedPreset.dataset.timeoutSeconds : "600";
+        evalueInput.placeholder = `Preset default: ${presetEvalue}`;
+        maxTargetSeqs.placeholder = `Preset default: ${presetMaxTargetSeqs}`;
         timeoutSeconds.placeholder = `Preset default: ${presetTimeout} seconds`;
       }
 
@@ -257,11 +265,11 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       });
       databaseSelect.addEventListener("change", updateDatabaseDetails);
       for (const presetInput of presetInputs) {
-        presetInput.addEventListener("change", updateTimeoutPlaceholder);
+        presetInput.addEventListener("change", updatePresetPlaceholders);
       }
       updateCompatibleDatabases();
       updateAdvancedAvailability();
-      updateTimeoutPlaceholder();
+      updatePresetPlaceholders();
     </script>
   </body>
 </html>

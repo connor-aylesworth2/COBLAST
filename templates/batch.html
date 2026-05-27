@@ -84,6 +84,8 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
                   type="radio"
                   name="sensitivity_preset"
                   value="{{ preset }}"
+                  data-evalue="{{ config.evalue }}"
+                  data-max-target-seqs="{{ config.max_target_seqs }}"
                   data-timeout-seconds="{{ config.timeout_seconds }}"
                   {% if preset == "standard" %}checked{% endif %}
                 >
@@ -158,11 +160,11 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
             <div class="grid">
               <div class="field">
                 <label for="evalue">E-value threshold</label>
-                <input id="evalue" name="evalue" inputmode="decimal" placeholder="Preset default">
+                <input id="evalue" name="evalue" inputmode="decimal" placeholder="Preset default: 10">
               </div>
               <div class="field">
                 <label for="max_target_seqs">Maximum target sequences per query</label>
-                <input id="max_target_seqs" name="max_target_seqs" inputmode="numeric" placeholder="Preset default">
+                <input id="max_target_seqs" name="max_target_seqs" inputmode="numeric" placeholder="Preset default: 5000">
               </div>
               <div class="field">
                 <label for="word_size">Word size</label>
@@ -231,6 +233,8 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       const timeNode = document.getElementById("batch_estimate_time");
       const sizeNode = document.getElementById("batch_estimate_size");
       const taskSelect = document.getElementById("task");
+      const evalueInput = document.getElementById("evalue");
+      const maxTargetSeqs = document.getElementById("max_target_seqs");
       const percentIdentity = document.getElementById("perc_identity");
       const timeoutSeconds = document.getElementById("timeout_seconds");
 
@@ -288,7 +292,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
           }
         }
         updateAdvancedAvailability();
-        updateTimeoutPlaceholder();
+        updatePresetPlaceholders();
         updateEstimate();
       }
 
@@ -302,9 +306,13 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         }
       }
 
-      function updateTimeoutPlaceholder() {
+      function updatePresetPlaceholders() {
         const selected = document.querySelector('input[name="sensitivity_preset"]:checked');
+        const presetEvalue = selected ? selected.dataset.evalue : "10";
+        const presetMaxTargetSeqs = selected ? selected.dataset.maxTargetSeqs : "5000";
         const presetTimeout = selected ? selected.dataset.timeoutSeconds : "600";
+        evalueInput.placeholder = `Preset default: ${presetEvalue}`;
+        maxTargetSeqs.placeholder = `Preset default: ${presetMaxTargetSeqs}`;
         timeoutSeconds.placeholder = `Preset default: ${presetTimeout} seconds`;
       }
 
@@ -352,7 +360,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       }
       for (const presetInput of presetInputs) {
         presetInput.addEventListener("change", updateEstimate);
-        presetInput.addEventListener("change", updateTimeoutPlaceholder);
+        presetInput.addEventListener("change", updatePresetPlaceholders);
       }
       updateCompatibility();
     </script>
