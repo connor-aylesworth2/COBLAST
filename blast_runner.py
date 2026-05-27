@@ -83,7 +83,7 @@ BLAST_OUTPUT_FORMATS = {
     "xml": "5",
 }
 FAST_TIMEOUT_SECONDS = 300
-DEFAULT_TIMEOUT_SECONDS = 600
+DEFAULT_TIMEOUT_SECONDS = 3_600
 SENSITIVE_TIMEOUT_SECONDS = 900
 SENSITIVITY_PRESETS = {
     # Presets keep common searches one-click while advanced fields can override

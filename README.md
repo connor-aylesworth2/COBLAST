@@ -379,7 +379,7 @@ Search timeout defaults are tied to the sensitivity preset so routine users do
 not need to open advanced settings for normal local searches:
 
 - `fast`: 300 seconds, or 5 minutes
-- `standard`: 600 seconds, or 10 minutes
+- `standard`: 3,600 seconds, or 1 hour
 - `sensitive`: 900 seconds, or 15 minutes
 
 The advanced timeout field can still override these defaults for a specific

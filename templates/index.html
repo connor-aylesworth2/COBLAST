@@ -253,7 +253,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         const selectedPreset = document.querySelector('input[name="sensitivity_preset"]:checked');
         const presetEvalue = selectedPreset ? selectedPreset.dataset.evalue : "10";
         const presetMaxTargetSeqs = selectedPreset ? selectedPreset.dataset.maxTargetSeqs : "5000";
-        const presetTimeout = selectedPreset ? selectedPreset.dataset.timeoutSeconds : "600";
+        const presetTimeout = selectedPreset ? selectedPreset.dataset.timeoutSeconds : "3600";
         evalueInput.placeholder = `Preset default: ${presetEvalue}`;
         maxTargetSeqs.placeholder = `Preset default: ${presetMaxTargetSeqs}`;
         timeoutSeconds.placeholder = `Preset default: ${presetTimeout} seconds`;
