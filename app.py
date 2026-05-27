@@ -5,6 +5,7 @@ delegate BLAST/database work to helper modules, and render templates with the
 objects those helpers return.
 """
 
+from dataclasses import replace
 from pathlib import Path
 
 from flask import Flask, Response, abort, redirect, render_template, request, url_for
@@ -47,6 +48,36 @@ app = Flask(
     template_folder=str(resource_path("templates")),
     static_folder=str(resource_path("static")),
 )
+
+APOE_PROBE_FASTA = """>AE4_E4=C
+CGGACATGGAGGACGTGCGCGGCCGCCTGGTGCAGT
+>AE4_E23=T
+CGGACATGGAGGACGTGTGCGGCCGCCTGGTGCAGT
+>AE2_E34=C
+CCGATGACCTGCAGAAGCGCCTGGCAGTGTACCAGG
+>AE2_E2=T
+CCGATGACCTGCAGAAGTGCCTGGCAGTGTACCAGG
+"""
+APOE_EXACT_MATCH_FILTER = "100% identity and 100% query coverage"
+
+
+def numeric_hit_value(hit: dict[str, str], key: str) -> float | None:
+    """Parse a numeric hit field that may be blank or formatted text."""
+    try:
+        return float(hit.get(key, ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def filter_apoe_exact_probe_hits(hits: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Keep only exact APOE probe matches after BLAST output parsing."""
+    exact_hits = []
+    for hit in hits:
+        percent_identity = numeric_hit_value(hit, "pident")
+        query_coverage = numeric_hit_value(hit, "qcovs")
+        if percent_identity == 100.0 and query_coverage == 100.0:
+            exact_hits.append(hit)
+    return exact_hits
 
 PROJECT_ROOT = resource_root()
 
@@ -238,6 +269,7 @@ def batch_blast_page():
         blast_programs=BLAST_PROGRAMS,
         sensitivity_presets=SENSITIVITY_PRESETS,
         database_options=options,
+        apoe_probe_fasta=APOE_PROBE_FASTA,
         error=request.args.get("error") or registry_error,
         message=request.args.get("message", ""),
     )
@@ -255,6 +287,11 @@ def run_batch_blast_route():
     database_ids = request.form.getlist("database_ids")
     output_format = request.form.get("output_format", "tabular")
     sensitivity_preset = request.form.get("sensitivity_preset", "standard")
+    apoe_probe_preset = request.form.get("apoe_probe_preset") == "1"
+    if apoe_probe_preset:
+        sequence = APOE_PROBE_FASTA
+        program = "blastn"
+        output_format = "tabular"
 
     if not database_ids:
         return render_template(
@@ -262,6 +299,7 @@ def run_batch_blast_route():
             blast_programs=BLAST_PROGRAMS,
             sensitivity_presets=SENSITIVITY_PRESETS,
             database_options=database_options(),
+            apoe_probe_fasta=APOE_PROBE_FASTA,
             error="Choose at least one database for the batch run.",
             message="",
         ), 400
@@ -289,16 +327,18 @@ def run_batch_blast_route():
                 program=program,
                 output_format=output_format,
                 sensitivity_preset=sensitivity_preset,
-                task=request.form.get("task") or None,
+                task=None if apoe_probe_preset else request.form.get("task") or None,
                 evalue=request.form.get("evalue") or None,
                 max_target_seqs=request.form.get("max_target_seqs") or None,
                 word_size=request.form.get("word_size") or None,
-                perc_identity=request.form.get("perc_identity") or None,
+                perc_identity="100" if apoe_probe_preset else request.form.get("perc_identity") or None,
                 timeout_seconds=request.form.get("timeout_seconds") or None,
             )
-            run_id = save_result(result)
+            hits = filter_apoe_exact_probe_hits(result.hits) if apoe_probe_preset else result.hits
+            saved_result = replace(result, hits=hits)
+            run_id = save_result(saved_result)
             total_runtime_seconds += result.runtime_seconds
-            total_hits += len(result.hits)
+            total_hits += len(hits)
             query_count = result.query_count
             query_total_length = result.query_total_length
             database_results.append(
@@ -314,8 +354,8 @@ def run_batch_blast_route():
                     "estimated_runtime_low_seconds": result.estimated_runtime_low_seconds,
                     "estimated_runtime_high_seconds": result.estimated_runtime_high_seconds,
                     "estimated_runtime_note": result.estimated_runtime_note,
-                    "hit_count": len(result.hits),
-                    "hits": result.hits,
+                    "hit_count": len(hits),
+                    "hits": hits,
                     "run_id": run_id,
                     "error": "",
                 }
@@ -354,6 +394,8 @@ def run_batch_blast_route():
         "query_total_length": query_total_length,
         "total_runtime_seconds": total_runtime_seconds,
         "total_hits": total_hits,
+        "apoe_probe_preset": apoe_probe_preset,
+        "hit_filter": APOE_EXACT_MATCH_FILTER if apoe_probe_preset else "",
         "database_results": database_results,
     }
     batch_id = save_batch_result(payload)

@@ -48,7 +48,7 @@ Then open the printed `http://127.0.0.1:...` address manually.
 
 COBLAST is a minimal local Flask wrapper for NCBI BLAST+. It validates FASTA
 input with Biopython, runs allowlisted BLAST+ programs through `subprocess`, and
-parses BLAST tabular/XML output with `Bio.SearchIO`. The browser interface uses
+parses BLAST tabular/XML output into structured result tables. The browser interface uses
 an NCBI-inspired colour palette and keeps routine clinician-facing controls
 separate from advanced BLAST parameters.
 
@@ -250,8 +250,8 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-`requirements.txt` installs Flask plus Biopython, which is used through
-`Bio.SearchIO` to parse BLAST tabular and XML output.
+`requirements.txt` installs Flask plus Biopython, which is used for FASTA
+validation and XML output parsing.
 
 ### 3. Run the backend smoke test
 
@@ -474,6 +474,11 @@ prepare or register each patient as a local nucleotide BLAST database, select
 the compatible databases, and run the batch. The page shows a rough size-based
 runtime range before launch, saves individual per-database results, and exports
 the aggregate hit table as CSV or TSV.
+
+The batch page also includes an APOE exact-match probe preset. When selected,
+COBLAST uses the four stored APOE probe sequences, runs BLASTN against the
+selected nucleotide databases, and saves only hits with 100% identity and 100%
+query coverage.
 
 The runtime estimate is only a planning aid. Real runtime depends on query
 length, database size, BLAST program, sensitivity settings, disk speed, CPU, and

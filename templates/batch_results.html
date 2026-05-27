@@ -57,6 +57,16 @@
               <span>Preset</span>
               {{ batch.sensitivity_preset }}
             </div>
+            {% if batch.apoe_probe_preset %}
+              <div class="summary-item">
+                <span>Probe preset</span>
+                APOE exact-match probes
+              </div>
+              <div class="summary-item">
+                <span>Hit filter</span>
+                {{ batch.hit_filter }}
+              </div>
+            {% endif %}
           </div>
 
           {% if batch.batch_id %}

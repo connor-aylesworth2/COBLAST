@@ -45,6 +45,16 @@
         </div>
 
         <div class="field">
+          <label class="checkbox-row checkbox-row--wide">
+            <input id="apoe_probe_preset" name="apoe_probe_preset" type="checkbox" value="1">
+            <span>
+              <strong>APOE exact-match probe batch</strong>
+              <br><span class="muted">4 probes; BLASTN; 100% identity and 100% query coverage</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="field">
           <label for="sequence">Query input</label>
           <textarea id="sequence" name="sequence">&gt;query
 ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTA</textarea>
@@ -186,7 +196,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
               <div class="field">
                 <label for="output_format">Parser/output format</label>
                 <select id="output_format" name="output_format">
-                  <option value="tabular">Tabular output parsed by Bio.SearchIO</option>
+                  <option value="tabular">Tabular output</option>
                   <option value="xml">XML output parsed by Bio.SearchIO</option>
                 </select>
               </div>
@@ -206,6 +216,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
     </main>
 
     <script src="{{ url_for('static', filename='waiting.js') }}"></script>
+    <script type="application/json" id="apoe_probe_fasta_json">{{ apoe_probe_fasta | tojson }}</script>
     <script>
       const programRequirements = {
         {% for program, config in blast_programs.items() %}
@@ -225,7 +236,10 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       };
 
       const programSelect = document.getElementById("program");
+      const apoeProbePreset = document.getElementById("apoe_probe_preset");
+      const apoeProbeFasta = JSON.parse(document.getElementById("apoe_probe_fasta_json").textContent);
       const sequenceInput = document.getElementById("sequence");
+      const sequenceFile = document.getElementById("sequence_file");
       const rows = document.querySelectorAll(".database-row");
       const checkboxes = document.querySelectorAll(".database-checkbox");
       const presetInputs = document.querySelectorAll('input[name="sensitivity_preset"]');
@@ -237,6 +251,8 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       const maxTargetSeqs = document.getElementById("max_target_seqs");
       const percentIdentity = document.getElementById("perc_identity");
       const timeoutSeconds = document.getElementById("timeout_seconds");
+      const outputFormat = document.getElementById("output_format");
+      let preApoeState = null;
 
       function queryLength() {
         return sequenceInput.value
@@ -340,6 +356,36 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         sizeNode.textContent = formatBytes(totalBytes);
       }
 
+      function applyApoeProbePreset() {
+        if (apoeProbePreset.checked) {
+          preApoeState = preApoeState || {
+            sequence: sequenceInput.value,
+            program: programSelect.value,
+            outputFormat: outputFormat.value,
+            percentIdentity: percentIdentity.value,
+            task: taskSelect.value,
+          };
+          sequenceInput.value = apoeProbeFasta;
+          sequenceFile.value = "";
+          programSelect.value = "blastn";
+          outputFormat.value = "tabular";
+          percentIdentity.value = "100";
+          taskSelect.value = "";
+          updateCompatibility();
+          return;
+        }
+
+        if (preApoeState) {
+          sequenceInput.value = preApoeState.sequence;
+          programSelect.value = preApoeState.program;
+          outputFormat.value = preApoeState.outputFormat;
+          percentIdentity.value = preApoeState.percentIdentity;
+          taskSelect.value = preApoeState.task;
+          preApoeState = null;
+        }
+        updateCompatibility();
+      }
+
       document.getElementById("select_all_databases").addEventListener("click", () => {
         for (const checkbox of checkboxes) {
           checkbox.checked = !checkbox.disabled && !checkbox.closest(".database-row").hidden;
@@ -353,8 +399,14 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         updateEstimate();
       });
 
-      programSelect.addEventListener("change", updateCompatibility);
+      programSelect.addEventListener("change", () => {
+        if (apoeProbePreset.checked && programSelect.value !== "blastn") {
+          programSelect.value = "blastn";
+        }
+        updateCompatibility();
+      });
       sequenceInput.addEventListener("input", updateEstimate);
+      apoeProbePreset.addEventListener("change", applyApoeProbePreset);
       for (const checkbox of checkboxes) {
         checkbox.addEventListener("change", updateEstimate);
       }
