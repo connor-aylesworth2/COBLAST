@@ -100,8 +100,8 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
           <div class="section-header">
             <h2 class="section-title">Databases</h2>
             <div class="button-row button-row--compact">
-              <button type="button" class="button-secondary" id="select_compatible">Select compatible</button>
-              <button type="button" class="button-secondary" id="clear_databases">Clear</button>
+              <button type="button" class="button-secondary" id="select_all_databases">Select all</button>
+              <button type="button" class="button-secondary" id="deselect_all_databases">Deselect all</button>
             </div>
           </div>
 
@@ -332,13 +332,13 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         sizeNode.textContent = formatBytes(totalBytes);
       }
 
-      document.getElementById("select_compatible").addEventListener("click", () => {
+      document.getElementById("select_all_databases").addEventListener("click", () => {
         for (const checkbox of checkboxes) {
           checkbox.checked = !checkbox.disabled && !checkbox.closest(".database-row").hidden;
         }
         updateEstimate();
       });
-      document.getElementById("clear_databases").addEventListener("click", () => {
+      document.getElementById("deselect_all_databases").addEventListener("click", () => {
         for (const checkbox of checkboxes) {
           checkbox.checked = false;
         }

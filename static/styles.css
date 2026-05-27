@@ -448,6 +448,38 @@ pre {
   max-width: 180px;
 }
 
+.mini-form select {
+  max-width: 100%;
+}
+
+.sra-bulk-form {
+  margin-bottom: 16px;
+}
+
+.sra-db-select-list {
+  border-bottom: 1px solid var(--ncbi-gray-border);
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+}
+
+.checkbox-row {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  max-width: 320px;
+}
+
+.checkbox-row input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.checkbox-row span {
+  overflow-wrap: anywhere;
+}
+
 .details-body--compact {
   font-size: 0.9rem;
   max-width: 560px;

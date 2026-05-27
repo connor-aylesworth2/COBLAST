@@ -392,15 +392,18 @@ def sra_page():
     """Render local SRA discovery and pilot-database controls."""
     try:
         projects = discover_sra_projects()
+        sra_blast_prefix_count = sum(len(project.blast_prefixes) for project in projects)
         error = request.args.get("error", "")
     except Exception as exc:
         projects = []
+        sra_blast_prefix_count = 0
         error = request.args.get("error") or str(exc)
 
     toolkit_bin = sra_toolkit_bin()
     return render_template(
         "sra.html",
         projects=projects,
+        sra_blast_prefix_count=sra_blast_prefix_count,
         sra_roots=[str(path) for path in configured_sra_roots()],
         sra_toolkit_bin=str(toolkit_bin) if toolkit_bin else "",
         message=request.args.get("message", ""),
@@ -419,6 +422,72 @@ def register_sra_database_route():
     except Exception as exc:
         return redirect_to_sra(error=str(exc))
     return redirect_to_sra(message=f"Registered {database.display_name}.")
+
+
+@app.post("/sra/register-all-db")
+def register_all_sra_databases_route():
+    """Register every discovered SRA-derived BLAST database prefix."""
+    registered = 0
+    errors = []
+    try:
+        projects = discover_sra_projects()
+    except Exception as exc:
+        return redirect_to_sra(error=str(exc))
+
+    for project in projects:
+        for prefix in project.blast_prefixes:
+            try:
+                register_sra_blast_database(
+                    accession=project.accession,
+                    db_prefix_path=prefix,
+                )
+                registered += 1
+            except Exception as exc:
+                errors.append(f"{project.accession}: {exc}")
+
+    if errors:
+        return redirect_to_sra(
+            message=f"Registered or updated {registered} SRA BLAST database prefix(es).",
+            error="; ".join(errors[:5]),
+        )
+    if registered == 0:
+        return redirect_to_sra(message="No discovered SRA BLAST databases were available to register.")
+    return redirect_to_sra(message=f"Registered or updated {registered} SRA BLAST database prefix(es).")
+
+
+@app.post("/sra/register-selected-db")
+def register_selected_sra_databases_route():
+    """Register the SRA-derived BLAST database prefixes selected in the workbench."""
+    selected_databases = request.form.getlist("selected_db")
+    if not selected_databases:
+        return redirect_to_sra(error="Select at least one discovered SRA BLAST database to register.")
+
+    registered = 0
+    errors = []
+    for selected_database in selected_databases:
+        try:
+            accession, prefix = selected_database.split("||", 1)
+        except ValueError:
+            errors.append("Skipped a selected database with an invalid form value.")
+            continue
+
+        try:
+            register_sra_blast_database(
+                accession=accession,
+                db_prefix_path=prefix,
+            )
+            registered += 1
+        except Exception as exc:
+            errors.append(f"{accession}: {exc}")
+
+    if errors:
+        return redirect_to_sra(
+            message=f"Registered or updated {registered} selected SRA BLAST database prefix(es).",
+            error="; ".join(errors[:5]),
+        )
+    return redirect_to_sra(
+        message=f"Registered or updated {registered} selected SRA BLAST database prefix(es)."
+    )
 
 
 @app.post("/sra/create-pilot")

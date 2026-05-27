@@ -70,6 +70,22 @@
           <h2 class="panel__title">SRA Projects</h2>
         </div>
 
+        {% if sra_blast_prefix_count %}
+          <form
+            id="sra_selected_register_form"
+            method="post"
+            action="/sra/register-selected-db"
+            data-wait-title="Registering selected SRA BLAST databases"
+            data-wait-messages="Reading selected SRA projects.|Registering BLAST database prefixes.|Updating the local database registry."
+          ></form>
+          <div class="button-row button-row--compact sra-bulk-form">
+            <button type="button" class="button-secondary" id="select_all_sra_dbs">Select all</button>
+            <button type="button" class="button-secondary" id="deselect_all_sra_dbs">Deselect all</button>
+            <button type="submit" class="button-secondary" form="sra_selected_register_form">Register Selected BLASTDBs</button>
+            <span class="muted">{{ sra_blast_prefix_count }} discovered BLASTDB prefix(es)</span>
+          </div>
+        {% endif %}
+
         <div class="table-wrap">
           <table>
             <thead>
@@ -107,15 +123,27 @@
                     </details>
                   </td>
                   <td class="actions actions--stacked">
-                    {% for prefix in project.blast_prefixes %}
-                      <form class="mini-form" method="post" action="/sra/register-db">
-                        <input type="hidden" name="accession" value="{{ project.accession }}">
-                        <input type="hidden" name="db_prefix_path" value="{{ prefix }}">
-                        <button type="submit" class="button-secondary">Register BLASTDB</button>
-                      </form>
-                    {% endfor %}
+                    {% if project.blast_prefixes %}
+                      <div class="sra-db-select-list">
+                        {% for prefix in project.blast_prefixes %}
+                          <label class="checkbox-row">
+                            <input
+                              type="checkbox"
+                              class="sra-db-checkbox"
+                              form="sra_selected_register_form"
+                              name="selected_db"
+                              value="{{ project.accession }}||{{ prefix }}"
+                            >
+                            <span>
+                              <strong>Register BLASTDB</strong>
+                              <br><span class="muted">{{ prefix }}</span>
+                            </span>
+                          </label>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
 
-                    {% for fasta_file in project.fasta_files %}
+                    {% if project.fasta_files %}
                       <form
                         class="mini-form"
                         method="post"
@@ -124,14 +152,19 @@
                         data-wait-messages="Sampling FASTA records.|Writing a smaller pilot FASTA.|Running makeblastdb.|Registering the pilot database."
                       >
                         <input type="hidden" name="accession" value="{{ project.accession }}">
-                        <input type="hidden" name="source_fasta_path" value="{{ fasta_file.path }}">
-                        <label for="pilot_records_{{ loop.index }}_{{ project.accession }}">Pilot reads</label>
-                        <input id="pilot_records_{{ loop.index }}_{{ project.accession }}" name="max_records" inputmode="numeric" value="1000">
+                        <label for="pilot_fasta_{{ project.accession }}">FASTA source</label>
+                        <select id="pilot_fasta_{{ project.accession }}" name="source_fasta_path">
+                          {% for fasta_file in project.fasta_files %}
+                            <option value="{{ fasta_file.path }}">{{ fasta_file.path }} ({{ fasta_file.size_label }})</option>
+                          {% endfor %}
+                        </select>
+                        <label for="pilot_records_{{ project.accession }}">Pilot records</label>
+                        <input id="pilot_records_{{ project.accession }}" name="max_records" inputmode="numeric" value="1000">
                         <button type="submit" class="button-secondary">Create Pilot DB</button>
                       </form>
-                    {% endfor %}
+                    {% endif %}
 
-                    {% for sra_file in project.sra_files %}
+                    {% if project.sra_files %}
                       <form
                         class="mini-form"
                         method="post"
@@ -140,12 +173,17 @@
                         data-wait-messages="Starting SRA Toolkit.|Reading local SRA spots.|Writing pilot FASTA.|Large SRA files can take time even for small samples."
                       >
                         <input type="hidden" name="accession" value="{{ project.accession }}">
-                        <input type="hidden" name="sra_path" value="{{ sra_file.path }}">
-                        <label for="pilot_spots_{{ loop.index }}_{{ project.accession }}">Pilot spots</label>
-                        <input id="pilot_spots_{{ loop.index }}_{{ project.accession }}" name="max_spots" inputmode="numeric" value="1000">
+                        <label for="pilot_sra_{{ project.accession }}">SRA source</label>
+                        <select id="pilot_sra_{{ project.accession }}" name="sra_path">
+                          {% for sra_file in project.sra_files %}
+                            <option value="{{ sra_file.path }}">{{ sra_file.path }} ({{ sra_file.size_label }})</option>
+                          {% endfor %}
+                        </select>
+                        <label for="pilot_spots_{{ project.accession }}">Pilot spots</label>
+                        <input id="pilot_spots_{{ project.accession }}" name="max_spots" inputmode="numeric" value="1000">
                         <button type="submit" class="button-secondary">Create Pilot FASTA</button>
                       </form>
-                    {% endfor %}
+                    {% endif %}
                   </td>
                 </tr>
               {% else %}
@@ -160,5 +198,28 @@
     </main>
 
     <script src="{{ url_for('static', filename='waiting.js') }}"></script>
+    <script>
+      (function () {
+        const checkboxes = document.querySelectorAll(".sra-db-checkbox");
+        const selectAllButton = document.getElementById("select_all_sra_dbs");
+        const deselectAllButton = document.getElementById("deselect_all_sra_dbs");
+
+        if (selectAllButton) {
+          selectAllButton.addEventListener("click", () => {
+            for (const checkbox of checkboxes) {
+              checkbox.checked = true;
+            }
+          });
+        }
+
+        if (deselectAllButton) {
+          deselectAllButton.addEventListener("click", () => {
+            for (const checkbox of checkboxes) {
+              checkbox.checked = false;
+            }
+          });
+        }
+      })();
+    </script>
   </body>
 </html>
