@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from apoe_summary import APOE_SUMMARY_EXPORT_COLUMNS, build_apoe_probe_summary
 from blast_runner import BlastResult
 from config import resource_root, runtime_data_dir
 
@@ -169,4 +170,19 @@ def batch_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
                     database_result.get("error", ""),
                 ]
             )
+    return buffer.getvalue()
+
+
+def apoe_summary_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
+    """Render APOE per-sample probe summaries as CSV or TSV text."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
+    writer.writerow([label for _, label in APOE_SUMMARY_EXPORT_COLUMNS])
+
+    summary_rows = batch_data.get("apoe_probe_summary")
+    if summary_rows is None:
+        summary_rows = build_apoe_probe_summary(batch_data.get("database_results", []))
+
+    for row in summary_rows:
+        writer.writerow([row.get(key, "") for key, _ in APOE_SUMMARY_EXPORT_COLUMNS])
     return buffer.getvalue()

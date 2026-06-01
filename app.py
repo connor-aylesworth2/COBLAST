@@ -10,6 +10,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, redirect, render_template, request, url_for
 
+from apoe_summary import apoe_probe_query_ids, build_apoe_probe_summary
 from blast_runner import BLAST_PROGRAMS, SENSITIVITY_PRESETS, run_blast
 from database_registry import (
     DB_CATEGORIES,
@@ -23,6 +24,7 @@ from database_registry import (
     verify_database,
 )
 from result_store import (
+    apoe_summary_rows_as_delimited,
     batch_rows_as_delimited,
     load_batch_result,
     load_result,
@@ -59,6 +61,7 @@ CCGATGACCTGCAGAAGCGCCTGGCAGTGTACCAGG
 CCGATGACCTGCAGAAGTGCCTGGCAGTGTACCAGG
 """
 APOE_EXACT_MATCH_FILTER = "100% identity and 100% query coverage"
+APOE_PROBE_QUERY_IDS = apoe_probe_query_ids()
 
 
 def numeric_hit_value(hit: dict[str, str], key: str) -> float | None:
@@ -75,9 +78,14 @@ def filter_apoe_exact_probe_hits(hits: list[dict[str, str]]) -> list[dict[str, s
     for hit in hits:
         percent_identity = numeric_hit_value(hit, "pident")
         query_coverage = numeric_hit_value(hit, "qcovs")
-        if percent_identity == 100.0 and query_coverage == 100.0:
+        if (
+            hit.get("qseqid", "") in APOE_PROBE_QUERY_IDS
+            and percent_identity == 100.0
+            and query_coverage == 100.0
+        ):
             exact_hits.append(hit)
     return exact_hits
+
 
 PROJECT_ROOT = resource_root()
 
@@ -253,6 +261,31 @@ def download_batch_results(batch_id: str, file_format: str):
     )
 
 
+@app.get("/batch-results/<batch_id>/apoe-summary.<file_format>")
+def download_apoe_summary(batch_id: str, file_format: str):
+    """Download APOE probe count summaries as CSV or TSV."""
+    if file_format not in {"csv", "tsv"}:
+        abort(404)
+
+    try:
+        batch_data = load_batch_result(batch_id)
+    except FileNotFoundError:
+        abort(404)
+
+    if not batch_data.get("apoe_probe_preset"):
+        abort(404)
+
+    delimiter = "," if file_format == "csv" else "\t"
+    body = apoe_summary_rows_as_delimited(batch_data, delimiter=delimiter)
+    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
+    filename = f"apoe_probe_summary_{batch_id}.{file_format}"
+    return Response(
+        body,
+        mimetype=mimetype,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 @app.get("/batch-blast")
 def batch_blast_page():
     """Render the multi-database BLAST form."""
@@ -398,6 +431,8 @@ def run_batch_blast_route():
         "hit_filter": APOE_EXACT_MATCH_FILTER if apoe_probe_preset else "",
         "database_results": database_results,
     }
+    if apoe_probe_preset:
+        payload["apoe_probe_summary"] = build_apoe_probe_summary(database_results)
     batch_id = save_batch_result(payload)
     payload["batch_id"] = batch_id
     return render_template(

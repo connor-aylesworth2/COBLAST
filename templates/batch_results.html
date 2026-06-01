@@ -71,12 +71,83 @@
 
           {% if batch.batch_id %}
             <div class="button-row">
-              <a class="button button-secondary" href="{{ url_for('download_batch_results', batch_id=batch.batch_id, file_format='csv') }}">Download CSV</a>
-              <a class="button button-secondary" href="{{ url_for('download_batch_results', batch_id=batch.batch_id, file_format='tsv') }}">Download TSV</a>
+              {% if batch.apoe_probe_preset %}
+                <a class="button button-secondary" href="{{ url_for('download_apoe_summary', batch_id=batch.batch_id, file_format='csv') }}">Download APOE Summary CSV</a>
+                <a class="button button-secondary" href="{{ url_for('download_apoe_summary', batch_id=batch.batch_id, file_format='tsv') }}">Download APOE Summary TSV</a>
+              {% endif %}
+              <a class="button button-secondary" href="{{ url_for('download_batch_results', batch_id=batch.batch_id, file_format='csv') }}">Download Raw Hits CSV</a>
+              <a class="button button-secondary" href="{{ url_for('download_batch_results', batch_id=batch.batch_id, file_format='tsv') }}">Download Raw Hits TSV</a>
               <a class="button button-secondary" href="/batch-blast">New Batch</a>
             </div>
           {% endif %}
         </section>
+
+        {% if batch.apoe_probe_preset %}
+          <section class="panel">
+            <div class="panel__header">
+              <h2 class="panel__title">APOE Probe Summary</h2>
+            </div>
+            <div class="table-wrap">
+              <table class="apoe-summary-table">
+                <thead>
+                  <tr>
+                    <th rowspan="3" class="apoe-sample-column">Sample</th>
+                    <th colspan="3" class="apoe-site-heading">AE4 site</th>
+                    <th colspan="3" class="apoe-site-heading">AE2 site</th>
+                    <th rowspan="3">Total</th>
+                    <th rowspan="3">Status</th>
+                  </tr>
+                  <tr>
+                    <th>AE4=C</th>
+                    <th class="apoe-t-column">AE4=T</th>
+                    <th class="apoe-percent-column">AE4 %T</th>
+                    <th>AE2=C</th>
+                    <th class="apoe-t-column">AE2=T</th>
+                    <th class="apoe-percent-column">AE2 %T</th>
+                  </tr>
+                  <tr>
+                    <th>(APOE4)</th>
+                    <th class="apoe-t-column">(APOE2+E3)</th>
+                    <th class="apoe-percent-column">T/(C+T)</th>
+                    <th>(APOE3+E4)</th>
+                    <th class="apoe-t-column">(APOE2)</th>
+                    <th class="apoe-percent-column">T/(C+T)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in batch.apoe_probe_summary or [] %}
+                    <tr>
+                      <td>
+                        <strong>{{ row.sample }}</strong>
+                        {% if row.database and row.database != row.sample %}
+                          <br><span class="muted">{{ row.database }}</span>
+                        {% endif %}
+                      </td>
+                      <td class="numeric-cell">{{ row.ae4_c_hits }}</td>
+                      <td class="numeric-cell apoe-t-column">{{ row.ae4_t_hits }}</td>
+                      <td class="numeric-cell apoe-percent-column">{{ row.ae4_t_percent or "n/a" }}</td>
+                      <td class="numeric-cell">{{ row.ae2_c_hits }}</td>
+                      <td class="numeric-cell apoe-t-column">{{ row.ae2_t_hits }}</td>
+                      <td class="numeric-cell apoe-percent-column">{{ row.ae2_t_percent or "n/a" }}</td>
+                      <td class="numeric-cell">{{ row.total_exact_probe_hits }}</td>
+                      <td>
+                        {% if row.error %}
+                          <span class="status-invalid">{{ row.error }}</span>
+                        {% else %}
+                          {{ row.status }}
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% else %}
+                    <tr>
+                      <td colspan="9">No APOE summary rows were generated.</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        {% endif %}
 
         <section class="panel">
           <div class="panel__header">

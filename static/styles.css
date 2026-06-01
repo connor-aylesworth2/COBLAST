@@ -373,6 +373,38 @@ tr:nth-child(even) {
   background: #f9fbfc;
 }
 
+.numeric-cell {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.apoe-summary-table th,
+.apoe-summary-table td {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.apoe-summary-table .apoe-sample-column,
+.apoe-summary-table td:first-child {
+  min-width: 180px;
+  text-align: left;
+}
+
+.apoe-summary-table .apoe-site-heading {
+  background: #f6f6f6;
+  color: #111111;
+  font-size: 1rem;
+}
+
+.apoe-summary-table .apoe-t-column,
+.apoe-summary-table .apoe-percent-column {
+  background: #eeeeee;
+}
+
+.apoe-summary-table tbody .apoe-percent-column {
+  font-weight: 700;
+}
+
 .summary-list {
   /* Result metadata uses compact responsive tiles for quick scanning. */
   display: grid;

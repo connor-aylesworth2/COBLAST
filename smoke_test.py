@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
+from apoe_summary import build_apoe_probe_summary
 from blast_runner import run_blast, validate_fasta_input
 from config import blast_exe
 
@@ -68,10 +69,44 @@ def exercise_validation() -> None:
         print(f"invalid_nucleotide_rejected={exc}")
 
 
+def exercise_apoe_summary() -> None:
+    """Check APOE exact-probe counts and per-site T percentages."""
+    summary = build_apoe_probe_summary(
+        [
+            {
+                "database_id": 1,
+                "display_name": "SRX123456 APOE pilot",
+                "db_prefix_path": r"C:\COBLAST_data\sra\SRX123456\reads",
+                "hit_count": 5,
+                "hits": [
+                    {"qseqid": "AE4_E4=C"},
+                    {"qseqid": "AE4_E23=T"},
+                    {"qseqid": "AE4_E23=T"},
+                    {"qseqid": "AE2_E34=C"},
+                    {"qseqid": "AE2_E2=T"},
+                ],
+                "error": "",
+            }
+        ]
+    )
+    row = summary[0]
+    assert row["sample"] == "SRX123456"
+    assert row["ae4_c_hits"] == 1
+    assert row["ae4_t_hits"] == 2
+    assert row["ae4_t_percent"] == "66.67"
+    assert row["ae2_t_percent"] == "50.00"
+    print(
+        "apoe_summary="
+        f"{row['sample']} ae4_t_percent={row['ae4_t_percent']} "
+        f"ae2_t_percent={row['ae2_t_percent']}"
+    )
+
+
 def main() -> None:
     """Run all supported BLAST programs against the toy databases."""
     ensure_toy_db()
     exercise_validation()
+    exercise_apoe_summary()
 
     searches = [
         ("blastn", f">query\n{TOY_SEQUENCE}", DB_PREFIX),

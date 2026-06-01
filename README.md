@@ -52,6 +52,11 @@ parses BLAST tabular/XML output into structured result tables. The browser inter
 an NCBI-inspired colour palette and keeps routine clinician-facing controls
 separate from advanced BLAST parameters.
 
+For SRA-style batch exploration, COBLAST can run one query across multiple
+registered local databases. It also includes an APOE exact-match batch preset
+that searches four stored APOE probes and summarizes per-sample probe counts in
+a visual table plus CSV/TSV exports.
+
 The Windows release executable bundles the required BLAST+ executables. When
 running from source, COBLAST expects compatible NCBI BLAST+ command-line tools
 to be installed locally or supplied with `BLAST_BIN`.
@@ -391,7 +396,8 @@ large FASTA files, database creation may still take many minutes because the
 current prototype waits for `makeblastdb` to finish before returning to the
 database page.
 
-The results table reports the top BLAST hits with query ID, subject ID, subject
+The results page shows the BLAST command and parameters used for the run. The
+results table reports the top BLAST hits with query ID, subject ID, subject
 title, percent identity, alignment length, query coverage, E-value, and bit
 score.
 Each completed run is saved locally under `instance\results\` so the displayed
@@ -438,6 +444,8 @@ The SRA workbench can:
 
 - list local `.sra`, FASTA, and BLAST database artifacts
 - register an existing SRA-derived BLAST database prefix
+- register all discovered SRA-derived BLAST database prefixes, or only selected
+  prefixes, in bulk
 - create a small pilot BLAST database from the first N records of an existing
   FASTA file
 - use SRA Toolkit `fastq-dump` to convert a limited number of spots from a local
@@ -471,14 +479,28 @@ http://127.0.0.1:5000/batch-blast
 Batch BLAST runs one query against multiple selected registered databases
 sequentially. This is the prototype path for testing the "100 patients" problem:
 prepare or register each patient as a local nucleotide BLAST database, select
-the compatible databases, and run the batch. The page shows a rough size-based
-runtime range before launch, saves individual per-database results, and exports
-the aggregate hit table as CSV or TSV.
+the compatible databases, and run the batch. The batch page includes compatible
+database filtering, select-all/deselect-all controls, and a rough size-based
+runtime range before launch. Completed batch runs save individual per-database
+results, expose per-database CSV links, and export the aggregate raw hit table
+as CSV or TSV.
 
 The batch page also includes an APOE exact-match probe preset. When selected,
 COBLAST uses the four stored APOE probe sequences, runs BLASTN against the
 selected nucleotide databases, and saves only hits with 100% identity and 100%
-query coverage.
+query coverage. APOE batch results include an `APOE Probe Summary` table with
+one row per selected sample/database. The summary counts exact matches for
+`AE4=C`, `AE4=T`, `AE2=C`, and `AE2=T`, then reports `AE4 %T` and `AE2 %T` as:
+
+```text
+T hits / (C hits + T hits) * 100
+```
+
+When an SRX, ERX, or DRX accession appears in the database display name or
+database path, COBLAST uses that accession as the sample label; otherwise it
+falls back to the database display name. APOE summary tables can be downloaded
+as CSV or TSV, and the underlying raw exact-hit table remains available for
+troubleshooting.
 
 The runtime estimate is only a planning aid. Real runtime depends on query
 length, database size, BLAST program, sensitivity settings, disk speed, CPU, and
