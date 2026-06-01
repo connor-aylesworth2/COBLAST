@@ -41,8 +41,7 @@ APOE_QUERY_IDS = {probe["query_id"] for probe in APOE_PROBE_DEFINITIONS}
 APOE_ACCESSION_PATTERN = re.compile(r"\b(?:SRX|ERX|DRX)\d+\b", re.IGNORECASE)
 
 APOE_SUMMARY_EXPORT_COLUMNS = [
-    ("sample", "Sample"),
-    ("database", "Database"),
+    ("database_sample", "Database/Sample"),
     ("ae4_c_hits", "AE4=C hits"),
     ("ae4_t_hits", "AE4=T hits"),
     ("ae4_total_hits", "AE4 total hits"),
@@ -52,7 +51,6 @@ APOE_SUMMARY_EXPORT_COLUMNS = [
     ("ae2_total_hits", "AE2 total hits"),
     ("ae2_t_percent", "AE2 T percent"),
     ("total_exact_probe_hits", "Total exact probe hits"),
-    ("status", "Status"),
 ]
 
 
@@ -100,9 +98,12 @@ def build_apoe_probe_summary(database_results: list[dict[str, Any]]) -> list[dic
         ae2_total_hits = ae2_c_hits + ae2_t_hits
         error = str(database_result.get("error") or "")
 
+        sample = _sample_label(database_result)
+
         rows.append(
             {
-                "sample": _sample_label(database_result),
+                "sample": sample,
+                "database_sample": sample,
                 "database": database_result.get("display_name", ""),
                 "db_prefix_path": database_result.get("db_prefix_path", ""),
                 "ae4_c_hits": ae4_c_hits,
