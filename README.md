@@ -490,10 +490,10 @@ COBLAST uses the four stored APOE probe sequences, runs BLASTN against the
 selected nucleotide databases, and saves only hits with 100% identity and 100%
 query coverage. APOE batch results include an `APOE Probe Summary` table with
 one row per selected sample/database. The summary counts exact matches for
-`AE4=C`, `AE4=T`, `AE2=C`, and `AE2=T`, then reports `AE4 %T` and `AE2 %T` as:
+`AE4=C`, `AE4=T`, `AE2=C`, and `AE2=T`, then reports `% C<->T` as:
 
 ```text
-T hits / (C hits + T hits) * 100
+(AE4=T hits + AE2=T hits) / total exact APOE probe hits * 100
 ```
 
 When an SRX, ERX, or DRX accession appears in the database display name or

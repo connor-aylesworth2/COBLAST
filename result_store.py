@@ -184,5 +184,28 @@ def apoe_summary_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
         summary_rows = build_apoe_probe_summary(batch_data.get("database_results", []))
 
     for row in summary_rows:
-        writer.writerow([row.get(key, "") for key, _ in APOE_SUMMARY_EXPORT_COLUMNS])
+        writer.writerow([apoe_summary_export_value(row, key) for key, _ in APOE_SUMMARY_EXPORT_COLUMNS])
     return buffer.getvalue()
+
+
+def apoe_summary_export_value(row: dict, key: str) -> object:
+    """Return APOE export values with compatibility for older saved summaries."""
+    if key == "sample_database":
+        return (
+            row.get("sample_database")
+            or row.get("database_sample")
+            or row.get("sample")
+            or row.get("database")
+            or ""
+        )
+    if key == "c_to_t_percent" and row.get(key, "") == "":
+        try:
+            ae4_t_hits = int(row.get("ae4_t_hits", 0))
+            ae2_t_hits = int(row.get("ae2_t_hits", 0))
+            total_hits = int(row.get("total_exact_probe_hits", 0))
+        except (TypeError, ValueError):
+            return ""
+        if total_hits <= 0:
+            return ""
+        return f"{((ae4_t_hits + ae2_t_hits) / total_hits) * 100:.2f}"
+    return row.get(key, "")

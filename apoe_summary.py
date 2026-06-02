@@ -41,16 +41,13 @@ APOE_QUERY_IDS = {probe["query_id"] for probe in APOE_PROBE_DEFINITIONS}
 APOE_ACCESSION_PATTERN = re.compile(r"\b(?:SRX|ERX|DRX)\d+\b", re.IGNORECASE)
 
 APOE_SUMMARY_EXPORT_COLUMNS = [
-    ("database_sample", "Database/Sample"),
+    ("sample_database", "Sample/Database"),
     ("ae4_c_hits", "AE4=C hits"),
     ("ae4_t_hits", "AE4=T hits"),
-    ("ae4_total_hits", "AE4 total hits"),
-    ("ae4_t_percent", "AE4 T percent"),
     ("ae2_c_hits", "AE2=C hits"),
     ("ae2_t_hits", "AE2=T hits"),
-    ("ae2_total_hits", "AE2 total hits"),
-    ("ae2_t_percent", "AE2 T percent"),
     ("total_exact_probe_hits", "Total exact probe hits"),
+    ("c_to_t_percent", "% C<->T"),
 ]
 
 
@@ -96,6 +93,7 @@ def build_apoe_probe_summary(database_results: list[dict[str, Any]]) -> list[dic
         ae2_t_hits = counts["AE2_E2=T"]
         ae4_total_hits = ae4_c_hits + ae4_t_hits
         ae2_total_hits = ae2_c_hits + ae2_t_hits
+        total_exact_probe_hits = ae4_total_hits + ae2_total_hits
         error = str(database_result.get("error") or "")
 
         sample = _sample_label(database_result)
@@ -103,6 +101,7 @@ def build_apoe_probe_summary(database_results: list[dict[str, Any]]) -> list[dic
         rows.append(
             {
                 "sample": sample,
+                "sample_database": sample,
                 "database_sample": sample,
                 "database": database_result.get("display_name", ""),
                 "db_prefix_path": database_result.get("db_prefix_path", ""),
@@ -114,7 +113,8 @@ def build_apoe_probe_summary(database_results: list[dict[str, Any]]) -> list[dic
                 "ae2_t_hits": ae2_t_hits,
                 "ae2_total_hits": ae2_total_hits,
                 "ae2_t_percent": _percentage(ae2_t_hits, ae2_total_hits),
-                "total_exact_probe_hits": ae4_total_hits + ae2_total_hits,
+                "total_exact_probe_hits": total_exact_probe_hits,
+                "c_to_t_percent": _percentage(ae4_t_hits + ae2_t_hits, total_exact_probe_hits),
                 "status": error or f"{database_result.get('hit_count', 0)} exact hit(s)",
                 "error": error,
             }

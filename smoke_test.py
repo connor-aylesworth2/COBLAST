@@ -93,12 +93,11 @@ def exercise_apoe_summary() -> None:
     assert row["sample"] == "SRX123456"
     assert row["ae4_c_hits"] == 1
     assert row["ae4_t_hits"] == 2
-    assert row["ae4_t_percent"] == "66.67"
-    assert row["ae2_t_percent"] == "50.00"
+    assert row["total_exact_probe_hits"] == 5
+    assert row["c_to_t_percent"] == "60.00"
     print(
         "apoe_summary="
-        f"{row['sample']} ae4_t_percent={row['ae4_t_percent']} "
-        f"ae2_t_percent={row['ae2_t_percent']}"
+        f"{row['sample']} c_to_t_percent={row['c_to_t_percent']}"
     )
 
 

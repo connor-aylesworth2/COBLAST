@@ -91,56 +91,31 @@
               <table class="apoe-summary-table">
                 <thead>
                   <tr>
-                    <th rowspan="3" class="apoe-sample-column">Sample</th>
-                    <th colspan="3" class="apoe-site-heading">AE4 site</th>
-                    <th colspan="3" class="apoe-site-heading">AE2 site</th>
-                    <th rowspan="3">Total</th>
-                    <th rowspan="3">Status</th>
-                  </tr>
-                  <tr>
+                    <th class="apoe-sample-column">Sample/Database</th>
                     <th>AE4=C</th>
                     <th class="apoe-t-column">AE4=T</th>
-                    <th class="apoe-percent-column">AE4 %T</th>
                     <th>AE2=C</th>
                     <th class="apoe-t-column">AE2=T</th>
-                    <th class="apoe-percent-column">AE2 %T</th>
-                  </tr>
-                  <tr>
-                    <th>(APOE4)</th>
-                    <th class="apoe-t-column">(APOE2+E3)</th>
-                    <th class="apoe-percent-column">T/(C+T)</th>
-                    <th>(APOE3+E4)</th>
-                    <th class="apoe-t-column">(APOE2)</th>
-                    <th class="apoe-percent-column">T/(C+T)</th>
+                    <th>Total exact probe hits</th>
+                    <th class="apoe-percent-column">% C&lt;-&gt;T</th>
                   </tr>
                 </thead>
                 <tbody>
                   {% for row in batch.apoe_probe_summary or [] %}
                     <tr>
                       <td>
-                        <strong>{{ row.sample }}</strong>
-                        {% if row.database and row.database != row.sample %}
-                          <br><span class="muted">{{ row.database }}</span>
-                        {% endif %}
+                        <strong>{{ row.sample_database or row.database_sample or row.sample }}</strong>
                       </td>
                       <td class="numeric-cell">{{ row.ae4_c_hits }}</td>
                       <td class="numeric-cell apoe-t-column">{{ row.ae4_t_hits }}</td>
-                      <td class="numeric-cell apoe-percent-column">{{ row.ae4_t_percent or "n/a" }}</td>
                       <td class="numeric-cell">{{ row.ae2_c_hits }}</td>
                       <td class="numeric-cell apoe-t-column">{{ row.ae2_t_hits }}</td>
-                      <td class="numeric-cell apoe-percent-column">{{ row.ae2_t_percent or "n/a" }}</td>
                       <td class="numeric-cell">{{ row.total_exact_probe_hits }}</td>
-                      <td>
-                        {% if row.error %}
-                          <span class="status-invalid">{{ row.error }}</span>
-                        {% else %}
-                          {{ row.status }}
-                        {% endif %}
-                      </td>
+                      <td class="numeric-cell apoe-percent-column">{{ row.c_to_t_percent or "n/a" }}</td>
                     </tr>
                   {% else %}
                     <tr>
-                      <td colspan="9">No APOE summary rows were generated.</td>
+                      <td colspan="7">No APOE summary rows were generated.</td>
                     </tr>
                   {% endfor %}
                 </tbody>
