@@ -24,14 +24,15 @@ The BLAST+ `bin` folder should contain `blastn`, `blastp`, `blastx`, `tblastn`,
 ## 2. Get the prototype
 
 ```powershell
-git clone https://github.com/connor-aylesworth2/blast-flask-app.git
-cd blast-flask-app
+git clone https://github.com/connor-aylesworth2/COBLAST-.git
+cd COBLAST-
 ```
 
-If you are testing a feature branch before it is merged:
+If you are testing a feature branch before it is merged, check out the branch
+name you were given:
 
 ```powershell
-git checkout codex/localhost-remote-safety
+git checkout <branch-name>
 ```
 
 ## 3. Run the one-step launcher
