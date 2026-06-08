@@ -49,16 +49,6 @@
               {{ "%.3f"|format(result.runtime_seconds) }} seconds
             </div>
             <div class="summary-item">
-              <span>Estimate</span>
-              {% if result.estimated_runtime_seconds %}
-                {{ format_duration(result.estimated_runtime_low_seconds) }}
-                to
-                {{ format_duration(result.estimated_runtime_high_seconds) }}
-              {% else %}
-                unknown
-              {% endif %}
-            </div>
-            <div class="summary-item">
               <span>Database Size</span>
               {{ format_bytes(result.database_total_bytes) }}
             </div>

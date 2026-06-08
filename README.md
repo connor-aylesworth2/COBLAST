@@ -55,8 +55,9 @@ separate from advanced BLAST parameters.
 For SRA-style batch exploration, COBLAST can run one query across multiple
 registered local databases. It also includes an APOE exact-match batch preset
 that searches four stored APOE probes and summarizes per-sample probe counts in
-a visual table plus CSV/TSV exports, and an eToL exact-match batch preset that
-searches the full 1,021-probe electronic Tree of Life panel and summarizes the
+a visual table plus CSV/TSV exports, and eToL exact-match batch presets that
+search the electronic Tree of Life probe panel (full 1,017-probe microbial set,
+a human-control set, or a one-probe-per-species quick set) and summarize the
 species detected per sample with per-probe and per-species count exports.
 
 The Windows release executable bundles the required BLAST+ executables. When
@@ -470,8 +471,6 @@ The intended first simulation is deliberately small:
 
 4. Run a normal BLAST query against that pilot database.
 
-5. Compare the displayed runtime estimate with the observed runtime.
-
 For many patients, open the batch BLAST page at:
 
 ```text
@@ -482,10 +481,9 @@ Batch BLAST runs one query against multiple selected registered databases
 sequentially. This is the prototype path for testing the "100 patients" problem:
 prepare or register each patient as a local nucleotide BLAST database, select
 the compatible databases, and run the batch. The batch page includes compatible
-database filtering, select-all/deselect-all controls, and a rough size-based
-runtime range before launch. Completed batch runs save individual per-database
-results, expose per-database CSV links, and export the aggregate raw hit table
-as CSV or TSV.
+database filtering and select-all/deselect-all controls. Completed batch runs
+save individual per-database results, expose per-database CSV links, and export
+the aggregate raw hit table as CSV or TSV.
 
 The batch page also includes an APOE exact-match probe preset. When selected,
 COBLAST uses the four stored APOE probe sequences, runs BLASTN against the
@@ -504,31 +502,45 @@ falls back to the database display name. APOE summary tables can be downloaded
 as CSV or TSV, and the underlying raw exact-hit table remains available for
 troubleshooting.
 
-### eToL exact-match probe preset
+### eToL exact-match probe presets
 
-The batch page also includes an **eToL exact-match probe preset** built for the
+The batch page also includes **eToL exact-match probe presets** built for the
 electronic Tree of Life (eToL) workflow described in Hu, Haas & Lathe,
-*BMC Microbiology* 2022. When selected, COBLAST uses the full bundled eToL probe
-panel (`data/eToL_probes.fasta`, 1,021 64-mer probes spanning Archaea, Bacteria,
-Chloroplastida, basal Eukaryota, Fungi, and Holozoa/Metazoa, plus PGK1/hNSE
-human housekeeping controls), runs BLASTN against the selected nucleotide
-databases, and — exactly like the APOE preset — saves only hits with 100%
-identity and 100% query coverage. The probe FASTA is supplied automatically, so
-the query box is left empty when the preset is on.
+*BMC Microbiology* 2022;22:317. Each preset BLASTNs a stored probe panel against
+the selected nucleotide databases and — exactly like the APOE preset — saves only
+hits with 100% identity and 100% query coverage. The probe FASTA is supplied
+automatically, so the query box is left empty (read-only) when a preset is on.
+
+There are three eToL presets, plus the APOE preset; **only one preset can be
+active at a time** (selecting one clears the others):
+
+- **eToL Full** — the full microbial panel, `data/eToL_probes.fasta` (1,017
+  64-mer probes, 120 species across Archaea, Bacteria, Chloroplastida,
+  Amoebozoa, basal Eukaryota, Fungi, and Holozoa/Metazoa).
+- **eToL test** — the human housekeeping control probes only,
+  `data/eToL_control_probes.fasta` (PGK1, hNSE). Same workflow as eToL Full but
+  uses human sequences as a control.
+- **eToL Quick** — one probe per species (the first probe of each of the 120
+  species), a slim 120-probe panel for fast test runs.
 
 This is intended for the patient-sample use case: register a patient's brain (or
 other tissue) RNA-seq reads as a local nucleotide database, select it (or several
-patients) in the batch picker, and run the preset to count exact probe matches.
+patients) in the batch picker, and run a preset to count exact probe matches.
 
 eToL batch results include an `eToL Probe Summary` section with one block per
 selected sample/database. Each block reports the total exact probe hits, how many
-of the 1,021 probes were detected, how many species/taxa were detected, and a
-table of the detected species (grouped by domain and eToL class code, sorted by
-exact-hit count). Two count exports are offered alongside the raw hit table:
+probes were detected, how many species/taxa were detected, and a table of the
+detected species (grouped by domain and eToL class code, sorted by exact-hit
+count). Species are shown by species label only (the class prefix and rRNA-unit
+suffix are stripped, e.g. `B0_Tmaritima_16S` is displayed as `Tmaritima`). Class
+codes map to domains per the eToL paper: A Archaea; B Bacteria; C Chloroplastida;
+D Amoebozoa; E0 basal Eukaryota; F Fungi; H Holozoa/Metazoa.
+
+Two count exports are offered alongside the raw hit table:
 
 - **eToL Probe Counts** (CSV/TSV) — one row per probe per sample for every probe
-  in the panel (including zeros): `Sample/Database, Probe, Species/Taxon, Class,
-  Domain, Exact hits`. This is the full count matrix for downstream species plots.
+  in the active panel (including zeros): `Sample/Database, Probe, Species/Taxon,
+  Class, Domain, Exact hits`. This is the full count matrix for species plots.
 - **eToL Species Summary** (CSV/TSV) — one row per species/taxon per sample
   (including zeros): `Sample/Database, Domain, Class, Species/Taxon, Probes in
   panel, Probes detected, Total exact probe hits`.
@@ -537,11 +549,6 @@ Sample labels follow the same SRA-accession rule as the APOE preset. Because the
 eToL panel contains far more than the previous 100-record limit, the maximum
 number of FASTA query records per run is 1,500 (`MAX_FASTA_RECORDS` in
 `blast_runner.py`), which accommodates the full panel with headroom.
-
-The runtime estimate is only a planning aid. Real runtime depends on query
-length, database size, BLAST program, sensitivity settings, disk speed, CPU, and
-sequence composition. Use small local pilots to calibrate expectations before
-running full SRA-derived databases.
 
 ## Adding Clinician Databases
 

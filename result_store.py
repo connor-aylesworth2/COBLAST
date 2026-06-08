@@ -18,6 +18,7 @@ from apoe_summary import APOE_SUMMARY_EXPORT_COLUMNS, build_apoe_probe_summary
 from etol_summary import (
     ETOL_PROBE_EXPORT_COLUMNS,
     ETOL_SPECIES_EXPORT_COLUMNS,
+    etol_preset_records,
     etol_probe_count_rows,
     etol_species_count_rows,
 )
@@ -194,12 +195,18 @@ def apoe_summary_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
     return buffer.getvalue()
 
 
+def _etol_records_for_batch(batch_data: dict) -> tuple:
+    """Resolve the probe panel used by a saved eToL batch (defaults to full)."""
+    return etol_preset_records(batch_data.get("etol_preset_key") or "etol_full")
+
+
 def etol_summary_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
     """Render eToL per-species exact-hit counts (every taxon) as CSV or TSV text."""
     buffer = io.StringIO()
     writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
     writer.writerow([label for _, label in ETOL_SPECIES_EXPORT_COLUMNS])
-    for row in etol_species_count_rows(batch_data.get("database_results", [])):
+    records = _etol_records_for_batch(batch_data)
+    for row in etol_species_count_rows(batch_data.get("database_results", []), records):
         writer.writerow([row.get(key, "") for key, _ in ETOL_SPECIES_EXPORT_COLUMNS])
     return buffer.getvalue()
 
@@ -209,7 +216,8 @@ def etol_probe_counts_as_delimited(batch_data: dict, delimiter: str) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
     writer.writerow([label for _, label in ETOL_PROBE_EXPORT_COLUMNS])
-    for row in etol_probe_count_rows(batch_data.get("database_results", [])):
+    records = _etol_records_for_batch(batch_data)
+    for row in etol_probe_count_rows(batch_data.get("database_results", []), records):
         writer.writerow([row.get(key, "") for key, _ in ETOL_PROBE_EXPORT_COLUMNS])
     return buffer.getvalue()
 

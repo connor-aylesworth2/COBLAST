@@ -9,7 +9,12 @@ import subprocess
 import tempfile
 
 from apoe_summary import build_apoe_probe_summary
-from etol_summary import build_etol_probe_summary, etol_probe_count, etol_probe_query_ids
+from etol_summary import (
+    build_etol_probe_summary,
+    etol_preset_probe_count,
+    etol_preset_query_ids,
+    etol_preset_records,
+)
 from blast_runner import run_blast, validate_fasta_input
 from config import blast_exe
 
@@ -103,8 +108,17 @@ def exercise_apoe_summary() -> None:
 
 
 def exercise_etol_summary() -> None:
-    """Check the bundled eToL panel loads and per-species counts aggregate."""
-    query_ids = etol_probe_query_ids()
+    """Check the bundled eToL panels load and per-species counts aggregate."""
+    # Microbial controls are excluded from the full panel; the quick panel keeps
+    # one probe per species; the control panel holds only the human probes.
+    assert etol_preset_probe_count("etol_full") == 1017
+    assert etol_preset_probe_count("etol_quick") == 120
+    assert etol_preset_probe_count("etol_control") == 4
+    assert "PGK1_2" not in etol_preset_query_ids("etol_full")
+    assert "PGK1_2" in etol_preset_query_ids("etol_control")
+
+    full_records = etol_preset_records("etol_full")
+    query_ids = etol_preset_query_ids("etol_full")
     # Real probe IDs from the bundled panel: two probes of one archaeon plus one
     # probe of another, giving 4 exact hits across 2 detected species.
     for probe_id in ("A_Hsalinarum_16S_1", "A_Hsalinarum_16S_3", "A_MethanocaldococcusSG1_16S_1"):
@@ -124,19 +138,22 @@ def exercise_etol_summary() -> None:
                 ],
                 "error": "",
             }
-        ]
+        ],
+        full_records,
     )
     row = summary[0]
     assert row["sample"] == "SRX123456"
-    assert row["total_probes"] == etol_probe_count()
+    assert row["total_probes"] == etol_preset_probe_count("etol_full")
     assert row["total_exact_probe_hits"] == 4
     assert row["probes_detected"] == 3
     assert row["species_detected"] == 2
     assert row["detected_species"][0]["taxon"] == "A_Hsalinarum_16S"
+    assert row["detected_species"][0]["species"] == "Hsalinarum"
     assert row["detected_species"][0]["exact_hits"] == 3
     print(
         "etol_summary="
         f"{row['sample']} panel={row['total_probes']} "
+        f"top_species={row['detected_species'][0]['species']} "
         f"species_detected={row['species_detected']}"
     )
 

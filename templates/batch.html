@@ -45,23 +45,24 @@
         </div>
 
         <div class="field">
+          <span class="field-label">Exact-match probe preset</span>
+          <span class="muted">Optional. Choose one preset to BLAST a stored probe panel; only one can be active at a time.</span>
           <label class="checkbox-row checkbox-row--wide">
-            <input id="apoe_probe_preset" name="apoe_probe_preset" type="checkbox" value="1">
+            <input class="probe-preset" id="apoe_probe_preset" name="apoe_probe_preset" type="checkbox" value="1" data-preset-panel="APOE">
             <span>
               <strong>APOE exact-match probe batch</strong>
               <br><span class="muted">4 probes; BLASTN; 100% identity and 100% query coverage</span>
             </span>
           </label>
-        </div>
-
-        <div class="field">
-          <label class="checkbox-row checkbox-row--wide">
-            <input id="etol_probe_preset" name="etol_probe_preset" type="checkbox" value="1">
-            <span>
-              <strong>eToL exact-match probe batch</strong>
-              <br><span class="muted">{{ etol_probe_count }} electronic Tree of Life probes; BLASTN; 100% identity and 100% query coverage. Counts exact probe hits per probe and species for each selected patient database.</span>
-            </span>
-          </label>
+          {% for option in etol_preset_options %}
+            <label class="checkbox-row checkbox-row--wide">
+              <input class="probe-preset" id="{{ option.form_field }}" name="{{ option.form_field }}" type="checkbox" value="1" data-preset-panel="{{ option.panel_label }}">
+              <span>
+                <strong>{{ option.label }}</strong>
+                <br><span class="muted">{{ option.probe_count }} probes; BLASTN; 100% identity and 100% query coverage. {{ option.description }}</span>
+              </span>
+            </label>
+          {% endfor %}
         </div>
 
         <div class="field">
@@ -75,24 +76,13 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
           <input class="file-input" id="sequence_file" name="sequence_file" type="file" accept=".fa,.fasta,.fna,.faa,.txt">
         </div>
 
-        <div class="grid">
-          <div class="field">
-            <label for="program">Search type</label>
-            <select id="program" name="program">
-              {% for program, config in blast_programs.items() %}
-                <option value="{{ program }}">{{ config.label }} - {{ config.description }}</option>
-              {% endfor %}
-            </select>
-          </div>
-
-          <div class="field">
-            <span class="field-label">Batch estimate</span>
-            <div class="summary-item">
-              <span id="batch_estimate_count">0 selected</span>
-              <strong id="batch_estimate_time">unknown</strong>
-              <span id="batch_estimate_size">0 B</span>
-            </div>
-          </div>
+        <div class="field">
+          <label for="program">Search type</label>
+          <select id="program" name="program">
+            {% for program, config in blast_programs.items() %}
+              <option value="{{ program }}">{{ config.label }} - {{ config.description }}</option>
+            {% endfor %}
+          </select>
         </div>
 
         <div class="field">
@@ -226,88 +216,30 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
     </main>
 
     <script src="{{ url_for('static', filename='waiting.js') }}"></script>
-    <script type="application/json" id="apoe_probe_fasta_json">{{ apoe_probe_fasta | tojson }}</script>
     <script>
       const programRequirements = {
         {% for program, config in blast_programs.items() %}
           "{{ program }}": "{{ config.db_type }}",
         {% endfor %}
       };
-      const programMultipliers = {
-        blastn: 1,
-        blastp: 0.8,
-        blastx: 2,
-        tblastn: 2.4,
-      };
-      const presetMultipliers = {
-        fast: 0.6,
-        standard: 1,
-        sensitive: 1.8,
-      };
 
       const programSelect = document.getElementById("program");
-      const apoeProbePreset = document.getElementById("apoe_probe_preset");
-      const etolProbePreset = document.getElementById("etol_probe_preset");
-      const apoeProbeFasta = JSON.parse(document.getElementById("apoe_probe_fasta_json").textContent);
+      const presetCheckboxes = Array.from(document.querySelectorAll(".probe-preset"));
       const sequenceInput = document.getElementById("sequence");
       const sequenceFile = document.getElementById("sequence_file");
       const rows = document.querySelectorAll(".database-row");
       const checkboxes = document.querySelectorAll(".database-checkbox");
-      const presetInputs = document.querySelectorAll('input[name="sensitivity_preset"]');
-      const countNode = document.getElementById("batch_estimate_count");
-      const timeNode = document.getElementById("batch_estimate_time");
-      const sizeNode = document.getElementById("batch_estimate_size");
       const taskSelect = document.getElementById("task");
       const evalueInput = document.getElementById("evalue");
       const maxTargetSeqs = document.getElementById("max_target_seqs");
       const percentIdentity = document.getElementById("perc_identity");
       const timeoutSeconds = document.getElementById("timeout_seconds");
       const outputFormat = document.getElementById("output_format");
-      let preApoeState = null;
-      let preEtolState = null;
-      const etolPlaceholder =
-        "Using the bundled eToL probe panel (supplied automatically when this preset is on).";
+      // Snapshot of the manual query fields, saved when a preset takes over.
+      let prePresetState = null;
 
-      function queryLength() {
-        return sequenceInput.value
-          .split("\n")
-          .filter((line) => !line.trim().startsWith(">"))
-          .join("")
-          .replace(/\s+/g, "")
-          .length;
-      }
-
-      function formatBytes(bytes) {
-        let size = bytes;
-        for (const unit of ["B", "KB", "MB", "GB", "TB"]) {
-          if (size < 1024 || unit === "TB") {
-            return unit === "B" ? `${Math.round(size)} B` : `${size.toFixed(1)} ${unit}`;
-          }
-          size = size / 1024;
-        }
-        return `${size.toFixed(1)} TB`;
-      }
-
-      function formatDuration(seconds) {
-        if (!Number.isFinite(seconds) || seconds <= 0) {
-          return "unknown";
-        }
-        if (seconds < 60) {
-          return `${Math.round(seconds)} sec`;
-        }
-        const minutes = seconds / 60;
-        if (minutes < 60) {
-          return `${minutes.toFixed(1)} min`;
-        }
-        const hours = minutes / 60;
-        if (hours < 48) {
-          return `${hours.toFixed(1)} hr`;
-        }
-        return `${(hours / 24).toFixed(1)} days`;
-      }
-
-      function selectedPreset() {
-        return document.querySelector('input[name="sensitivity_preset"]:checked')?.value || "standard";
+      function activePreset() {
+        return presetCheckboxes.find((checkbox) => checkbox.checked) || null;
       }
 
       function updateCompatibility() {
@@ -323,7 +255,6 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         }
         updateAdvancedAvailability();
         updatePresetPlaceholders();
-        updateEstimate();
       }
 
       function updateAdvancedAvailability() {
@@ -346,72 +277,13 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         timeoutSeconds.placeholder = `Preset default: ${presetTimeout} seconds`;
       }
 
-      function updateEstimate() {
-        let selectedCount = 0;
-        let totalBytes = 0;
-        for (const checkbox of checkboxes) {
-          if (checkbox.checked && !checkbox.disabled) {
-            selectedCount += 1;
-            totalBytes += Number(checkbox.closest(".database-row").dataset.storageBytes || 0);
-          }
-        }
-
-        const databaseGb = totalBytes / 1000000000;
-        const queryKb = Math.max(queryLength() / 1000, 0.05);
-        const seconds = 2 * selectedCount
-          + databaseGb
-          * queryKb
-          * (programMultipliers[programSelect.value] || 1)
-          * (presetMultipliers[selectedPreset()] || 1)
-          * 90;
-
-        countNode.textContent = `${selectedCount} selected`;
-        timeNode.textContent = selectedCount ? `${formatDuration(seconds / 3)} to ${formatDuration(seconds * 3)}` : "unknown";
-        sizeNode.textContent = formatBytes(totalBytes);
-      }
-
-      function applyApoeProbePreset() {
-        if (apoeProbePreset.checked) {
-          // APOE and eToL share the same exact-match query slot; only one runs.
-          if (etolProbePreset.checked) {
-            etolProbePreset.checked = false;
-            applyEtolProbePreset();
-          }
-          preApoeState = preApoeState || {
-            sequence: sequenceInput.value,
-            program: programSelect.value,
-            outputFormat: outputFormat.value,
-            percentIdentity: percentIdentity.value,
-            task: taskSelect.value,
-          };
-          sequenceInput.value = apoeProbeFasta;
-          sequenceFile.value = "";
-          programSelect.value = "blastn";
-          outputFormat.value = "tabular";
-          percentIdentity.value = "100";
-          taskSelect.value = "";
-          updateCompatibility();
-          return;
-        }
-
-        if (preApoeState) {
-          sequenceInput.value = preApoeState.sequence;
-          programSelect.value = preApoeState.program;
-          outputFormat.value = preApoeState.outputFormat;
-          percentIdentity.value = preApoeState.percentIdentity;
-          taskSelect.value = preApoeState.task;
-          preApoeState = null;
-        }
-        updateCompatibility();
-      }
-
-      function applyEtolProbePreset() {
-        if (etolProbePreset.checked) {
-          if (apoeProbePreset.checked) {
-            apoeProbePreset.checked = false;
-            applyApoeProbePreset();
-          }
-          preEtolState = preEtolState || {
+      function applyProbePreset() {
+        const active = activePreset();
+        if (active) {
+          // The probe FASTA is supplied server-side, so we keep the query box
+          // empty (read-only) and explain where the query comes from instead of
+          // dumping the stored probes into the field.
+          prePresetState = prePresetState || {
             sequence: sequenceInput.value,
             readOnly: sequenceInput.readOnly,
             placeholder: sequenceInput.placeholder,
@@ -420,11 +292,9 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
             percentIdentity: percentIdentity.value,
             task: taskSelect.value,
           };
-          // The full 1021-probe FASTA is supplied server-side, so we keep the
-          // textarea empty (read-only) and explain where the query comes from
-          // rather than dumping ~1000 records into the field.
+          const panel = active.dataset.presetPanel || "selected probe";
           sequenceInput.value = "";
-          sequenceInput.placeholder = etolPlaceholder;
+          sequenceInput.placeholder = `Using the ${panel} probe panel (supplied automatically when this preset is on).`;
           sequenceInput.readOnly = true;
           sequenceFile.value = "";
           programSelect.value = "blastn";
@@ -435,15 +305,15 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
           return;
         }
 
-        if (preEtolState) {
-          sequenceInput.value = preEtolState.sequence;
-          sequenceInput.readOnly = preEtolState.readOnly;
-          sequenceInput.placeholder = preEtolState.placeholder;
-          programSelect.value = preEtolState.program;
-          outputFormat.value = preEtolState.outputFormat;
-          percentIdentity.value = preEtolState.percentIdentity;
-          taskSelect.value = preEtolState.task;
-          preEtolState = null;
+        if (prePresetState) {
+          sequenceInput.value = prePresetState.sequence;
+          sequenceInput.readOnly = prePresetState.readOnly;
+          sequenceInput.placeholder = prePresetState.placeholder;
+          programSelect.value = prePresetState.program;
+          outputFormat.value = prePresetState.outputFormat;
+          percentIdentity.value = prePresetState.percentIdentity;
+          taskSelect.value = prePresetState.task;
+          prePresetState = null;
         }
         updateCompatibility();
       }
@@ -452,31 +322,38 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         for (const checkbox of checkboxes) {
           checkbox.checked = !checkbox.disabled && !checkbox.closest(".database-row").hidden;
         }
-        updateEstimate();
       });
       document.getElementById("deselect_all_databases").addEventListener("click", () => {
         for (const checkbox of checkboxes) {
           checkbox.checked = false;
         }
-        updateEstimate();
       });
 
       programSelect.addEventListener("change", () => {
-        if ((apoeProbePreset.checked || etolProbePreset.checked) && programSelect.value !== "blastn") {
+        if (activePreset() && programSelect.value !== "blastn") {
           programSelect.value = "blastn";
         }
         updateCompatibility();
       });
-      sequenceInput.addEventListener("input", updateEstimate);
-      apoeProbePreset.addEventListener("change", applyApoeProbePreset);
-      etolProbePreset.addEventListener("change", applyEtolProbePreset);
-      for (const checkbox of checkboxes) {
-        checkbox.addEventListener("change", updateEstimate);
+
+      for (const presetCheckbox of presetCheckboxes) {
+        presetCheckbox.addEventListener("change", () => {
+          // Only one exact-match probe preset can be active at a time.
+          if (presetCheckbox.checked) {
+            for (const other of presetCheckboxes) {
+              if (other !== presetCheckbox) {
+                other.checked = false;
+              }
+            }
+          }
+          applyProbePreset();
+        });
       }
-      for (const presetInput of presetInputs) {
-        presetInput.addEventListener("change", updateEstimate);
+
+      for (const presetInput of document.querySelectorAll('input[name="sensitivity_preset"]')) {
         presetInput.addEventListener("change", updatePresetPlaceholders);
       }
+
       updateCompatibility();
     </script>
   </body>

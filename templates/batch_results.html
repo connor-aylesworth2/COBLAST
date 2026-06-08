@@ -69,7 +69,7 @@
             {% elif batch.etol_probe_preset %}
               <div class="summary-item">
                 <span>Probe preset</span>
-                eToL exact-match probes
+                {{ batch.etol_preset_label or "eToL exact-match probes" }}
               </div>
               <div class="summary-item">
                 <span>Hit filter</span>
@@ -186,7 +186,7 @@
                           <tr>
                             <td>{{ species.domain }}</td>
                             <td>{{ species.group }}</td>
-                            <td><strong>{{ species.taxon }}</strong></td>
+                            <td><strong>{{ species.species }}</strong></td>
                             <td class="numeric-cell">{{ species.probes_detected }} / {{ species.probes_in_panel }}</td>
                             <td class="numeric-cell">{{ species.exact_hits }}</td>
                           </tr>
@@ -215,7 +215,6 @@
                   <th>Database</th>
                   <th>Size</th>
                   <th>Runtime</th>
-                  <th>Estimate</th>
                   <th>Hits</th>
                   <th>Status</th>
                 </tr>
@@ -233,15 +232,6 @@
                     <td>
                       {% if database_result.runtime_seconds != "" %}
                         {{ "%.3f"|format(database_result.runtime_seconds) }} seconds
-                      {% endif %}
-                    </td>
-                    <td>
-                      {% if database_result.estimated_runtime_seconds %}
-                        {{ format_duration(database_result.estimated_runtime_low_seconds) }}
-                        to
-                        {{ format_duration(database_result.estimated_runtime_high_seconds) }}
-                      {% else %}
-                        unknown
                       {% endif %}
                     </td>
                     <td>{{ database_result.hit_count }}</td>

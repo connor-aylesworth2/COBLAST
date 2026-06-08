@@ -15,7 +15,7 @@ import subprocess
 
 from config import resource_root, runtime_data_dir
 from database_registry import create_database_from_fasta, register_existing_database
-from runtime_estimator import database_storage_bytes, format_bytes
+from database_size import database_storage_bytes, format_bytes
 
 
 FASTA_SUFFIXES = {".fa", ".fasta", ".fna"}
