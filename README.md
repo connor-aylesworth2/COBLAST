@@ -55,7 +55,9 @@ separate from advanced BLAST parameters.
 For SRA-style batch exploration, COBLAST can run one query across multiple
 registered local databases. It also includes an APOE exact-match batch preset
 that searches four stored APOE probes and summarizes per-sample probe counts in
-a visual table plus CSV/TSV exports.
+a visual table plus CSV/TSV exports, and an eToL exact-match batch preset that
+searches the full 1,021-probe electronic Tree of Life panel and summarizes the
+species detected per sample with per-probe and per-species count exports.
 
 The Windows release executable bundles the required BLAST+ executables. When
 running from source, COBLAST expects compatible NCBI BLAST+ command-line tools
@@ -501,6 +503,40 @@ database path, COBLAST uses that accession as the sample label; otherwise it
 falls back to the database display name. APOE summary tables can be downloaded
 as CSV or TSV, and the underlying raw exact-hit table remains available for
 troubleshooting.
+
+### eToL exact-match probe preset
+
+The batch page also includes an **eToL exact-match probe preset** built for the
+electronic Tree of Life (eToL) workflow described in Hu, Haas & Lathe,
+*BMC Microbiology* 2022. When selected, COBLAST uses the full bundled eToL probe
+panel (`data/eToL_probes.fasta`, 1,021 64-mer probes spanning Archaea, Bacteria,
+Chloroplastida, basal Eukaryota, Fungi, and Holozoa/Metazoa, plus PGK1/hNSE
+human housekeeping controls), runs BLASTN against the selected nucleotide
+databases, and — exactly like the APOE preset — saves only hits with 100%
+identity and 100% query coverage. The probe FASTA is supplied automatically, so
+the query box is left empty when the preset is on.
+
+This is intended for the patient-sample use case: register a patient's brain (or
+other tissue) RNA-seq reads as a local nucleotide database, select it (or several
+patients) in the batch picker, and run the preset to count exact probe matches.
+
+eToL batch results include an `eToL Probe Summary` section with one block per
+selected sample/database. Each block reports the total exact probe hits, how many
+of the 1,021 probes were detected, how many species/taxa were detected, and a
+table of the detected species (grouped by domain and eToL class code, sorted by
+exact-hit count). Two count exports are offered alongside the raw hit table:
+
+- **eToL Probe Counts** (CSV/TSV) — one row per probe per sample for every probe
+  in the panel (including zeros): `Sample/Database, Probe, Species/Taxon, Class,
+  Domain, Exact hits`. This is the full count matrix for downstream species plots.
+- **eToL Species Summary** (CSV/TSV) — one row per species/taxon per sample
+  (including zeros): `Sample/Database, Domain, Class, Species/Taxon, Probes in
+  panel, Probes detected, Total exact probe hits`.
+
+Sample labels follow the same SRA-accession rule as the APOE preset. Because the
+eToL panel contains far more than the previous 100-record limit, the maximum
+number of FASTA query records per run is 1,500 (`MAX_FASTA_RECORDS` in
+`blast_runner.py`), which accommodates the full panel with headroom.
 
 The runtime estimate is only a planning aid. Real runtime depends on query
 length, database size, BLAST program, sensitivity settings, disk speed, CPU, and

@@ -66,6 +66,15 @@
                 <span>Hit filter</span>
                 {{ batch.hit_filter }}
               </div>
+            {% elif batch.etol_probe_preset %}
+              <div class="summary-item">
+                <span>Probe preset</span>
+                eToL exact-match probes
+              </div>
+              <div class="summary-item">
+                <span>Hit filter</span>
+                {{ batch.hit_filter }}
+              </div>
             {% endif %}
           </div>
 
@@ -74,6 +83,12 @@
               {% if batch.apoe_probe_preset %}
                 <a class="button button-secondary" href="{{ url_for('download_apoe_summary', batch_id=batch.batch_id, file_format='csv') }}">Download APOE Summary CSV</a>
                 <a class="button button-secondary" href="{{ url_for('download_apoe_summary', batch_id=batch.batch_id, file_format='tsv') }}">Download APOE Summary TSV</a>
+              {% endif %}
+              {% if batch.etol_probe_preset %}
+                <a class="button button-secondary" href="{{ url_for('download_etol_summary', batch_id=batch.batch_id, file_format='csv') }}">Download eToL Species Summary CSV</a>
+                <a class="button button-secondary" href="{{ url_for('download_etol_summary', batch_id=batch.batch_id, file_format='tsv') }}">Download eToL Species Summary TSV</a>
+                <a class="button button-secondary" href="{{ url_for('download_etol_probe_counts', batch_id=batch.batch_id, file_format='csv') }}">Download eToL Probe Counts CSV</a>
+                <a class="button button-secondary" href="{{ url_for('download_etol_probe_counts', batch_id=batch.batch_id, file_format='tsv') }}">Download eToL Probe Counts TSV</a>
               {% endif %}
               <a class="button button-secondary" href="{{ url_for('download_batch_results', batch_id=batch.batch_id, file_format='csv') }}">Download Raw Hits CSV</a>
               <a class="button button-secondary" href="{{ url_for('download_batch_results', batch_id=batch.batch_id, file_format='tsv') }}">Download Raw Hits TSV</a>
@@ -121,6 +136,71 @@
                 </tbody>
               </table>
             </div>
+          </section>
+        {% endif %}
+
+        {% if batch.etol_probe_preset %}
+          <section class="panel">
+            <div class="panel__header">
+              <h2 class="panel__title">eToL Probe Summary</h2>
+            </div>
+            <p class="muted">
+              Exact probe hits ({{ batch.hit_filter }}) counted per probe and grouped
+              by species across the electronic Tree of Life. The species shown are
+              those detected in each sample; use the probe-count download for the
+              full per-probe matrix (every probe, including zeros) for plotting.
+            </p>
+            {% for sample in batch.etol_probe_summary or [] %}
+              <div class="etol-sample">
+                <h3 class="section-title">{{ sample.sample_database }}</h3>
+                <div class="summary-list">
+                  <div class="summary-item">
+                    <span>Total exact probe hits</span>
+                    {{ sample.total_exact_probe_hits }}
+                  </div>
+                  <div class="summary-item">
+                    <span>Probes detected</span>
+                    {{ sample.probes_detected }} / {{ sample.total_probes }}
+                  </div>
+                  <div class="summary-item">
+                    <span>Species detected</span>
+                    {{ sample.species_detected }} / {{ sample.species_total }}
+                  </div>
+                </div>
+                {% if sample.error %}
+                  <p class="error">{{ sample.error }}</p>
+                {% elif sample.detected_species %}
+                  <div class="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Domain</th>
+                          <th>Class</th>
+                          <th>Species/Taxon</th>
+                          <th>Probes detected</th>
+                          <th>Exact hits</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for species in sample.detected_species %}
+                          <tr>
+                            <td>{{ species.domain }}</td>
+                            <td>{{ species.group }}</td>
+                            <td><strong>{{ species.taxon }}</strong></td>
+                            <td class="numeric-cell">{{ species.probes_detected }} / {{ species.probes_in_panel }}</td>
+                            <td class="numeric-cell">{{ species.exact_hits }}</td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                {% else %}
+                  <p class="muted">No eToL probes matched exactly in this sample.</p>
+                {% endif %}
+              </div>
+            {% else %}
+              <p class="muted">No eToL summary rows were generated.</p>
+            {% endfor %}
           </section>
         {% endif %}
 

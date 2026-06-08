@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 
 from apoe_summary import build_apoe_probe_summary
+from etol_summary import build_etol_probe_summary, etol_probe_count, etol_probe_query_ids
 from blast_runner import run_blast, validate_fasta_input
 from config import blast_exe
 
@@ -101,11 +102,51 @@ def exercise_apoe_summary() -> None:
     )
 
 
+def exercise_etol_summary() -> None:
+    """Check the bundled eToL panel loads and per-species counts aggregate."""
+    query_ids = etol_probe_query_ids()
+    # Real probe IDs from the bundled panel: two probes of one archaeon plus one
+    # probe of another, giving 4 exact hits across 2 detected species.
+    for probe_id in ("A_Hsalinarum_16S_1", "A_Hsalinarum_16S_3", "A_MethanocaldococcusSG1_16S_1"):
+        assert probe_id in query_ids, probe_id
+
+    summary = build_etol_probe_summary(
+        [
+            {
+                "database_id": 1,
+                "display_name": "SRX123456 brain pilot",
+                "db_prefix_path": r"C:\COBLAST_data\sra\SRX123456\reads",
+                "hits": [
+                    {"qseqid": "A_Hsalinarum_16S_1"},
+                    {"qseqid": "A_Hsalinarum_16S_1"},
+                    {"qseqid": "A_Hsalinarum_16S_3"},
+                    {"qseqid": "A_MethanocaldococcusSG1_16S_1"},
+                ],
+                "error": "",
+            }
+        ]
+    )
+    row = summary[0]
+    assert row["sample"] == "SRX123456"
+    assert row["total_probes"] == etol_probe_count()
+    assert row["total_exact_probe_hits"] == 4
+    assert row["probes_detected"] == 3
+    assert row["species_detected"] == 2
+    assert row["detected_species"][0]["taxon"] == "A_Hsalinarum_16S"
+    assert row["detected_species"][0]["exact_hits"] == 3
+    print(
+        "etol_summary="
+        f"{row['sample']} panel={row['total_probes']} "
+        f"species_detected={row['species_detected']}"
+    )
+
+
 def main() -> None:
     """Run all supported BLAST programs against the toy databases."""
     ensure_toy_db()
     exercise_validation()
     exercise_apoe_summary()
+    exercise_etol_summary()
 
     searches = [
         ("blastn", f">query\n{TOY_SEQUENCE}", DB_PREFIX),

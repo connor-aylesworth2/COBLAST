@@ -55,6 +55,16 @@
         </div>
 
         <div class="field">
+          <label class="checkbox-row checkbox-row--wide">
+            <input id="etol_probe_preset" name="etol_probe_preset" type="checkbox" value="1">
+            <span>
+              <strong>eToL exact-match probe batch</strong>
+              <br><span class="muted">{{ etol_probe_count }} electronic Tree of Life probes; BLASTN; 100% identity and 100% query coverage. Counts exact probe hits per probe and species for each selected patient database.</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="field">
           <label for="sequence">Query input</label>
           <textarea id="sequence" name="sequence">&gt;query
 ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTA</textarea>
@@ -237,6 +247,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
 
       const programSelect = document.getElementById("program");
       const apoeProbePreset = document.getElementById("apoe_probe_preset");
+      const etolProbePreset = document.getElementById("etol_probe_preset");
       const apoeProbeFasta = JSON.parse(document.getElementById("apoe_probe_fasta_json").textContent);
       const sequenceInput = document.getElementById("sequence");
       const sequenceFile = document.getElementById("sequence_file");
@@ -253,6 +264,9 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       const timeoutSeconds = document.getElementById("timeout_seconds");
       const outputFormat = document.getElementById("output_format");
       let preApoeState = null;
+      let preEtolState = null;
+      const etolPlaceholder =
+        "Using the bundled eToL probe panel (supplied automatically when this preset is on).";
 
       function queryLength() {
         return sequenceInput.value
@@ -358,6 +372,11 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
 
       function applyApoeProbePreset() {
         if (apoeProbePreset.checked) {
+          // APOE and eToL share the same exact-match query slot; only one runs.
+          if (etolProbePreset.checked) {
+            etolProbePreset.checked = false;
+            applyEtolProbePreset();
+          }
           preApoeState = preApoeState || {
             sequence: sequenceInput.value,
             program: programSelect.value,
@@ -386,6 +405,49 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         updateCompatibility();
       }
 
+      function applyEtolProbePreset() {
+        if (etolProbePreset.checked) {
+          if (apoeProbePreset.checked) {
+            apoeProbePreset.checked = false;
+            applyApoeProbePreset();
+          }
+          preEtolState = preEtolState || {
+            sequence: sequenceInput.value,
+            readOnly: sequenceInput.readOnly,
+            placeholder: sequenceInput.placeholder,
+            program: programSelect.value,
+            outputFormat: outputFormat.value,
+            percentIdentity: percentIdentity.value,
+            task: taskSelect.value,
+          };
+          // The full 1021-probe FASTA is supplied server-side, so we keep the
+          // textarea empty (read-only) and explain where the query comes from
+          // rather than dumping ~1000 records into the field.
+          sequenceInput.value = "";
+          sequenceInput.placeholder = etolPlaceholder;
+          sequenceInput.readOnly = true;
+          sequenceFile.value = "";
+          programSelect.value = "blastn";
+          outputFormat.value = "tabular";
+          percentIdentity.value = "100";
+          taskSelect.value = "";
+          updateCompatibility();
+          return;
+        }
+
+        if (preEtolState) {
+          sequenceInput.value = preEtolState.sequence;
+          sequenceInput.readOnly = preEtolState.readOnly;
+          sequenceInput.placeholder = preEtolState.placeholder;
+          programSelect.value = preEtolState.program;
+          outputFormat.value = preEtolState.outputFormat;
+          percentIdentity.value = preEtolState.percentIdentity;
+          taskSelect.value = preEtolState.task;
+          preEtolState = null;
+        }
+        updateCompatibility();
+      }
+
       document.getElementById("select_all_databases").addEventListener("click", () => {
         for (const checkbox of checkboxes) {
           checkbox.checked = !checkbox.disabled && !checkbox.closest(".database-row").hidden;
@@ -400,13 +462,14 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       });
 
       programSelect.addEventListener("change", () => {
-        if (apoeProbePreset.checked && programSelect.value !== "blastn") {
+        if ((apoeProbePreset.checked || etolProbePreset.checked) && programSelect.value !== "blastn") {
           programSelect.value = "blastn";
         }
         updateCompatibility();
       });
       sequenceInput.addEventListener("input", updateEstimate);
       apoeProbePreset.addEventListener("change", applyApoeProbePreset);
+      etolProbePreset.addEventListener("change", applyEtolProbePreset);
       for (const checkbox of checkboxes) {
         checkbox.addEventListener("change", updateEstimate);
       }

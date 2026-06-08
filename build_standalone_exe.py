@@ -84,6 +84,7 @@ def build_command(blast_bin: Path, name: str) -> list[str]:
         root / "templates",
         root / "static",
         root / "sample_data",
+        root / "data",
         root / "requirements.txt",
     ]
     for path in required_paths:
@@ -133,6 +134,8 @@ def build_command(blast_bin: Path, name: str) -> list[str]:
         add_data_arg(root / "static", "static"),
         "--add-data",
         add_data_arg(root / "sample_data", "sample_data"),
+        "--add-data",
+        add_data_arg(root / "data", "data"),
         "--add-data",
         add_data_arg(root / "requirements.txt", "."),
     ]

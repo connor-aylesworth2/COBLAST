@@ -11,6 +11,13 @@ from pathlib import Path
 from flask import Flask, Response, abort, redirect, render_template, request, url_for
 
 from apoe_summary import apoe_probe_query_ids, build_apoe_probe_summary
+from etol_summary import (
+    ETOL_EXACT_MATCH_FILTER,
+    build_etol_probe_summary,
+    etol_probe_count,
+    etol_probe_query_ids,
+    load_etol_probe_fasta,
+)
 from blast_runner import BLAST_PROGRAMS, SENSITIVITY_PRESETS, run_blast
 from database_registry import (
     DB_CATEGORIES,
@@ -26,6 +33,8 @@ from database_registry import (
 from result_store import (
     apoe_summary_rows_as_delimited,
     batch_rows_as_delimited,
+    etol_probe_counts_as_delimited,
+    etol_summary_rows_as_delimited,
     load_batch_result,
     load_result,
     result_rows_as_delimited,
@@ -62,6 +71,7 @@ CCGATGACCTGCAGAAGTGCCTGGCAGTGTACCAGG
 """
 APOE_EXACT_MATCH_FILTER = "100% identity and 100% query coverage"
 APOE_PROBE_QUERY_IDS = apoe_probe_query_ids()
+ETOL_PROBE_QUERY_IDS = etol_probe_query_ids()
 
 
 def numeric_hit_value(hit: dict[str, str], key: str) -> float | None:
@@ -72,14 +82,16 @@ def numeric_hit_value(hit: dict[str, str], key: str) -> float | None:
         return None
 
 
-def filter_apoe_exact_probe_hits(hits: list[dict[str, str]]) -> list[dict[str, str]]:
-    """Keep only exact APOE probe matches after BLAST output parsing."""
+def filter_exact_probe_hits(
+    hits: list[dict[str, str]], probe_query_ids: set[str]
+) -> list[dict[str, str]]:
+    """Keep only exact probe matches (100% identity and coverage) after parsing."""
     exact_hits = []
     for hit in hits:
         percent_identity = numeric_hit_value(hit, "pident")
         query_coverage = numeric_hit_value(hit, "qcovs")
         if (
-            hit.get("qseqid", "") in APOE_PROBE_QUERY_IDS
+            hit.get("qseqid", "") in probe_query_ids
             and percent_identity == 100.0
             and query_coverage == 100.0
         ):
@@ -286,6 +298,56 @@ def download_apoe_summary(batch_id: str, file_format: str):
     )
 
 
+@app.get("/batch-results/<batch_id>/etol-summary.<file_format>")
+def download_etol_summary(batch_id: str, file_format: str):
+    """Download eToL per-species exact-hit count summaries as CSV or TSV."""
+    if file_format not in {"csv", "tsv"}:
+        abort(404)
+
+    try:
+        batch_data = load_batch_result(batch_id)
+    except FileNotFoundError:
+        abort(404)
+
+    if not batch_data.get("etol_probe_preset"):
+        abort(404)
+
+    delimiter = "," if file_format == "csv" else "\t"
+    body = etol_summary_rows_as_delimited(batch_data, delimiter=delimiter)
+    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
+    filename = f"etol_species_summary_{batch_id}.{file_format}"
+    return Response(
+        body,
+        mimetype=mimetype,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.get("/batch-results/<batch_id>/etol-probe-counts.<file_format>")
+def download_etol_probe_counts(batch_id: str, file_format: str):
+    """Download full per-probe exact-hit count data (every probe) as CSV or TSV."""
+    if file_format not in {"csv", "tsv"}:
+        abort(404)
+
+    try:
+        batch_data = load_batch_result(batch_id)
+    except FileNotFoundError:
+        abort(404)
+
+    if not batch_data.get("etol_probe_preset"):
+        abort(404)
+
+    delimiter = "," if file_format == "csv" else "\t"
+    body = etol_probe_counts_as_delimited(batch_data, delimiter=delimiter)
+    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
+    filename = f"etol_probe_counts_{batch_id}.{file_format}"
+    return Response(
+        body,
+        mimetype=mimetype,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 @app.get("/batch-blast")
 def batch_blast_page():
     """Render the multi-database BLAST form."""
@@ -303,6 +365,7 @@ def batch_blast_page():
         sensitivity_presets=SENSITIVITY_PRESETS,
         database_options=options,
         apoe_probe_fasta=APOE_PROBE_FASTA,
+        etol_probe_count=etol_probe_count(),
         error=request.args.get("error") or registry_error,
         message=request.args.get("message", ""),
     )
@@ -321,8 +384,23 @@ def run_batch_blast_route():
     output_format = request.form.get("output_format", "tabular")
     sensitivity_preset = request.form.get("sensitivity_preset", "standard")
     apoe_probe_preset = request.form.get("apoe_probe_preset") == "1"
+    etol_probe_preset = request.form.get("etol_probe_preset") == "1"
+    # The eToL panel is the superset workflow; if both presets are checked we run
+    # eToL and ignore APOE so the two stored query sets never get concatenated.
+    if etol_probe_preset:
+        apoe_probe_preset = False
+    exact_probe_preset = apoe_probe_preset or etol_probe_preset
+
+    probe_query_ids: set[str] = set()
     if apoe_probe_preset:
         sequence = APOE_PROBE_FASTA
+        probe_query_ids = APOE_PROBE_QUERY_IDS
+    elif etol_probe_preset:
+        sequence = load_etol_probe_fasta()
+        probe_query_ids = ETOL_PROBE_QUERY_IDS
+    if exact_probe_preset:
+        # Exact-match probe presets always run BLASTN with tabular parsing so the
+        # 100% identity / 100% coverage filter below can be applied consistently.
         program = "blastn"
         output_format = "tabular"
 
@@ -333,6 +411,7 @@ def run_batch_blast_route():
             sensitivity_presets=SENSITIVITY_PRESETS,
             database_options=database_options(),
             apoe_probe_fasta=APOE_PROBE_FASTA,
+            etol_probe_count=etol_probe_count(),
             error="Choose at least one database for the batch run.",
             message="",
         ), 400
@@ -360,14 +439,18 @@ def run_batch_blast_route():
                 program=program,
                 output_format=output_format,
                 sensitivity_preset=sensitivity_preset,
-                task=None if apoe_probe_preset else request.form.get("task") or None,
+                task=None if exact_probe_preset else request.form.get("task") or None,
                 evalue=request.form.get("evalue") or None,
                 max_target_seqs=request.form.get("max_target_seqs") or None,
                 word_size=request.form.get("word_size") or None,
-                perc_identity="100" if apoe_probe_preset else request.form.get("perc_identity") or None,
+                perc_identity="100" if exact_probe_preset else request.form.get("perc_identity") or None,
                 timeout_seconds=request.form.get("timeout_seconds") or None,
             )
-            hits = filter_apoe_exact_probe_hits(result.hits) if apoe_probe_preset else result.hits
+            hits = (
+                filter_exact_probe_hits(result.hits, probe_query_ids)
+                if exact_probe_preset
+                else result.hits
+            )
             saved_result = replace(result, hits=hits)
             run_id = save_result(saved_result)
             total_runtime_seconds += result.runtime_seconds
@@ -419,6 +502,12 @@ def run_batch_blast_route():
                 }
             )
 
+    hit_filter = ""
+    if apoe_probe_preset:
+        hit_filter = APOE_EXACT_MATCH_FILTER
+    elif etol_probe_preset:
+        hit_filter = ETOL_EXACT_MATCH_FILTER
+
     payload = {
         "program": program,
         "output_format": output_format,
@@ -428,11 +517,14 @@ def run_batch_blast_route():
         "total_runtime_seconds": total_runtime_seconds,
         "total_hits": total_hits,
         "apoe_probe_preset": apoe_probe_preset,
-        "hit_filter": APOE_EXACT_MATCH_FILTER if apoe_probe_preset else "",
+        "etol_probe_preset": etol_probe_preset,
+        "hit_filter": hit_filter,
         "database_results": database_results,
     }
     if apoe_probe_preset:
         payload["apoe_probe_summary"] = build_apoe_probe_summary(database_results)
+    if etol_probe_preset:
+        payload["etol_probe_summary"] = build_etol_probe_summary(database_results)
     batch_id = save_batch_result(payload)
     payload["batch_id"] = batch_id
     return render_template(

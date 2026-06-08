@@ -15,6 +15,12 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from apoe_summary import APOE_SUMMARY_EXPORT_COLUMNS, build_apoe_probe_summary
+from etol_summary import (
+    ETOL_PROBE_EXPORT_COLUMNS,
+    ETOL_SPECIES_EXPORT_COLUMNS,
+    etol_probe_count_rows,
+    etol_species_count_rows,
+)
 from blast_runner import BlastResult
 from config import resource_root, runtime_data_dir
 
@@ -185,6 +191,26 @@ def apoe_summary_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
 
     for row in summary_rows:
         writer.writerow([apoe_summary_export_value(row, key) for key, _ in APOE_SUMMARY_EXPORT_COLUMNS])
+    return buffer.getvalue()
+
+
+def etol_summary_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
+    """Render eToL per-species exact-hit counts (every taxon) as CSV or TSV text."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
+    writer.writerow([label for _, label in ETOL_SPECIES_EXPORT_COLUMNS])
+    for row in etol_species_count_rows(batch_data.get("database_results", [])):
+        writer.writerow([row.get(key, "") for key, _ in ETOL_SPECIES_EXPORT_COLUMNS])
+    return buffer.getvalue()
+
+
+def etol_probe_counts_as_delimited(batch_data: dict, delimiter: str) -> str:
+    """Render full eToL per-probe exact-hit counts (every probe) as CSV or TSV text."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
+    writer.writerow([label for _, label in ETOL_PROBE_EXPORT_COLUMNS])
+    for row in etol_probe_count_rows(batch_data.get("database_results", [])):
+        writer.writerow([row.get(key, "") for key, _ in ETOL_PROBE_EXPORT_COLUMNS])
     return buffer.getvalue()
 
 
