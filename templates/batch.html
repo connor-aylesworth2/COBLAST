@@ -48,7 +48,7 @@
           <span class="field-label">Exact-match probe preset</span>
           <span class="muted">Optional. Choose one preset to BLAST a stored probe panel; only one can be active at a time.</span>
           <label class="checkbox-row checkbox-row--wide">
-            <input class="probe-preset" id="apoe_probe_preset" name="apoe_probe_preset" type="checkbox" value="1" data-preset-panel="APOE">
+            <input class="probe-preset" id="apoe_probe_preset" name="apoe_probe_preset" type="checkbox" value="1" data-preset-panel="APOE" data-microbial="false">
             <span>
               <strong>APOE exact-match probe batch</strong>
               <br><span class="muted">4 probes; BLASTN; 100% identity and 100% query coverage</span>
@@ -56,13 +56,32 @@
           </label>
           {% for option in etol_preset_options %}
             <label class="checkbox-row checkbox-row--wide">
-              <input class="probe-preset" id="{{ option.form_field }}" name="{{ option.form_field }}" type="checkbox" value="1" data-preset-panel="{{ option.panel_label }}">
+              <input class="probe-preset" id="{{ option.form_field }}" name="{{ option.form_field }}" type="checkbox" value="1" data-preset-panel="{{ option.panel_label }}" data-microbial="{{ 'true' if option.microbial else 'false' }}">
               <span>
                 <strong>{{ option.label }}</strong>
                 <br><span class="muted">{{ option.probe_count }} probes; BLASTN; 100% identity and 100% query coverage. {{ option.description }}</span>
               </span>
             </label>
           {% endfor %}
+        </div>
+
+        <div class="field" id="human_filter_field">
+          <span class="field-label">Secondary human filter</span>
+          <label class="checkbox-row checkbox-row--wide">
+            <input id="human_filter" name="human_filter" type="checkbox" value="1">
+            <span>
+              <strong>Remove reads that also match the human genome</strong>
+              <br><span class="muted">Microbial eToL presets (Full, Quick) only. After the probe search, each matched patient read is BLASTed against the human genome database below; any read with a human match is dropped from the final results.</span>
+            </span>
+          </label>
+          <label for="human_filter_db_id">Human genome database</label>
+          <select id="human_filter_db_id" name="human_filter_db_id">
+            {% for option in database_options if option.database.db_type == "nucl" and option.database.status == "available" %}
+              <option value="{{ option.database.id }}" {% if option.database.category == "human" %}selected{% endif %}>{{ option.database.display_name }}{% if option.database.category == "human" %} (human){% endif %}</option>
+            {% else %}
+              <option value="">No nucleotide databases registered</option>
+            {% endfor %}
+          </select>
         </div>
 
         <div class="field">
@@ -235,11 +254,26 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       const percentIdentity = document.getElementById("perc_identity");
       const timeoutSeconds = document.getElementById("timeout_seconds");
       const outputFormat = document.getElementById("output_format");
+      const humanFilter = document.getElementById("human_filter");
+      const humanFilterDb = document.getElementById("human_filter_db_id");
+      const humanFilterField = document.getElementById("human_filter_field");
       // Snapshot of the manual query fields, saved when a preset takes over.
       let prePresetState = null;
 
       function activePreset() {
         return presetCheckboxes.find((checkbox) => checkbox.checked) || null;
+      }
+
+      function updateHumanFilterAvailability() {
+        // The secondary human filter only applies to the microbial eToL presets.
+        const active = activePreset();
+        const microbial = !!active && active.dataset.microbial === "true";
+        humanFilter.disabled = !microbial;
+        humanFilterDb.disabled = !microbial;
+        humanFilterField.style.opacity = microbial ? "" : "0.55";
+        if (!microbial) {
+          humanFilter.checked = false;
+        }
       }
 
       function updateCompatibility() {
@@ -255,6 +289,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         }
         updateAdvancedAvailability();
         updatePresetPlaceholders();
+        updateHumanFilterAvailability();
       }
 
       function updateAdvancedAvailability() {

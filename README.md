@@ -562,6 +562,36 @@ eToL panel contains far more than the previous 100-record limit, the maximum
 number of FASTA query records per run is 1,500 (`MAX_FASTA_RECORDS` in
 `blast_runner.py`), which accommodates the full panel with headroom.
 
+### Secondary human filter
+
+The microbial eToL presets (eToL Full and eToL Quick) offer an optional
+**secondary human filter** that removes matched patient reads that are actually
+human-derived — the second-round host filtering recommended in Hu, Haas & Lathe
+2022. When enabled (checkbox on the batch page, plus a human-genome database
+selector), COBLAST takes the exact-probe hits for each patient database,
+recovers the full matched reads, BLASTs them (`megablast`) against the selected
+human genome database, and drops every hit whose read produces any human match
+(E-value ≤ 1e-6). The results page reports how many hits were removed per sample,
+and all summaries/exports reflect the filtered hit list.
+
+Matched reads are recovered by their `sseqid` (which equals the read's FASTA
+record id): first with `blastdbcmd` (when the patient database was built with
+`-parse_seqids`), otherwise by scanning the database's stored source FASTA. If a
+read cannot be recovered it is kept unfiltered (never dropped on a guess), and a
+note is shown.
+
+To set up the human genome database, build it once with `makeblastdb` straight
+from the NCBI genome FASTA — `.fna` files are already FASTA, so no conversion is
+needed — then register it on the Databases page with category `human`:
+
+```text
+makeblastdb -in GCF_000001405.40_GRCh38.p14_genomic.fna -dbtype nucl ^
+  -title "Human GRCh38.p14" -out human_GRCh38
+```
+
+The filter is offered only for the microbial presets; the APOE and eToL Control
+panels are human by design, so human-read filtering does not apply to them.
+
 ## Adding Clinician Databases
 
 In the intended local-use workflow, the clinician's sequencing data can be made

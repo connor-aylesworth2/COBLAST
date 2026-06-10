@@ -16,12 +16,14 @@ from etol_summary import (
     build_etol_probe_summary,
     etol_preset_fasta,
     etol_preset_form_field,
+    etol_preset_is_microbial,
     etol_preset_keys,
     etol_preset_label,
     etol_preset_options,
     etol_preset_query_ids,
     etol_preset_records,
 )
+from human_filter import filter_human_hits
 from blast_runner import BLAST_PROGRAMS, SENSITIVITY_PRESETS, run_blast
 from database_registry import (
     DB_CATEGORIES,
@@ -409,6 +411,32 @@ def run_batch_blast_route():
         program = "blastn"
         output_format = "tabular"
 
+    # Secondary human filter: drop matched patient reads that also hit the human
+    # genome. Only meaningful for the microbial eToL presets (the APOE/eToL
+    # Control panels are human by design, so filtering human reads is nonsensical).
+    human_filter_requested = request.form.get("human_filter") == "1"
+    human_filter_active = (
+        human_filter_requested
+        and etol_preset_key is not None
+        and etol_preset_is_microbial(etol_preset_key)
+    )
+    human_db = None
+    if human_filter_active:
+        try:
+            human_db = get_database(int(request.form.get("human_filter_db_id", "")))
+        except Exception:
+            human_db = None
+        if human_db is None or human_db.db_type != "nucl" or human_db.status != "available":
+            return render_template(
+                "batch.html",
+                blast_programs=BLAST_PROGRAMS,
+                sensitivity_presets=SENSITIVITY_PRESETS,
+                database_options=database_options(),
+                etol_preset_options=etol_preset_options(),
+                error="Select an available nucleotide human-genome database for the secondary human filter.",
+                message="",
+            ), 400
+
     if not database_ids:
         return render_template(
             "batch.html",
@@ -459,6 +487,27 @@ def run_batch_blast_route():
                 if exact_probe_preset
                 else result.hits
             )
+            # Secondary human filter runs on the exact-probe hits; a failure here
+            # keeps the eToL hits unfiltered rather than discarding the run.
+            human_filter_stats = None
+            if human_filter_active and human_db is not None:
+                try:
+                    hits, human_filter_stats = filter_human_hits(
+                        hits,
+                        db_prefix_path=database.db_prefix_path,
+                        source_fasta_path=database.source_fasta_path,
+                        human_db_prefix_path=human_db.db_prefix_path,
+                    )
+                except Exception as exc:
+                    human_filter_stats = {
+                        "method": "error",
+                        "reads_total": 0,
+                        "reads_checked": 0,
+                        "reads_unresolved": 0,
+                        "human_reads": 0,
+                        "hits_removed": 0,
+                        "note": f"Human filter error: {exc}",
+                    }
             saved_result = replace(result, hits=hits)
             run_id = save_result(saved_result)
             total_runtime_seconds += result.runtime_seconds
@@ -477,6 +526,7 @@ def run_batch_blast_route():
                     "hit_count": len(hits),
                     "hits": hits,
                     "run_id": run_id,
+                    "human_filter": human_filter_stats,
                     "error": "",
                 }
             )
@@ -498,6 +548,7 @@ def run_batch_blast_route():
                     "hit_count": 0,
                     "hits": [],
                     "run_id": "",
+                    "human_filter": None,
                     "error": str(exc),
                 }
             )
@@ -521,6 +572,12 @@ def run_batch_blast_route():
         "etol_preset_key": etol_preset_key,
         "etol_preset_label": etol_preset_label(etol_preset_key) if etol_preset_key else "",
         "hit_filter": hit_filter,
+        "human_filter_enabled": human_filter_active,
+        "human_filter_db": human_db.display_name if human_db else "",
+        "human_filter_hits_removed": sum(
+            (result_row.get("human_filter") or {}).get("hits_removed", 0)
+            for result_row in database_results
+        ),
         "database_results": database_results,
     }
     if apoe_probe_preset:

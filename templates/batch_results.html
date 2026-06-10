@@ -76,6 +76,13 @@
                 {{ batch.hit_filter }}
               </div>
             {% endif %}
+            {% if batch.human_filter_enabled %}
+              <div class="summary-item">
+                <span>Human filter</span>
+                {{ batch.human_filter_hits_removed }} hit(s) removed
+                <span class="muted">vs {{ batch.human_filter_db }}</span>
+              </div>
+            {% endif %}
           </div>
 
           {% if batch.batch_id %}
@@ -216,6 +223,7 @@
                   <th>Size</th>
                   <th>Runtime</th>
                   <th>Hits</th>
+                  {% if batch.human_filter_enabled %}<th>Human-filtered</th>{% endif %}
                   <th>Status</th>
                 </tr>
               </thead>
@@ -235,6 +243,17 @@
                       {% endif %}
                     </td>
                     <td>{{ database_result.hit_count }}</td>
+                    {% if batch.human_filter_enabled %}
+                      <td>
+                        {% set hf = database_result.human_filter %}
+                        {% if hf %}
+                          {{ hf.hits_removed }} removed
+                          {% if hf.note %}<br><span class="muted">{{ hf.note }}</span>{% endif %}
+                        {% else %}
+                          &mdash;
+                        {% endif %}
+                      </td>
+                    {% endif %}
                     <td>
                       {% if database_result.error %}
                         <span class="status-invalid">{{ database_result.error }}</span>
