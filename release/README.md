@@ -12,52 +12,53 @@ Run:
 
 The app starts a local Flask server bound to `127.0.0.1` and opens the browser.
 Runtime files, generated toy BLAST databases, registered databases, and result
-exports are stored beside the executable in `COBLAST_data`.
+exports are stored in a stable per-user data folder at `%LOCALAPPDATA%\COBLAST_data`
+(for example `C:\Users\<you>\AppData\Local\COBLAST_data`).
 
 This executable is unsigned and intended for agreed prototype testing only.
 
 ## Updating from an Older Test Version
 
 COBLAST does not use a formal installer. The test installation is the folder
-containing `COBLAST.exe` and the persistent `COBLAST_data` folder beside it.
+containing `COBLAST.exe`. Persistent app data lives separately in a stable
+per-user folder at `%LOCALAPPDATA%\COBLAST_data` (for example
+`C:\Users\<you>\AppData\Local\COBLAST_data`). Because that folder is independent
+of where `COBLAST.exe` sits, databases and results carry over automatically
+across version updates.
 
 To install a newer version and keep old databases/results:
 
 1. Close COBLAST completely.
-2. Back up the old `COBLAST_data` folder:
+2. Download and fully extract the new `release` folder. Replace the old
+   `COBLAST.exe`, or run the new one from any location.
+3. (Optional) Back up the per-user data folder first, in case you want to roll
+   back:
 
 ```powershell
-Copy-Item -Recurse .\COBLAST_data .\COBLAST_data_backup_2026-05-20
+Copy-Item -Recurse "$env:LOCALAPPDATA\COBLAST_data" "$env:LOCALAPPDATA\COBLAST_data_backup_2026-06-10"
 ```
 
-3. Download and fully extract the new `release` folder.
-4. Copy the old `COBLAST_data` folder beside the new `COBLAST.exe`, for example:
-
-```text
-C:\COBLAST\COBLAST.exe
-C:\COBLAST\COBLAST_data\
-```
-
-5. Run this diagnostic from the new folder:
+4. Run this diagnostic from the new folder:
 
 ```powershell
 .\COBLAST.exe --check-only --skip-smoke --no-browser
 ```
 
-6. Start the new version:
+5. Start the new version:
 
 ```powershell
 .\COBLAST.exe
 ```
 
-Keeping `COBLAST_data` should preserve COBLAST-managed databases, the database
-registry, and saved result exports. If a database was registered from an
-external folder, keep that external FASTA or BLAST database path unchanged, then
-use the database-management page to verify it after updating.
+The new version reads the same `%LOCALAPPDATA%\COBLAST_data` folder, so
+COBLAST-managed databases, the database registry, and saved result exports are
+preserved with no copy step. If a database was registered from an external
+folder, keep that external FASTA or BLAST database path unchanged, then use the
+database-management page to verify it after updating.
 
-To remove an old version, back up `COBLAST_data` if needed, then delete the old
-folder containing `COBLAST.exe`. Delete `COBLAST_data` only if the old
-databases and results are no longer needed.
+To remove a version, delete the folder containing `COBLAST.exe`. Delete the
+per-user `%LOCALAPPDATA%\COBLAST_data` folder only if its databases and results
+are no longer needed.
 
 If Windows says it cannot access the specified device, path, or file:
 

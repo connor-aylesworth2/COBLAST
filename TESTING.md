@@ -44,8 +44,8 @@ If you were given the standalone Windows executable, download and run:
 ```
 
 The standalone executable bundles the prototype interface, Python dependencies,
-toy sample data, and required BLAST+ executables. It stores runtime files beside
-the executable in `COBLAST_data`.
+toy sample data, and required BLAST+ executables. It stores runtime files in a
+stable per-user data folder at `%LOCALAPPDATA%\COBLAST_data`.
 
 If you are testing from a source-code checkout instead, use the Python launcher.
 
