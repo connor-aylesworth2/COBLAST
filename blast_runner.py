@@ -49,7 +49,10 @@ BLAST_PROGRAMS = {
         "description": "nucleotide query vs nucleotide database",
         "query_type": "nucleotide",
         "db_type": "nucl",
-        "default_task": "blastn-short",
+        # megablast is BLAST+'s own default blastn task, so the general search
+        # form matches command-line `blastn`. Short queries can still choose
+        # blastn-short, and the exact-match probe presets force it (see run_blast).
+        "default_task": "megablast",
         "allowed_tasks": ALLOWED_BLASTN_TASKS,
     },
     "blastp": {
@@ -117,6 +120,18 @@ MAX_TOTAL_SEQUENCE_LENGTH = 5_000_000
 FASTA_LINE_WIDTH = 80
 MAX_TARGET_SEQS_LIMIT = 10_000
 TIMEOUT_SECONDS_LIMIT = 3_600
+
+# Exact-match probe presets (eToL/APOE) count how many subject reads exactly
+# match each short probe, so those counts must reflect true read depth. The
+# preset path therefore overrides the sensitivity preset: it enforces full-length
+# identity and coverage in BLAST itself and lifts the max_target_seqs cap
+# (5000/100/10) to an effectively unbounded ceiling, so deep patient databases
+# are not silently truncated. blastn-short stays the correct task for the
+# 36-64 bp probes even though the general search now defaults to megablast.
+EXACT_MATCH_TASK = "blastn-short"
+EXACT_MATCH_PERC_IDENTITY = "100"
+EXACT_MATCH_QCOV_HSP_PERC = "100"
+EXACT_MATCH_MAX_TARGET_SEQS = "5000000"
 
 
 @dataclass(frozen=True)
@@ -515,6 +530,20 @@ def parse_percent_identity(program: str, value: str | None) -> str | None:
     return cleaned
 
 
+def parse_query_coverage(value: str | None) -> str | None:
+    """Validate an optional minimum query-coverage-per-HSP percentage (0-100)."""
+    cleaned = optional_text(value)
+    if cleaned is None:
+        return None
+    try:
+        number = float(cleaned)
+    except ValueError as exc:
+        raise ValueError("Minimum query coverage must be a number.") from exc
+    if number < 0 or number > 100:
+        raise ValueError("Minimum query coverage must be between 0 and 100.")
+    return cleaned
+
+
 def build_blast_parameters(
     *,
     program: str,
@@ -523,8 +552,16 @@ def build_blast_parameters(
     max_target_seqs: str | None,
     word_size: str | None,
     perc_identity: str | None,
+    qcov_hsp_perc: str | None = None,
+    exact_match_probe: bool = False,
 ) -> dict[str, str]:
-    """Merge preset defaults with user-supplied advanced BLAST options."""
+    """Merge preset defaults with user-supplied advanced BLAST options.
+
+    When ``exact_match_probe`` is set, the eToL/APOE counting workflow takes
+    precedence over the sensitivity preset: BLAST enforces 100% identity and
+    100% HSP query coverage, and max_target_seqs is lifted to an effectively
+    unbounded ceiling so per-probe read counts are not truncated.
+    """
     if sensitivity_preset not in SENSITIVITY_PRESETS:
         allowed = ", ".join(SENSITIVITY_PRESETS)
         raise ValueError(f"Unsupported sensitivity preset: {sensitivity_preset}. Choose one of: {allowed}.")
@@ -550,6 +587,7 @@ def build_blast_parameters(
         1_000,
     )
     parsed_perc_identity = parse_percent_identity(program, perc_identity)
+    parsed_qcov_hsp_perc = parse_query_coverage(qcov_hsp_perc)
 
     if parsed_evalue is not None:
         parameters["evalue"] = parsed_evalue
@@ -559,6 +597,16 @@ def build_blast_parameters(
         parameters["word_size"] = parsed_word_size
     if parsed_perc_identity is not None:
         parameters["perc_identity"] = parsed_perc_identity
+    if parsed_qcov_hsp_perc is not None:
+        parameters["qcov_hsp_perc"] = parsed_qcov_hsp_perc
+
+    if exact_match_probe:
+        # Exact-match probe counting overrides the preset so deep patient
+        # databases are not silently truncated by max_target_seqs, and only
+        # full-length exact hits are returned for counting.
+        parameters["perc_identity"] = EXACT_MATCH_PERC_IDENTITY
+        parameters["qcov_hsp_perc"] = EXACT_MATCH_QCOV_HSP_PERC
+        parameters["max_target_seqs"] = EXACT_MATCH_MAX_TARGET_SEQS
 
     return parameters
 
@@ -575,6 +623,8 @@ def run_blast(
     max_target_seqs: str | None = None,
     word_size: str | None = None,
     perc_identity: str | None = None,
+    qcov_hsp_perc: str | None = None,
+    exact_match_probe: bool = False,
 ) -> BlastResult:
     """Run one local BLAST search and return both raw and parsed outputs."""
     if program not in BLAST_PROGRAMS:
@@ -597,6 +647,10 @@ def run_blast(
     default_task = program_config["default_task"]
     # Only BLASTN exposes task variants in this interface.
     selected_task = task if task is not None else default_task
+    if exact_match_probe and program == "blastn" and task is None:
+        # The general blastn default is megablast, but short eToL/APOE probes
+        # need the blastn-short task to seed and align reliably.
+        selected_task = EXACT_MATCH_TASK
     allowed_tasks = program_config["allowed_tasks"]
     if selected_task is not None and selected_task not in allowed_tasks:
         raise ValueError(f"Unsupported task for {program}: {selected_task}")
@@ -607,6 +661,8 @@ def run_blast(
         max_target_seqs=max_target_seqs,
         word_size=word_size,
         perc_identity=perc_identity,
+        qcov_hsp_perc=qcov_hsp_perc,
+        exact_match_probe=exact_match_probe,
     )
 
     query = validate_fasta_input(

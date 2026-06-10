@@ -517,6 +517,12 @@ the selected nucleotide databases and — exactly like the APOE preset — saves
 hits with 100% identity and 100% query coverage. The probe FASTA is supplied
 automatically, so the query box is left empty (read-only) when a preset is on.
 
+So those counts reflect true read depth, the preset path runs the `blastn-short`
+task with `-perc_identity 100 -qcov_hsp_perc 100` and lifts the `max_target_seqs`
+cap (see the `EXACT_MATCH_*` constants in `blast_runner.py`). This stops a probe
+that matches many reads in a deep patient database from being silently truncated
+by the sensitivity preset's target limit.
+
 There are three eToL presets, plus the APOE preset; **only one preset can be
 active at a time** (selecting one clears the others):
 
@@ -737,6 +743,12 @@ files from disk.
 
 The interface enforces these compatibility rules by filtering registered
 databases by `nucl` or `prot` type after the BLAST program is selected.
+
+By default, `blastn` runs with the `megablast` task — the same default as
+command-line BLAST+ — so a routine search matches what the clinician would get
+from the NCBI `blastn` executable. For short queries, the `blastn-short` task can
+be selected under Advanced settings (the exact-match probe presets choose it
+automatically).
 
 The backend validates query sequence type before running BLAST. Nucleotide
 queries accept IUPAC nucleotide ambiguity codes and convert `U` to `T`; protein
