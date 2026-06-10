@@ -443,12 +443,16 @@ def run_batch_blast_route():
                 program=program,
                 output_format=output_format,
                 sensitivity_preset=sensitivity_preset,
+                # Exact-match probe presets ignore the user task/identity/target
+                # fields: run_blast forces blastn-short, 100% identity/coverage,
+                # and an uncapped max_target_seqs so read counts are exact.
                 task=None if exact_probe_preset else request.form.get("task") or None,
                 evalue=request.form.get("evalue") or None,
-                max_target_seqs=request.form.get("max_target_seqs") or None,
+                max_target_seqs=None if exact_probe_preset else request.form.get("max_target_seqs") or None,
                 word_size=request.form.get("word_size") or None,
-                perc_identity="100" if exact_probe_preset else request.form.get("perc_identity") or None,
+                perc_identity=None if exact_probe_preset else request.form.get("perc_identity") or None,
                 timeout_seconds=request.form.get("timeout_seconds") or None,
+                exact_match_probe=exact_probe_preset,
             )
             hits = (
                 filter_exact_probe_hits(result.hits, probe_query_ids)
