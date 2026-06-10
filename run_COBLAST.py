@@ -91,11 +91,15 @@ def has_bundled_app() -> bool:
 
 
 def standalone_data_dir() -> Path:
-    """Choose the mutable data directory for a standalone executable."""
-    env_data_dir = os.environ.get("COBLAST_DATA_DIR")
-    if env_data_dir:
-        return Path(env_data_dir).expanduser().resolve()
-    return Path(sys.executable).resolve().parent / "COBLAST_data"
+    """Choose the mutable data directory for a standalone executable.
+
+    Delegates to config.runtime_data_dir() so the launcher and the bundled app
+    agree on a single per-user location. This is called before COBLAST_DATA_DIR
+    is set, so when frozen it resolves to the stable per-user data folder.
+    """
+    from config import runtime_data_dir
+
+    return runtime_data_dir()
 
 
 def step(message: str) -> None:

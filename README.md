@@ -19,7 +19,9 @@ Download or copy the `release` folder, read `release\README.md`, then run:
 The standalone Windows executable bundles the local Flask interface, Python
 dependencies, templates, static assets, toy sample data, and the required NCBI
 BLAST+ executables. It starts a local server bound to `127.0.0.1`, opens the
-browser, and stores runtime files beside the executable in `COBLAST_data`.
+browser, and stores runtime files in a stable per-user data folder at
+`%LOCALAPPDATA%\COBLAST_data` (for example
+`C:\Users\<you>\AppData\Local\COBLAST_data`).
 
 Because this is an unsigned research prototype executable, Windows SmartScreen
 or antivirus software may warn before first launch. The `.exe` is intended for
@@ -114,8 +116,9 @@ python run_COBLAST.py --port 5050
 PyInstaller. The standalone executable bundles the Flask interface, Python
 dependencies, templates, static assets, toy sample data, and the required BLAST+
 executables. When launched, it extracts those bundled files to a temporary
-runtime folder, stores persistent app data beside the executable in
-`COBLAST_data`, starts Flask on `127.0.0.1`, and opens the browser.
+runtime folder, stores persistent app data in a stable per-user data folder at
+`%LOCALAPPDATA%\COBLAST_data`, starts Flask on `127.0.0.1`, and opens the
+browser.
 If port `5000` is already occupied by another local Flask/COBLAST session, the
 `.exe` moves to the next available local port and prints the address in its
 terminal window.
@@ -163,7 +166,9 @@ Then run the app through the executable:
 .\dist\COBLAST.exe
 ```
 
-If you need to override where app data are stored, set `COBLAST_DATA_DIR`:
+By default the standalone executable stores app data in a stable per-user
+folder at `%LOCALAPPDATA%\COBLAST_data`, so the same data is reused no matter
+where the `.exe` lives. To override that location, set `COBLAST_DATA_DIR`:
 
 ```powershell
 $env:COBLAST_DATA_DIR = 'C:\COBLAST_data'
@@ -178,58 +183,59 @@ repository size limit.
 ## Updating or Removing the Windows Test Build
 
 The current Windows test build does not use a formal installer. A tester's
-local COBLAST installation is simply the folder containing `COBLAST.exe` plus
-the persistent `COBLAST_data` folder beside it.
+local COBLAST installation is simply the folder containing `COBLAST.exe`.
+Persistent app data lives separately in a stable per-user folder:
+
+```text
+%LOCALAPPDATA%\COBLAST_data
+```
+
+(for example `C:\Users\<you>\AppData\Local\COBLAST_data`). Because this folder
+is independent of where `COBLAST.exe` sits, registered databases and saved
+results are preserved automatically across version updates — there is no longer
+any need to copy a data folder next to the new executable.
 
 To install a newer test version while keeping old registered databases and
 saved results:
 
 1. Close the COBLAST browser tab and the COBLAST terminal window.
-2. Find the old folder that contains `COBLAST.exe`.
-3. Back up the old `COBLAST_data` folder before replacing anything:
+2. Download and fully extract the new `release` folder. Replace the old
+   `COBLAST.exe`, or run the new one from any location — its folder no longer
+   holds your data.
+3. (Optional) Back up the per-user data folder first, in case you want to roll
+   back:
 
 ```powershell
-Copy-Item -Recurse .\COBLAST_data .\COBLAST_data_backup_2026-05-20
+Copy-Item -Recurse "$env:LOCALAPPDATA\COBLAST_data" "$env:LOCALAPPDATA\COBLAST_data_backup_2026-06-10"
 ```
 
-4. Download and fully extract the new `release` folder.
-5. Move or copy the old `COBLAST_data` folder so it sits beside the new
-   `COBLAST.exe`:
-
-```text
-C:\COBLAST\COBLAST.exe
-C:\COBLAST\COBLAST_data\
-```
-
-6. Run a quick diagnostic from the new folder:
+4. Run a quick diagnostic from the new folder:
 
 ```powershell
 .\COBLAST.exe --check-only --skip-smoke --no-browser
 ```
 
-7. Start the new version:
+5. Start the new version:
 
 ```powershell
 .\COBLAST.exe
 ```
 
-If databases were created inside COBLAST's managed data folder, keeping
-`COBLAST_data` should preserve the registry, generated BLAST database files,
-and saved result exports. If databases were registered from external locations,
-those external FASTA or BLAST database files must remain at the same paths, or
-the database registry may show them as `missing`. Use the database-management
-page to verify databases after updating.
+The new version reads the same `%LOCALAPPDATA%\COBLAST_data` folder, so the
+registry, generated BLAST database files, and saved result exports carry over
+with no copy step. If databases were registered from external locations, those
+external FASTA or BLAST database files must remain at the same paths, or the
+database registry may show them as `missing`. Use the database-management page
+to verify databases after updating.
 
-If a tester used `COBLAST_DATA_DIR` to store data somewhere else, keep that
-custom data folder and set `COBLAST_DATA_DIR` again before launching the new
-version.
+If a tester used `COBLAST_DATA_DIR` to store data somewhere else, set
+`COBLAST_DATA_DIR` again before launching the new version.
 
-To remove an old test version after confirming the new one works:
+To remove a test version after confirming a newer one works:
 
-1. Back up `COBLAST_data` if any old databases or results should be retained.
-2. Delete the old folder containing the old `COBLAST.exe`.
-3. Delete the old `COBLAST_data` folder only if those databases and results are
-   no longer needed.
+1. Delete the folder containing the old `COBLAST.exe`.
+2. Delete the per-user data folder `%LOCALAPPDATA%\COBLAST_data` only if its
+   databases and results are no longer needed. Back it up first if in doubt.
 
 COBLAST does not install Windows services, browser extensions, or system-wide
 BLAST settings. Uninstalling the test build is therefore folder removal unless
