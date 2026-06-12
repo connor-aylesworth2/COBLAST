@@ -67,7 +67,7 @@
           <div class="working-ncbi-inner">
             <div class="working-logo-text">
               <strong>COBLAST+</strong>
-              <span>Clinician-oriented BLAST+</span>
+              <span>Clinician-Oriented BLAST+</span>
             </div>
           </div>
         </header>
