@@ -268,9 +268,10 @@ def test_num_threads_omitted_by_default():
     assert "num_threads" not in _params()
 
 
-def test_exact_match_uses_query_split_when_multithreaded():
+def test_exact_match_uses_auto_split_when_multithreaded():
     params = _params(num_threads=8, exact_match_probe=True)
-    assert params["mt_mode"] == EXACT_MATCH_MT_MODE  # "1" = split work by query
+    assert params["mt_mode"] == EXACT_MATCH_MT_MODE
+    assert params["mt_mode"] == "0"  # BLAST chooses query or database splitting.
 
 
 def test_mt_mode_omitted_when_single_threaded():

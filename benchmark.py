@@ -10,9 +10,11 @@ BLAST_BIN). Run from the repository root. Examples:
     # How well does one search scale across cores?
     python benchmark.py --threads 1,2,4,8
 
-    # The eToL probe panel is the workload that benefits from query-split
-    # threading (mt_mode 1); compare it directly:
+    # Measure the eToL probe panel with BLAST's automatic threading mode:
     python benchmark.py --etol quick --threads 1,2,4,8
+
+    # Compare explicit query/database splitting when diagnosing a real DB:
+    python benchmark.py --etol full --db PATIENT_DB --threads 2,4,8 --mt-mode 2
 
     # The "100 patients" batch: how much does running patients concurrently help?
     python benchmark.py --mode batch --copies 8 --concurrency 1,2,4,8 --batch-threads 1

@@ -139,10 +139,11 @@ EXACT_MATCH_TASK = "blastn-short"
 EXACT_MATCH_PERC_IDENTITY = "100"
 EXACT_MATCH_QCOV_HSP_PERC = "100"
 EXACT_MATCH_MAX_TARGET_SEQS = "5000000"
-# Probe panels submit many short queries against a single-volume patient
-# database, so splitting the BLAST work by query (mt_mode 1) parallelizes far
-# better than the default split-by-database when -num_threads > 1.
-EXACT_MATCH_MT_MODE = "1"
+# Patient SRA databases can be much larger than the query-split threshold used
+# by BLAST+. Let BLAST choose between query and database splitting from the real
+# workload sizes; forcing mt_mode 1 makes large eToL searches effectively flat
+# across thread counts.
+EXACT_MATCH_MT_MODE = "0"
 
 # CPU parallelism. -num_threads is BLAST+'s own multi-core switch; mt_mode picks
 # how the work is divided across those threads (0 auto, 1 by query, 2 by db).
@@ -657,7 +658,7 @@ def build_blast_parameters(
     if parsed_num_threads is not None:
         parameters["num_threads"] = parsed_num_threads
         # mt_mode only matters with real parallelism; an explicit mode wins, and
-        # probe panels default to query-split (mt_mode 1) for better scaling.
+        # exact-probe searches use BLAST's workload-aware automatic mode.
         chosen_mt_mode = parse_mt_mode(mt_mode) or (
             EXACT_MATCH_MT_MODE if exact_match_probe else None
         )
