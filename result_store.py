@@ -23,10 +23,9 @@ from etol_summary import (
     etol_species_count_rows,
 )
 from blast_runner import BlastResult
-from config import resource_root, runtime_data_dir
+from config import runtime_data_dir
 
 
-PROJECT_ROOT = resource_root()
 RESULTS_DIR = runtime_data_dir() / "results"
 BATCH_RESULTS_DIR = runtime_data_dir() / "batch_results"
 

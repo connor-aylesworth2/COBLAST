@@ -166,7 +166,7 @@ python app.py
 4. Try the standard, sensitive, and fast presets.
 5. Run BLAST.
 6. Confirm the results page includes the BLAST command, return code, runtime,
-   stdout, stderr, and a structured results table.
+   stderr, and a structured results table.
 7. Download results as CSV and TSV.
 8. Visit `/databases` and confirm registered databases can be checked, added,
    created from FASTA, and removed from the registry without deleting files.

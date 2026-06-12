@@ -129,30 +129,20 @@ def project_accession(path: Path) -> str:
     return path.name
 
 
-def find_fasta_files(root: Path) -> list[Path]:
-    """Find FASTA files under one SRA project folder."""
-    return sorted(
-        path
-        for path in root.rglob("*")
-        if path.is_file() and path.suffix.lower() in FASTA_SUFFIXES
-    )
+def find_fasta_files(files: list[Path]) -> list[Path]:
+    """Select FASTA files from a pre-collected file list."""
+    return sorted(path for path in files if path.suffix.lower() in FASTA_SUFFIXES)
 
 
-def find_sra_files(root: Path) -> list[Path]:
-    """Find SRA files under one project folder."""
-    return sorted(
-        path
-        for path in root.rglob("*")
-        if path.is_file() and path.suffix.lower() == SRA_SUFFIX
-    )
+def find_sra_files(files: list[Path]) -> list[Path]:
+    """Select SRA files from a pre-collected file list."""
+    return sorted(path for path in files if path.suffix.lower() == SRA_SUFFIX)
 
 
-def find_blast_prefixes(root: Path) -> list[str]:
-    """Find likely BLAST database prefixes below one project folder."""
+def find_blast_prefixes(files: list[Path]) -> list[str]:
+    """Find likely BLAST database prefixes from a pre-collected file list."""
     prefixes: list[Path] = []
-    for path in root.rglob("*"):
-        if not path.is_file():
-            continue
+    for path in files:
         suffix = path.suffix.lower()
         if suffix in {".nal", ".pal"}:
             prefixes.append(path.with_suffix(""))
@@ -171,18 +161,20 @@ def find_blast_prefixes(root: Path) -> list[str]:
 
 def summarize_project(root: Path) -> SraProject:
     """Summarize SRA, FASTA, and BLASTDB artifacts under one folder."""
-    sra_files = find_sra_files(root)
-    fasta_files = find_fasta_files(root)
-    blast_prefixes = find_blast_prefixes(root)
+    # One filesystem walk feeds every breakdown below.
+    all_files = [path for path in root.rglob("*") if path.is_file()]
+
+    sra_files = find_sra_files(all_files)
+    fasta_files = find_fasta_files(all_files)
+    blast_prefixes = find_blast_prefixes(all_files)
     blast_database_bytes = sum(database_storage_bytes(prefix) for prefix in blast_prefixes)
 
     total_bytes = 0
-    for path in root.rglob("*"):
-        if path.is_file():
-            try:
-                total_bytes += path.stat().st_size
-            except OSError:
-                continue
+    for path in all_files:
+        try:
+            total_bytes += path.stat().st_size
+        except OSError:
+            continue
 
     if blast_prefixes:
         status = "blast-ready"

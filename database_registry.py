@@ -16,10 +16,9 @@ import shlex
 import sqlite3
 import subprocess
 
-from config import blast_exe, resource_path, resource_root, runtime_data_dir
+from config import blast_exe, resource_path, runtime_data_dir
 
 
-PROJECT_ROOT = resource_root()
 INSTANCE_DIR = runtime_data_dir()
 REGISTRY_PATH = INSTANCE_DIR / "database_registry.sqlite"
 MANAGED_DATABASE_DIR = INSTANCE_DIR / "databases"
@@ -518,8 +517,12 @@ def ensure_demo_databases() -> None:
             continue
 
         existing = get_database_by_prefix(prefix)
+        if existing is not None and existing.status == "available":
+            # Already seeded and marked available: trust the stored status so a
+            # routine page load does not spawn a blastdbcmd verification process.
+            continue
         if existing is not None:
-            # Reuse the existing toy database if it still verifies cleanly.
+            # Status is missing/invalid; re-verify before deciding to recreate.
             verified = verify_database(existing.id)
             if verified.status == "available":
                 continue

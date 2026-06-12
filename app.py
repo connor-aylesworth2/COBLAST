@@ -105,9 +105,6 @@ def filter_exact_probe_hits(
     return exact_hits
 
 
-PROJECT_ROOT = resource_root()
-
-
 def redirect_to_databases(message: str = "", error: str = ""):
     """Send users back to the database page with optional status text."""
     params = {}
