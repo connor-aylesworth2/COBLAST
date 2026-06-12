@@ -683,6 +683,7 @@ def run_blast(
     num_threads: int | str | None = None,
     mt_mode: str | None = None,
     exact_match_probe: bool = False,
+    prevalidated_query: FastaValidationResult | None = None,
 ) -> BlastResult:
     """Run one local BLAST search and return both raw and parsed outputs."""
     if program not in BLAST_PROGRAMS:
@@ -728,9 +729,12 @@ def run_blast(
         exact_match_probe=exact_match_probe,
     )
 
-    query = validate_fasta_input(
-        sequence,
-        expected_type=str(program_config["query_type"]),
+    # Callers that fan one query across many databases (the batch route) can
+    # validate it once and pass it in so each search does not re-parse it.
+    query = (
+        prevalidated_query
+        if prevalidated_query is not None
+        else validate_fasta_input(sequence, expected_type=str(program_config["query_type"]))
     )
     db_path = str(database)
     database_total_bytes = database_storage_bytes(db_path)
