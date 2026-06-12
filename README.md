@@ -382,22 +382,17 @@ The routine search form includes:
 - query paste/upload
 - search type
 - compatible database
-- sensitivity preset
 - run button
 
 Advanced settings are collapsed by default and include E-value, maximum target
 sequences, word size, BLASTN task, minimum percent identity, output parser
 format, timeout, and raw database details.
 
-Search timeout defaults are tied to the sensitivity preset so routine users do
-not need to open advanced settings for normal local searches:
-
-- `fast`: 300 seconds, or 5 minutes
-- `standard`: 3,600 seconds, or 1 hour
-- `sensitive`: 900 seconds, or 15 minutes
-
-The advanced timeout field can still override these defaults for a specific
-run. The current maximum accepted timeout is 3,600 seconds, or 1 hour.
+Searches use BLAST+'s own defaults (for example e-value 10 and 500 maximum
+target sequences) unless a value is entered in Advanced settings, so the routine
+form stays simple. Each search has a default wall-clock timeout of 3,600 seconds
+(1 hour); the advanced timeout field can override it, up to a maximum of 3,600
+seconds.
 
 When a BLAST search, database verification, or database creation job is running,
 the interface shows a waiting screen with elapsed time and status messages. For
@@ -521,7 +516,7 @@ So those counts reflect true read depth, the preset path runs the `blastn-short`
 task with `-perc_identity 100 -qcov_hsp_perc 100` and lifts the `max_target_seqs`
 cap (see the `EXACT_MATCH_*` constants in `blast_runner.py`). This stops a probe
 that matches many reads in a deep patient database from being silently truncated
-by the sensitivity preset's target limit.
+by the default max_target_seqs limit.
 
 There are three eToL presets, plus the APOE preset; **only one preset can be
 active at a time** (selecting one clears the others):

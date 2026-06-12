@@ -89,42 +89,18 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
 
         <p id="database_description" class="muted"></p>
 
-        <div class="field">
-          <span class="field-label">Sensitivity preset</span>
-          <div class="preset-group">
-            {# Presets provide default e-value, max target, and timeout behavior. #}
-            {% for preset, config in sensitivity_presets.items() %}
-              <label class="preset-option">
-                <input
-                  type="radio"
-                  name="sensitivity_preset"
-                  value="{{ preset }}"
-                  data-evalue="{{ config.evalue }}"
-                  data-max-target-seqs="{{ config.max_target_seqs }}"
-                  data-timeout-seconds="{{ config.timeout_seconds }}"
-                  {% if preset == "standard" %}checked{% endif %}
-                >
-                <span class="preset-card">
-                  <strong>{{ config.label }}</strong>
-                  <span class="muted">{{ config.description }}</span>
-                </span>
-              </label>
-            {% endfor %}
-          </div>
-        </div>
-
         <details>
           <summary>Advanced settings</summary>
           <div class="details-body">
-            {# Empty advanced inputs mean "use the selected preset default". #}
+            {# Blank advanced inputs are omitted, so BLAST+ uses its own defaults. #}
             <div class="grid">
               <div class="field">
                 <label for="evalue">E-value threshold</label>
-                <input id="evalue" name="evalue" inputmode="decimal" placeholder="Preset default: 10">
+                <input id="evalue" name="evalue" inputmode="decimal" placeholder="BLAST default: 10">
               </div>
               <div class="field">
                 <label for="max_target_seqs">Maximum target sequences per query</label>
-                <input id="max_target_seqs" name="max_target_seqs" inputmode="numeric" placeholder="Preset default: 5000">
+                <input id="max_target_seqs" name="max_target_seqs" inputmode="numeric" placeholder="BLAST default: 500">
               </div>
               <div class="field">
                 <label for="word_size">Word size</label>
@@ -152,7 +128,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
               </div>
               <div class="field">
                 <label for="timeout_seconds">Timeout seconds</label>
-                <input id="timeout_seconds" name="timeout_seconds" inputmode="numeric" placeholder="Preset default">
+                <input id="timeout_seconds" name="timeout_seconds" inputmode="numeric" placeholder="Default: 3600 seconds">
               </div>
               <div class="field">
                 <label for="num_threads">CPU threads</label>
@@ -194,11 +170,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       const databasePath = document.getElementById("database_path");
       const databaseTitle = document.getElementById("database_title");
       const taskSelect = document.getElementById("task");
-      const evalueInput = document.getElementById("evalue");
-      const maxTargetSeqs = document.getElementById("max_target_seqs");
       const percentIdentity = document.getElementById("perc_identity");
-      const timeoutSeconds = document.getElementById("timeout_seconds");
-      const presetInputs = document.querySelectorAll('input[name="sensitivity_preset"]');
 
       function updateDatabaseDetails() {
         // Mirror the selected option's metadata into the read-only detail fields.
@@ -252,28 +224,13 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         }
       }
 
-      function updatePresetPlaceholders() {
-        // Keep placeholders synchronized with the selected preset.
-        const selectedPreset = document.querySelector('input[name="sensitivity_preset"]:checked');
-        const presetEvalue = selectedPreset ? selectedPreset.dataset.evalue : "10";
-        const presetMaxTargetSeqs = selectedPreset ? selectedPreset.dataset.maxTargetSeqs : "5000";
-        const presetTimeout = selectedPreset ? selectedPreset.dataset.timeoutSeconds : "3600";
-        evalueInput.placeholder = `Preset default: ${presetEvalue}`;
-        maxTargetSeqs.placeholder = `Preset default: ${presetMaxTargetSeqs}`;
-        timeoutSeconds.placeholder = `Preset default: ${presetTimeout} seconds`;
-      }
-
       programSelect.addEventListener("change", () => {
         updateCompatibleDatabases();
         updateAdvancedAvailability();
       });
       databaseSelect.addEventListener("change", updateDatabaseDetails);
-      for (const presetInput of presetInputs) {
-        presetInput.addEventListener("change", updatePresetPlaceholders);
-      }
       updateCompatibleDatabases();
       updateAdvancedAvailability();
-      updatePresetPlaceholders();
     </script>
   </body>
 </html>

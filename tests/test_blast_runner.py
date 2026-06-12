@@ -147,17 +147,19 @@ def test_blastn_default_task_is_megablast():
     assert BLAST_PROGRAMS["blastn"]["default_task"] == "megablast"
 
 
-def test_parameters_use_preset_defaults():
+def test_parameters_omit_unset_fields_for_blast_defaults():
+    # Sensitivity presets were removed: blank advanced fields are omitted so
+    # BLAST+ applies its own defaults (e-value 10, max_target_seqs 500).
     params = build_blast_parameters(
         program="blastn",
-        sensitivity_preset="fast",
         evalue=None,
         max_target_seqs=None,
         word_size=None,
         perc_identity=None,
     )
-    assert params["evalue"] == "10"
-    assert params["max_target_seqs"] == "10"
+    assert "evalue" not in params
+    assert "max_target_seqs" not in params
+    assert "word_size" not in params
     assert "qcov_hsp_perc" not in params
     assert "perc_identity" not in params
 
@@ -165,7 +167,6 @@ def test_parameters_use_preset_defaults():
 def test_parameters_apply_overrides():
     params = build_blast_parameters(
         program="blastn",
-        sensitivity_preset="standard",
         evalue="1e-5",
         max_target_seqs="50",
         word_size="11",
@@ -179,13 +180,11 @@ def test_parameters_apply_overrides():
     assert params["qcov_hsp_perc"] == "90"
 
 
-def test_exact_match_probe_overrides_preset_cap():
-    # The 'fast' preset would cap targets at 10 and set no coverage filter; the
-    # exact-match path must lift that cap and enforce full-length exact matches
-    # so per-probe read counts are not silently truncated.
+def test_exact_match_probe_lifts_target_cap_and_enforces_full_coverage():
+    # The exact-match path must enforce full-length exact matches and lift the
+    # target cap so per-probe read counts are not silently truncated.
     params = build_blast_parameters(
         program="blastn",
-        sensitivity_preset="fast",
         evalue=None,
         max_target_seqs=None,
         word_size=None,
@@ -201,7 +200,6 @@ def test_exact_match_probe_overrides_preset_cap():
 def test_exact_match_probe_ignores_user_max_target_seqs():
     params = build_blast_parameters(
         program="blastn",
-        sensitivity_preset="standard",
         evalue=None,
         max_target_seqs="25",  # a user value must not truncate exact-match counts
         word_size=None,
@@ -215,7 +213,6 @@ def test_perc_identity_rejected_for_non_blastn():
     with pytest.raises(ValueError):
         build_blast_parameters(
             program="blastp",
-            sensitivity_preset="standard",
             evalue=None,
             max_target_seqs=None,
             word_size=None,
@@ -227,7 +224,6 @@ def test_invalid_qcov_hsp_perc_rejected():
     with pytest.raises(ValueError):
         build_blast_parameters(
             program="blastn",
-            sensitivity_preset="standard",
             evalue=None,
             max_target_seqs=None,
             word_size=None,
@@ -241,7 +237,6 @@ def test_invalid_qcov_hsp_perc_rejected():
 def _params(**overrides):
     base = dict(
         program="blastn",
-        sensitivity_preset="standard",
         evalue=None,
         max_target_seqs=None,
         word_size=None,

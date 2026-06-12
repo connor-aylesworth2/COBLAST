@@ -243,40 +243,6 @@ button:hover,
   color: var(--ncbi-red);
 }
 
-.preset-group {
-  /* Presets act like selectable cards while retaining real radio inputs. */
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
-}
-
-.preset-option input {
-  /* The radio remains accessible, but the visual target is the card beside it. */
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.preset-card {
-  border: 1px solid var(--ncbi-gray-border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  display: block;
-  min-height: 94px;
-  padding: 12px;
-}
-
-.preset-card strong {
-  color: var(--ncbi-blue-darker);
-  display: block;
-}
-
-.preset-option input:checked + .preset-card {
-  border-color: var(--ncbi-blue);
-  box-shadow: inset 4px 0 0 var(--ncbi-blue);
-  background: var(--ncbi-blue-light);
-}
-
 details {
   /* Advanced sections stay collapsed until the user needs extra controls. */
   border: 1px solid var(--ncbi-gray-border);

@@ -27,7 +27,6 @@ from etol_summary import (
 from human_filter import filter_human_hits
 from blast_runner import (
     BLAST_PROGRAMS,
-    SENSITIVITY_PRESETS,
     run_blast,
     run_jobs_concurrently,
     validate_fasta_input,
@@ -167,7 +166,6 @@ def index():
     return render_template(
         "index.html",
         blast_programs=BLAST_PROGRAMS,
-        sensitivity_presets=SENSITIVITY_PRESETS,
         databases=databases,
         registry_error=registry_error,
         default_threads=default_thread_count(),
@@ -187,7 +185,6 @@ def run_blast_route():
     program = request.form.get("program", "blastn")
     database_id = request.form.get("database_id", "")
     output_format = request.form.get("output_format", "tabular")
-    sensitivity_preset = request.form.get("sensitivity_preset", "standard")
 
     try:
         if program not in BLAST_PROGRAMS:
@@ -216,7 +213,6 @@ def run_blast_route():
             database=database.db_prefix_path,
             program=program,
             output_format=output_format,
-            sensitivity_preset=sensitivity_preset,
             task=request.form.get("task") or None,
             evalue=request.form.get("evalue") or None,
             max_target_seqs=request.form.get("max_target_seqs") or None,
@@ -377,7 +373,6 @@ def batch_blast_page():
     return render_template(
         "batch.html",
         blast_programs=BLAST_PROGRAMS,
-        sensitivity_presets=SENSITIVITY_PRESETS,
         database_options=options,
         etol_preset_options=etol_preset_options(),
         error=request.args.get("error") or registry_error,
@@ -396,7 +391,6 @@ def run_batch_blast_route():
     program = request.form.get("program", "blastn")
     database_ids = request.form.getlist("database_ids")
     output_format = request.form.get("output_format", "tabular")
-    sensitivity_preset = request.form.get("sensitivity_preset", "standard")
     apoe_probe_preset = request.form.get("apoe_probe_preset") == "1"
     # Exactly one exact-match probe preset can run at a time. The UI enforces
     # this, but the server resolves it deterministically too: pick the first
@@ -442,7 +436,6 @@ def run_batch_blast_route():
             return render_template(
                 "batch.html",
                 blast_programs=BLAST_PROGRAMS,
-                sensitivity_presets=SENSITIVITY_PRESETS,
                 database_options=database_options(),
                 etol_preset_options=etol_preset_options(),
                 error="Select an available nucleotide human-genome database for the secondary human filter.",
@@ -453,7 +446,6 @@ def run_batch_blast_route():
         return render_template(
             "batch.html",
             blast_programs=BLAST_PROGRAMS,
-            sensitivity_presets=SENSITIVITY_PRESETS,
             database_options=database_options(),
             etol_preset_options=etol_preset_options(),
             error="Choose at least one database for the batch run.",
@@ -481,7 +473,6 @@ def run_batch_blast_route():
         return render_template(
             "batch.html",
             blast_programs=BLAST_PROGRAMS,
-            sensitivity_presets=SENSITIVITY_PRESETS,
             database_options=database_options(),
             etol_preset_options=etol_preset_options(),
             error=str(exc),
@@ -512,7 +503,6 @@ def run_batch_blast_route():
                 database=database.db_prefix_path,
                 program=program,
                 output_format=output_format,
-                sensitivity_preset=sensitivity_preset,
                 # Exact-match probe presets ignore the user task/identity/target
                 # fields: run_blast forces blastn-short, 100% identity/coverage,
                 # and an uncapped max_target_seqs so read counts are exact.
@@ -647,7 +637,6 @@ def run_batch_blast_route():
     payload = {
         "program": program,
         "output_format": output_format,
-        "sensitivity_preset": sensitivity_preset,
         "query_count": query_count,
         "query_total_length": query_total_length,
         "total_runtime_seconds": total_runtime_seconds,

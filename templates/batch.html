@@ -104,29 +104,6 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
           </select>
         </div>
 
-        <div class="field">
-          <span class="field-label">Sensitivity preset</span>
-          <div class="preset-group">
-            {% for preset, config in sensitivity_presets.items() %}
-              <label class="preset-option">
-                <input
-                  type="radio"
-                  name="sensitivity_preset"
-                  value="{{ preset }}"
-                  data-evalue="{{ config.evalue }}"
-                  data-max-target-seqs="{{ config.max_target_seqs }}"
-                  data-timeout-seconds="{{ config.timeout_seconds }}"
-                  {% if preset == "standard" %}checked{% endif %}
-                >
-                <span class="preset-card">
-                  <strong>{{ config.label }}</strong>
-                  <span class="muted">{{ config.description }}</span>
-                </span>
-              </label>
-            {% endfor %}
-          </div>
-        </div>
-
         <section class="database-picker">
           <div class="section-header">
             <h2 class="section-title">Databases</h2>
@@ -189,11 +166,11 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
             <div class="grid">
               <div class="field">
                 <label for="evalue">E-value threshold</label>
-                <input id="evalue" name="evalue" inputmode="decimal" placeholder="Preset default: 10">
+                <input id="evalue" name="evalue" inputmode="decimal" placeholder="BLAST default: 10">
               </div>
               <div class="field">
                 <label for="max_target_seqs">Maximum target sequences per query</label>
-                <input id="max_target_seqs" name="max_target_seqs" inputmode="numeric" placeholder="Preset default: 5000">
+                <input id="max_target_seqs" name="max_target_seqs" inputmode="numeric" placeholder="BLAST default: 500">
               </div>
               <div class="field">
                 <label for="word_size">Word size</label>
@@ -221,7 +198,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
               </div>
               <div class="field">
                 <label for="timeout_seconds">Timeout seconds per database</label>
-                <input id="timeout_seconds" name="timeout_seconds" inputmode="numeric" placeholder="Preset default">
+                <input id="timeout_seconds" name="timeout_seconds" inputmode="numeric" placeholder="Default: 3600 seconds">
               </div>
               <div class="field">
                 <label for="batch_workers">Max databases at once</label>
@@ -254,10 +231,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       const rows = document.querySelectorAll(".database-row");
       const checkboxes = document.querySelectorAll(".database-checkbox");
       const taskSelect = document.getElementById("task");
-      const evalueInput = document.getElementById("evalue");
-      const maxTargetSeqs = document.getElementById("max_target_seqs");
       const percentIdentity = document.getElementById("perc_identity");
-      const timeoutSeconds = document.getElementById("timeout_seconds");
       const outputFormat = document.getElementById("output_format");
       const humanFilter = document.getElementById("human_filter");
       const humanFilterDb = document.getElementById("human_filter_db_id");
@@ -293,7 +267,6 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
           }
         }
         updateAdvancedAvailability();
-        updatePresetPlaceholders();
         updateHumanFilterAvailability();
       }
 
@@ -305,16 +278,6 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
           taskSelect.value = "";
           percentIdentity.value = "";
         }
-      }
-
-      function updatePresetPlaceholders() {
-        const selected = document.querySelector('input[name="sensitivity_preset"]:checked');
-        const presetEvalue = selected ? selected.dataset.evalue : "10";
-        const presetMaxTargetSeqs = selected ? selected.dataset.maxTargetSeqs : "5000";
-        const presetTimeout = selected ? selected.dataset.timeoutSeconds : "3600";
-        evalueInput.placeholder = `Preset default: ${presetEvalue}`;
-        maxTargetSeqs.placeholder = `Preset default: ${presetMaxTargetSeqs}`;
-        timeoutSeconds.placeholder = `Preset default: ${presetTimeout} seconds`;
       }
 
       function applyProbePreset() {
@@ -388,10 +351,6 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
           }
           applyProbePreset();
         });
-      }
-
-      for (const presetInput of document.querySelectorAll('input[name="sensitivity_preset"]')) {
-        presetInput.addEventListener("change", updatePresetPlaceholders);
       }
 
       updateCompatibility();

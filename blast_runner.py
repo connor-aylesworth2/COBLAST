@@ -92,34 +92,9 @@ BLAST_OUTPUT_FORMATS = {
     "tabular": "6 " + " ".join(OUTFMT6_FIELDS),
     "xml": "5",
 }
-FAST_TIMEOUT_SECONDS = 300
+# Default wall-clock cap for a single search. BLAST+ itself has no timeout; this
+# is COBLAST's safety net, and the advanced "timeout" field can override it.
 DEFAULT_TIMEOUT_SECONDS = 3_600
-SENSITIVE_TIMEOUT_SECONDS = 900
-SENSITIVITY_PRESETS = {
-    # Presets keep common searches one-click while advanced fields can override
-    # individual values later in build_blast_parameters.
-    "standard": {
-        "label": "Standard",
-        "description": "Balanced default for routine sequence checks.",
-        "evalue": "10",
-        "max_target_seqs": "5000",
-        "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
-    },
-    "sensitive": {
-        "label": "Sensitive",
-        "description": "Keeps weaker candidate matches for review.",
-        "evalue": "100",
-        "max_target_seqs": "100",
-        "timeout_seconds": SENSITIVE_TIMEOUT_SECONDS,
-    },
-    "fast": {
-        "label": "Fast",
-        "description": "Returns a smaller hit list for quick checks.",
-        "evalue": "10",
-        "max_target_seqs": "10",
-        "timeout_seconds": FAST_TIMEOUT_SECONDS,
-    },
-}
 NUCLEOTIDE_ALPHABET = set("ACGTRYSWKMBDHVNU")
 PROTEIN_ALPHABET = set("ABCDEFGHIKLMNPQRSTVWXYZJUO*")
 MAX_FASTA_RECORDS = 1500
@@ -130,11 +105,11 @@ TIMEOUT_SECONDS_LIMIT = 3_600
 
 # Exact-match probe presets (eToL/APOE) count how many subject reads exactly
 # match each short probe, so those counts must reflect true read depth. The
-# preset path therefore overrides the sensitivity preset: it enforces full-length
-# identity and coverage in BLAST itself and lifts the max_target_seqs cap
-# (5000/100/10) to an effectively unbounded ceiling, so deep patient databases
-# are not silently truncated. blastn-short stays the correct task for the
-# 36-64 bp probes even though the general search now defaults to megablast.
+# preset path therefore overrides the usual options: it enforces full-length
+# identity and coverage in BLAST itself and lifts max_target_seqs to an
+# effectively unbounded ceiling, so deep patient databases are not silently
+# truncated. blastn-short stays the correct task for the 36-64 bp probes even
+# though the general search defaults to megablast.
 EXACT_MATCH_TASK = "blastn-short"
 EXACT_MATCH_PERC_IDENTITY = "100"
 EXACT_MATCH_QCOV_HSP_PERC = "100"
@@ -187,7 +162,6 @@ class BlastResult:
     query_type: str
     query_count: int
     query_total_length: int
-    sensitivity_preset: str
     parameters: dict[str, str]
 
 
@@ -524,14 +498,6 @@ def parse_bounded_int(name: str, value: str | None, minimum: int, maximum: int) 
     return str(number)
 
 
-def preset_timeout_seconds(sensitivity_preset: str) -> str:
-    """Return the timeout attached to the selected sensitivity preset."""
-    if sensitivity_preset not in SENSITIVITY_PRESETS:
-        allowed = ", ".join(SENSITIVITY_PRESETS)
-        raise ValueError(f"Unsupported sensitivity preset: {sensitivity_preset}. Choose one of: {allowed}.")
-    return str(SENSITIVITY_PRESETS[sensitivity_preset]["timeout_seconds"])
-
-
 def parse_percent_identity(program: str, value: str | None) -> str | None:
     """Validate BLASTN-only percent identity filtering."""
     cleaned = optional_text(value)
@@ -590,7 +556,6 @@ def resolve_num_threads(requested: int | str | None) -> int:
 def build_blast_parameters(
     *,
     program: str,
-    sensitivity_preset: str,
     evalue: str | None,
     max_target_seqs: str | None,
     word_size: str | None,
@@ -600,23 +565,14 @@ def build_blast_parameters(
     mt_mode: str | None = None,
     exact_match_probe: bool = False,
 ) -> dict[str, str]:
-    """Merge preset defaults with user-supplied advanced BLAST options.
+    """Build validated BLAST options from the user-supplied advanced fields.
 
-    When ``exact_match_probe`` is set, the eToL/APOE counting workflow takes
-    precedence over the sensitivity preset: BLAST enforces 100% identity and
-    100% HSP query coverage, and max_target_seqs is lifted to an effectively
-    unbounded ceiling so per-probe read counts are not truncated.
+    Any field the user leaves blank is omitted, so BLAST+ applies its own
+    defaults (e.g. e-value 10, max_target_seqs 500). When ``exact_match_probe``
+    is set, the eToL/APOE counting workflow overrides identity/coverage and
+    lifts max_target_seqs so per-probe read counts are not truncated.
     """
-    if sensitivity_preset not in SENSITIVITY_PRESETS:
-        allowed = ", ".join(SENSITIVITY_PRESETS)
-        raise ValueError(f"Unsupported sensitivity preset: {sensitivity_preset}. Choose one of: {allowed}.")
-
-    preset = SENSITIVITY_PRESETS[sensitivity_preset]
-    # Start with a safe preset, then overlay validated advanced fields below.
-    parameters = {
-        "evalue": str(preset["evalue"]),
-        "max_target_seqs": str(preset["max_target_seqs"]),
-    }
+    parameters: dict[str, str] = {}
 
     parsed_evalue = parse_positive_float("E-value", evalue)
     parsed_max_target_seqs = parse_bounded_int(
@@ -675,7 +631,6 @@ def run_blast(
     timeout_seconds: int | str | None = None,
     task: str | None = None,
     output_format: str = "tabular",
-    sensitivity_preset: str = "standard",
     evalue: str | None = None,
     max_target_seqs: str | None = None,
     word_size: str | None = None,
@@ -694,7 +649,7 @@ def run_blast(
         raise ValueError(f"Unsupported BLAST output format: {output_format}")
     timeout_value = str(timeout_seconds) if timeout_seconds is not None else None
     if optional_text(timeout_value) is None:
-        timeout_value = preset_timeout_seconds(sensitivity_preset)
+        timeout_value = str(DEFAULT_TIMEOUT_SECONDS)
     # subprocess.run enforces this timeout, so keep it bounded for the UI.
     timeout = parse_bounded_int(
         "Timeout",
@@ -719,7 +674,6 @@ def run_blast(
     effective_num_threads = resolve_num_threads(num_threads)
     parameters = build_blast_parameters(
         program=program,
-        sensitivity_preset=sensitivity_preset,
         evalue=evalue,
         max_target_seqs=max_target_seqs,
         word_size=word_size,
@@ -789,7 +743,6 @@ def run_blast(
         query_type=query.sequence_type,
         query_count=len(query.records),
         query_total_length=query.total_length,
-        sensitivity_preset=sensitivity_preset,
         parameters=parameters,
     )
 
@@ -800,7 +753,6 @@ def run_blastn(
     timeout_seconds: int | str | None = None,
     task: str = "blastn-short",
     output_format: str = "tabular",
-    sensitivity_preset: str = "standard",
 ) -> BlastResult:
     """Convenience wrapper retained for older blastn-only callers/tests."""
     return run_blast(
@@ -810,7 +762,6 @@ def run_blastn(
         timeout_seconds=timeout_seconds,
         task=task,
         output_format=output_format,
-        sensitivity_preset=sensitivity_preset,
     )
 
 
