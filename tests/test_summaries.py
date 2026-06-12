@@ -8,6 +8,7 @@ panels under data/, so run pytest from the repository root.
 from apoe_summary import build_apoe_probe_summary
 from etol_summary import (
     build_etol_probe_summary,
+    etol_preset_fasta,
     etol_preset_probe_count,
     etol_preset_query_ids,
     etol_preset_records,
@@ -110,3 +111,23 @@ def test_etol_count_rows_include_every_probe_and_species():
     assert len(probe_rows) == len(records)
     assert sum(row["exact_hits"] for row in probe_rows) == 1
     assert any(row["exact_hits"] == 1 for row in species_rows)
+
+
+# --- megablast / blastn-short partition of the eToL panel ------------------
+
+def test_etol_full_panel_has_exactly_one_non_megablast_probe():
+    # Only F3_Gpolymorpha_18S_7 lacks a 28-base unambiguous window, so it is the
+    # single probe that falls back to blastn-short while the other 1,016 use
+    # megablast. Guards the speedup split against future probe-panel edits.
+    from blast_runner import _parse_panel_fasta, has_megablast_seed
+
+    pairs = _parse_panel_fasta(etol_preset_fasta("etol_full"))
+    short = [header for header, seq in pairs if not has_megablast_seed(seq)]
+    assert short == ["F3_Gpolymorpha_18S_7"]
+
+
+def test_etol_quick_panel_is_all_megablast_safe():
+    from blast_runner import _parse_panel_fasta, has_megablast_seed
+
+    pairs = _parse_panel_fasta(etol_preset_fasta("etol_quick"))
+    assert all(has_megablast_seed(seq) for _, seq in pairs)

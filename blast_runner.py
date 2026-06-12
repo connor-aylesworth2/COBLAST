@@ -126,6 +126,12 @@ NUM_THREADS_LIMIT = 1024
 ALLOWED_MT_MODES = {"0", "1", "2"}
 COBLAST_NUM_THREADS_ENV = "COBLAST_NUM_THREADS"
 
+# Probe panels run megablast for the SRA-scale speedup, but megablast needs a
+# 28-base unambiguous word to seed; a probe whose ambiguous bases leave no such
+# window falls back to blastn-short (see run_blast_probe_panel).
+MEGABLAST_TASK = "megablast"
+MEGABLAST_MIN_SEED = 28
+
 
 @dataclass(frozen=True)
 class FastaRecordSummary:
@@ -763,6 +769,116 @@ def run_blastn(
         task=task,
         output_format=output_format,
     )
+
+
+def has_megablast_seed(sequence: str, min_seed: int = MEGABLAST_MIN_SEED) -> bool:
+    """True when a sequence has a contiguous unambiguous (ACGT) run of at least
+    ``min_seed`` bases, which megablast needs to build a word seed for it."""
+    longest = run = 0
+    for base in sequence.upper():
+        if base in "ACGT":
+            run += 1
+            longest = max(longest, run)
+        else:
+            run = 0
+    return longest >= min_seed
+
+
+def _parse_panel_fasta(text: str) -> list[tuple[str, str]]:
+    """Parse panel FASTA text into (header, sequence) pairs, keeping headers whole."""
+    pairs: list[tuple[str, str]] = []
+    header: str | None = None
+    seq: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith(">"):
+            if header is not None:
+                pairs.append((header, "".join(seq)))
+            header = line[1:].strip()
+            seq = []
+        elif line:
+            seq.append(line)
+    if header is not None:
+        pairs.append((header, "".join(seq)))
+    return pairs
+
+
+def _pairs_to_fasta(pairs: Iterable[tuple[str, str]]) -> str:
+    return "".join(f">{header}\n{sequence}\n" for header, sequence in pairs)
+
+
+def _merge_probe_panel_results(runs: list[BlastResult], database: str | Path) -> BlastResult:
+    """Combine the megablast and blastn-short passes into one BlastResult."""
+    hits: list[dict[str, str]] = []
+    command: list[str] = []
+    for index, completed in enumerate(runs):
+        hits.extend(completed.hits)
+        if index:
+            command.append("&&")
+        command.extend(completed.command)
+    first = runs[0]
+    returncode = next((completed.returncode for completed in runs if completed.returncode != 0), 0)
+    return BlastResult(
+        returncode=returncode,
+        hits=hits,
+        stdout="\n".join(completed.stdout for completed in runs),
+        stderr="\n".join(completed.stderr for completed in runs if completed.stderr),
+        command=command,
+        database_path=str(database),
+        database_total_bytes=first.database_total_bytes,
+        output_format=first.output_format,
+        program=first.program,
+        runtime_seconds=sum(completed.runtime_seconds for completed in runs),
+        query_type=first.query_type,
+        query_count=sum(completed.query_count for completed in runs),
+        query_total_length=sum(completed.query_total_length for completed in runs),
+        parameters=first.parameters,
+    )
+
+
+def run_blast_probe_panel(
+    panel_fasta: str,
+    database: str | Path,
+    *,
+    output_format: str = "tabular",
+    timeout_seconds: int | str | None = None,
+    num_threads: int | str | None = None,
+) -> BlastResult:
+    """Run an exact-match probe panel, splitting it by megablast seed eligibility.
+
+    megablast is much faster on whole-SRA databases but needs a 28-base
+    unambiguous word to seed. Probes that have such a window run with megablast;
+    the few whose ambiguous bases leave no 28-base window run with blastn-short.
+    Both passes use the exact-match enforcement and their hits are merged, so the
+    full panel is searched at megablast speed for the bulk of the probes.
+    """
+    megablast_pairs: list[tuple[str, str]] = []
+    short_pairs: list[tuple[str, str]] = []
+    for header, sequence in _parse_panel_fasta(panel_fasta):
+        target = megablast_pairs if has_megablast_seed(sequence) else short_pairs
+        target.append((header, sequence))
+
+    runs: list[BlastResult] = []
+    for task, pairs in ((MEGABLAST_TASK, megablast_pairs), (EXACT_MATCH_TASK, short_pairs)):
+        if not pairs:
+            continue
+        runs.append(
+            run_blast(
+                sequence=_pairs_to_fasta(pairs),
+                database=database,
+                program="blastn",
+                task=task,
+                output_format=output_format,
+                timeout_seconds=timeout_seconds,
+                num_threads=num_threads,
+                exact_match_probe=True,
+            )
+        )
+    if not runs:
+        raise ValueError("The probe panel contained no probes to search.")
+    if len(runs) == 1:
+        return runs[0]
+    return _merge_probe_panel_results(runs, database)
 
 
 def run_jobs_concurrently(

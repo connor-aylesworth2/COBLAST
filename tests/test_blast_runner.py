@@ -18,6 +18,7 @@ from blast_runner import (
     enforce_local_blast_only,
     format_evalue,
     format_float,
+    has_megablast_seed,
     normalize_fasta_lines,
     parse_blast_tabular,
     parse_mt_mode,
@@ -370,3 +371,24 @@ def test_allocate_batch_resources_invalid_request_falls_back(monkeypatch):
     monkeypatch.delenv("COBLAST_BATCH_WORKERS", raising=False)
     workers, _ = allocate_batch_resources(8, requested_workers="abc")
     assert workers == min(default_thread_count(), 8)
+
+
+# --- megablast seed eligibility -------------------------------------------
+
+def test_has_megablast_seed_true_for_clean_sequence():
+    assert has_megablast_seed("ACGT" * 16)  # 64 clean bases
+
+
+def test_has_megablast_seed_true_with_ambiguity_but_long_clean_run():
+    # One N near the end still leaves a >= 28-base clean run before it.
+    assert has_megablast_seed("A" * 40 + "N" + "C" * 23)
+
+
+def test_has_megablast_seed_false_when_no_28_window():
+    # Ambiguous bases break the sequence into 20-base runs (< 28).
+    assert not has_megablast_seed(("ACGT" * 5 + "N") * 3)
+
+
+def test_has_megablast_seed_respects_min_seed():
+    assert has_megablast_seed("ACGT" * 7)             # exactly 28 clean bases
+    assert not has_megablast_seed("ACGT" * 6 + "AC")  # only 26 clean bases

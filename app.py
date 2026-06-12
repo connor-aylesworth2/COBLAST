@@ -28,6 +28,7 @@ from human_filter import filter_human_hits
 from blast_runner import (
     BLAST_PROGRAMS,
     run_blast,
+    run_blast_probe_panel,
     run_jobs_concurrently,
     validate_fasta_input,
 )
@@ -498,24 +499,36 @@ def run_batch_blast_route():
             if database.status != "available":
                 raise ValueError(f"{database.display_name} is marked as {database.status}.")
 
-            result = run_blast(
-                sequence=sequence,
-                database=database.db_prefix_path,
-                program=program,
-                output_format=output_format,
-                # Exact-match probe presets ignore the user task/identity/target
-                # fields: run_blast forces blastn-short, 100% identity/coverage,
-                # and an uncapped max_target_seqs so read counts are exact.
-                task=task_value,
-                evalue=evalue_value,
-                max_target_seqs=max_target_seqs_value,
-                word_size=word_size_value,
-                perc_identity=perc_identity_value,
-                timeout_seconds=timeout_value,
-                num_threads=threads_per_job,
-                exact_match_probe=exact_probe_preset,
-                prevalidated_query=prevalidated_query,
-            )
+            if etol_preset_key:
+                # eToL panels run megablast for the seedable probes and
+                # blastn-short only for the few that cannot seed, which is far
+                # faster on whole-SRA databases than blastn-short over the panel.
+                result = run_blast_probe_panel(
+                    panel_fasta=sequence,
+                    database=database.db_prefix_path,
+                    output_format=output_format,
+                    timeout_seconds=timeout_value,
+                    num_threads=threads_per_job,
+                )
+            else:
+                result = run_blast(
+                    sequence=sequence,
+                    database=database.db_prefix_path,
+                    program=program,
+                    output_format=output_format,
+                    # APOE exact-match and regular batch runs: run_blast applies
+                    # the exact-match overrides (blastn-short, 100% identity and
+                    # coverage, uncapped targets) when exact_match_probe is set.
+                    task=task_value,
+                    evalue=evalue_value,
+                    max_target_seqs=max_target_seqs_value,
+                    word_size=word_size_value,
+                    perc_identity=perc_identity_value,
+                    timeout_seconds=timeout_value,
+                    num_threads=threads_per_job,
+                    exact_match_probe=exact_probe_preset,
+                    prevalidated_query=prevalidated_query,
+                )
             hits = (
                 filter_exact_probe_hits(result.hits, probe_query_ids)
                 if exact_probe_preset

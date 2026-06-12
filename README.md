@@ -512,11 +512,17 @@ the selected nucleotide databases and — exactly like the APOE preset — saves
 hits with 100% identity and 100% query coverage. The probe FASTA is supplied
 automatically, so the query box is left empty (read-only) when a preset is on.
 
-So those counts reflect true read depth, the preset path runs the `blastn-short`
-task with `-perc_identity 100 -qcov_hsp_perc 100` and lifts the `max_target_seqs`
-cap (see the `EXACT_MATCH_*` constants in `blast_runner.py`). This stops a probe
-that matches many reads in a deep patient database from being silently truncated
-by the default max_target_seqs limit.
+So those counts reflect true read depth, the preset path enforces
+`-perc_identity 100 -qcov_hsp_perc 100` and lifts the `max_target_seqs` cap (see
+the `EXACT_MATCH_*` constants in `blast_runner.py`), which stops a probe that
+matches many reads in a deep patient database from being silently truncated.
+
+To keep whole-SRA runs fast, the eToL panel is searched in two passes: probes
+that have a 28-base unambiguous window run with `megablast` (much faster on large
+read databases), and the few whose ambiguous bases leave no such window fall back
+to `blastn-short`. In the bundled panel that is a single probe
+(`F3_Gpolymorpha_18S_7`); the partition is computed from each probe's sequence,
+so it self-adjusts if the panel changes.
 
 There are three eToL presets, plus the APOE preset; **only one preset can be
 active at a time** (selecting one clears the others):
