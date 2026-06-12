@@ -1,4 +1,4 @@
-# Local Flask + BLAST+ Prototype
+# COBLAST+ Prototype
 
 ## Tester Quick Start: Use the Release Folder First
 
