@@ -171,6 +171,7 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
                 "label": "eToL Full exact-match probe batch",
                 "short_label": "eToL Full",
                 "panel_label": "eToL Full",
+                "microbial": True,
                 "description": (
                     "Microbial electronic Tree of Life panel across Archaea, "
                     "Bacteria, Chloroplastida, Amoebozoa, basal Eukaryota, Fungi, "
@@ -188,6 +189,7 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
                 "label": "eToL Control exact-match probe batch",
                 "short_label": "eToL Control (human control)",
                 "panel_label": "eToL Control",
+                "microbial": False,
                 "description": (
                     "Same as the eToL Full preset, but only uses human sequences "
                     "(the PGK1 and hNSE housekeeping probes) for a control."
@@ -202,6 +204,7 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
                 "label": "eToL Quick exact-match probe batch",
                 "short_label": "eToL Quick (one probe per species)",
                 "panel_label": "eToL Quick",
+                "microbial": True,
                 "description": (
                     "Same as the eToL Full preset, but uses only the first probe "
                     "of each species (one probe per species) for fast test runs."
@@ -226,6 +229,11 @@ def etol_preset_form_field(key: str) -> str:
 def etol_preset_label(key: str) -> str:
     """Return the short label shown on the results page."""
     return ETOL_PRESETS[key]["short_label"]
+
+
+def etol_preset_is_microbial(key: str) -> bool:
+    """Return True for microbial panels (eligible for human-read filtering)."""
+    return bool(ETOL_PRESETS[key]["microbial"])
 
 
 def etol_preset_fasta(key: str) -> str:
@@ -261,6 +269,7 @@ def etol_preset_options() -> list[dict[str, Any]]:
                 "short_label": preset["short_label"],
                 "panel_label": preset["panel_label"],
                 "description": preset["description"],
+                "microbial": preset["microbial"],
                 "probe_count": etol_preset_probe_count(key),
             }
         )
