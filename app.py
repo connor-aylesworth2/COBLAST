@@ -7,6 +7,7 @@ objects those helpers return.
 
 from dataclasses import replace
 from pathlib import Path
+from time import perf_counter
 
 from flask import Flask, Response, abort, redirect, render_template, request, url_for
 
@@ -22,7 +23,7 @@ from etol_summary import (
     etol_preset_query_ids,
     etol_preset_records,
 )
-from blast_runner import BLAST_PROGRAMS, SENSITIVITY_PRESETS, run_blast
+from blast_runner import BLAST_PROGRAMS, SENSITIVITY_PRESETS, run_blast, run_jobs_concurrently
 from database_registry import (
     DB_CATEGORIES,
     DB_TYPES,
@@ -45,7 +46,7 @@ from result_store import (
     save_batch_result,
     save_result,
 )
-from config import FLASK_HOST, flask_port, resource_path, resource_root
+from config import FLASK_HOST, allocate_batch_resources, flask_port, resource_path, resource_root
 from database_size import database_storage_bytes, format_bytes
 from sra_workflow import (
     configured_sra_roots,
@@ -373,7 +374,7 @@ def batch_blast_page():
 
 @app.post("/batch-blast")
 def run_batch_blast_route():
-    """Run one query against multiple registered local databases sequentially."""
+    """Run one query against multiple registered local databases concurrently."""
     sequence = request.form.get("sequence", "")
     uploaded_query = request.files.get("sequence_file")
     if uploaded_query and uploaded_query.filename:
@@ -420,13 +421,23 @@ def run_batch_blast_route():
             message="",
         ), 400
 
-    database_results = []
-    total_runtime_seconds = 0.0
-    total_hits = 0
-    query_count = 0
-    query_total_length = 0
+    # Pull every request-bound value out before spawning workers: Flask's
+    # `request` is bound to this thread's context and must not be touched from
+    # the concurrent worker threads below.
+    task_value = None if exact_probe_preset else (request.form.get("task") or None)
+    evalue_value = request.form.get("evalue") or None
+    max_target_seqs_value = None if exact_probe_preset else (request.form.get("max_target_seqs") or None)
+    word_size_value = request.form.get("word_size") or None
+    perc_identity_value = None if exact_probe_preset else (request.form.get("perc_identity") or None)
+    timeout_value = request.form.get("timeout_seconds") or None
 
-    for raw_database_id in database_ids:
+    # Benchmarks showed concurrency across patient databases scales far better
+    # than -num_threads within one search, so split the core budget into
+    # concurrent workers (most of it) plus a small per-job thread count.
+    workers, threads_per_job = allocate_batch_resources(len(database_ids))
+
+    def run_single_database(raw_database_id):
+        """Run one database's search and shape its result row (never raises)."""
         try:
             database = get_database(int(raw_database_id))
             required_db_type = str(BLAST_PROGRAMS[program]["db_type"])
@@ -446,12 +457,13 @@ def run_batch_blast_route():
                 # Exact-match probe presets ignore the user task/identity/target
                 # fields: run_blast forces blastn-short, 100% identity/coverage,
                 # and an uncapped max_target_seqs so read counts are exact.
-                task=None if exact_probe_preset else request.form.get("task") or None,
-                evalue=request.form.get("evalue") or None,
-                max_target_seqs=None if exact_probe_preset else request.form.get("max_target_seqs") or None,
-                word_size=request.form.get("word_size") or None,
-                perc_identity=None if exact_probe_preset else request.form.get("perc_identity") or None,
-                timeout_seconds=request.form.get("timeout_seconds") or None,
+                task=task_value,
+                evalue=evalue_value,
+                max_target_seqs=max_target_seqs_value,
+                word_size=word_size_value,
+                perc_identity=perc_identity_value,
+                timeout_seconds=timeout_value,
+                num_threads=threads_per_job,
                 exact_match_probe=exact_probe_preset,
             )
             hits = (
@@ -459,37 +471,70 @@ def run_batch_blast_route():
                 if exact_probe_preset
                 else result.hits
             )
-            saved_result = replace(result, hits=hits)
-            run_id = save_result(saved_result)
-            total_runtime_seconds += result.runtime_seconds
-            total_hits += len(hits)
-            query_count = result.query_count
-            query_total_length = result.query_total_length
-            database_results.append(
-                {
-                    "database_id": database.id,
-                    "display_name": database.display_name,
-                    "db_prefix_path": database.db_prefix_path,
-                    "database_total_bytes": result.database_total_bytes,
-                    "database_size_label": format_bytes(result.database_total_bytes),
-                    "returncode": result.returncode,
-                    "runtime_seconds": result.runtime_seconds,
-                    "hit_count": len(hits),
-                    "hits": hits,
-                    "run_id": run_id,
-                    "error": "",
-                }
-            )
+            run_id = save_result(replace(result, hits=hits))
+            row = {
+                "database_id": database.id,
+                "display_name": database.display_name,
+                "db_prefix_path": database.db_prefix_path,
+                "database_total_bytes": result.database_total_bytes,
+                "database_size_label": format_bytes(result.database_total_bytes),
+                "returncode": result.returncode,
+                "runtime_seconds": result.runtime_seconds,
+                "hit_count": len(hits),
+                "hits": hits,
+                "run_id": run_id,
+                "error": "",
+            }
+            return {
+                "row": row,
+                "runtime": result.runtime_seconds,
+                "hits": len(hits),
+                "query_count": result.query_count,
+                "query_total_length": result.query_total_length,
+            }
         except Exception as exc:
             display_name = f"Database {raw_database_id}"
             try:
                 display_name = get_database(int(raw_database_id)).display_name
             except Exception:
                 pass
+            row = {
+                "database_id": raw_database_id,
+                "display_name": display_name,
+                "db_prefix_path": "",
+                "database_total_bytes": 0,
+                "database_size_label": "unknown",
+                "returncode": "",
+                "runtime_seconds": "",
+                "hit_count": 0,
+                "hits": [],
+                "run_id": "",
+                "error": str(exc),
+            }
+            return {"row": row, "runtime": 0.0, "hits": 0, "query_count": 0, "query_total_length": 0}
+
+    # Each BLAST search is a separate process, so threads give real parallelism.
+    wall_start = perf_counter()
+    outcomes = run_jobs_concurrently(
+        run_single_database,
+        [{"raw_database_id": raw_database_id} for raw_database_id in database_ids],
+        max_workers=workers,
+    )
+    wall_clock_seconds = perf_counter() - wall_start
+
+    database_results = []
+    total_runtime_seconds = 0.0
+    total_hits = 0
+    query_count = 0
+    query_total_length = 0
+    for outcome in outcomes:
+        if isinstance(outcome, Exception):
+            # Defensive: run_single_database catches its own errors, but never
+            # let a leaked exception drop a database from the results table.
             database_results.append(
                 {
-                    "database_id": raw_database_id,
-                    "display_name": display_name,
+                    "database_id": "",
+                    "display_name": "Unknown database",
                     "db_prefix_path": "",
                     "database_total_bytes": 0,
                     "database_size_label": "unknown",
@@ -498,9 +543,16 @@ def run_batch_blast_route():
                     "hit_count": 0,
                     "hits": [],
                     "run_id": "",
-                    "error": str(exc),
+                    "error": str(outcome),
                 }
             )
+            continue
+        database_results.append(outcome["row"])
+        total_runtime_seconds += outcome["runtime"]
+        total_hits += outcome["hits"]
+        if outcome["query_count"]:
+            query_count = outcome["query_count"]
+            query_total_length = outcome["query_total_length"]
 
     hit_filter = ""
     if apoe_probe_preset:
@@ -515,6 +567,8 @@ def run_batch_blast_route():
         "query_count": query_count,
         "query_total_length": query_total_length,
         "total_runtime_seconds": total_runtime_seconds,
+        "wall_clock_seconds": wall_clock_seconds,
+        "batch_workers": workers,
         "total_hits": total_hits,
         "apoe_probe_preset": apoe_probe_preset,
         "etol_probe_preset": etol_preset_key is not None,

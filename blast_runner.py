@@ -8,15 +8,22 @@ BLAST+ executable, and convert stdout into table rows for the interface.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
+import os
 import subprocess
 import tempfile
 from time import perf_counter
 from typing import Any
 
-from config import DISALLOWED_BLAST_OPTIONS, REMOTE_BLAST_ENABLED, blast_exe
+from config import (
+    DISALLOWED_BLAST_OPTIONS,
+    REMOTE_BLAST_ENABLED,
+    blast_exe,
+    default_thread_count,
+)
 from database_size import database_storage_bytes
 
 try:
@@ -132,6 +139,16 @@ EXACT_MATCH_TASK = "blastn-short"
 EXACT_MATCH_PERC_IDENTITY = "100"
 EXACT_MATCH_QCOV_HSP_PERC = "100"
 EXACT_MATCH_MAX_TARGET_SEQS = "5000000"
+# Probe panels submit many short queries against a single-volume patient
+# database, so splitting the BLAST work by query (mt_mode 1) parallelizes far
+# better than the default split-by-database when -num_threads > 1.
+EXACT_MATCH_MT_MODE = "1"
+
+# CPU parallelism. -num_threads is BLAST+'s own multi-core switch; mt_mode picks
+# how the work is divided across those threads (0 auto, 1 by query, 2 by db).
+NUM_THREADS_LIMIT = 1024
+ALLOWED_MT_MODES = {"0", "1", "2"}
+COBLAST_NUM_THREADS_ENV = "COBLAST_NUM_THREADS"
 
 
 @dataclass(frozen=True)
@@ -544,6 +561,31 @@ def parse_query_coverage(value: str | None) -> str | None:
     return cleaned
 
 
+def parse_mt_mode(value: str | None) -> str | None:
+    """Validate the BLAST multi-thread mode (0 auto, 1 by query, 2 by db)."""
+    cleaned = optional_text(value)
+    if cleaned is None:
+        return None
+    if cleaned not in ALLOWED_MT_MODES:
+        raise ValueError("Multi-thread mode must be 0, 1, or 2.")
+    return cleaned
+
+
+def resolve_num_threads(requested: int | str | None) -> int:
+    """Resolve the CPU thread count for one search.
+
+    Precedence: an explicit per-job request, then the COBLAST_NUM_THREADS
+    environment variable, then the adaptive machine default. The result is
+    validated and clamped to a sane range.
+    """
+    value = None if requested is None else optional_text(str(requested))
+    if value is None:
+        value = optional_text(os.environ.get(COBLAST_NUM_THREADS_ENV))
+    if value is None:
+        return default_thread_count()
+    return int(parse_bounded_int("CPU threads", value, 1, NUM_THREADS_LIMIT))
+
+
 def build_blast_parameters(
     *,
     program: str,
@@ -553,6 +595,8 @@ def build_blast_parameters(
     word_size: str | None,
     perc_identity: str | None,
     qcov_hsp_perc: str | None = None,
+    num_threads: int | str | None = None,
+    mt_mode: str | None = None,
     exact_match_probe: bool = False,
 ) -> dict[str, str]:
     """Merge preset defaults with user-supplied advanced BLAST options.
@@ -608,6 +652,18 @@ def build_blast_parameters(
         parameters["qcov_hsp_perc"] = EXACT_MATCH_QCOV_HSP_PERC
         parameters["max_target_seqs"] = EXACT_MATCH_MAX_TARGET_SEQS
 
+    num_threads_text = None if num_threads is None else str(num_threads)
+    parsed_num_threads = parse_bounded_int("CPU threads", num_threads_text, 1, NUM_THREADS_LIMIT)
+    if parsed_num_threads is not None:
+        parameters["num_threads"] = parsed_num_threads
+        # mt_mode only matters with real parallelism; an explicit mode wins, and
+        # probe panels default to query-split (mt_mode 1) for better scaling.
+        chosen_mt_mode = parse_mt_mode(mt_mode) or (
+            EXACT_MATCH_MT_MODE if exact_match_probe else None
+        )
+        if int(parsed_num_threads) > 1 and chosen_mt_mode is not None:
+            parameters["mt_mode"] = chosen_mt_mode
+
     return parameters
 
 
@@ -624,6 +680,8 @@ def run_blast(
     word_size: str | None = None,
     perc_identity: str | None = None,
     qcov_hsp_perc: str | None = None,
+    num_threads: int | str | None = None,
+    mt_mode: str | None = None,
     exact_match_probe: bool = False,
 ) -> BlastResult:
     """Run one local BLAST search and return both raw and parsed outputs."""
@@ -654,6 +712,9 @@ def run_blast(
     allowed_tasks = program_config["allowed_tasks"]
     if selected_task is not None and selected_task not in allowed_tasks:
         raise ValueError(f"Unsupported task for {program}: {selected_task}")
+    # Resolve CPU threads here (request > env > adaptive default) so every run
+    # passes an explicit -num_threads, which is also recorded for reproducibility.
+    effective_num_threads = resolve_num_threads(num_threads)
     parameters = build_blast_parameters(
         program=program,
         sensitivity_preset=sensitivity_preset,
@@ -662,6 +723,8 @@ def run_blast(
         word_size=word_size,
         perc_identity=perc_identity,
         qcov_hsp_perc=qcov_hsp_perc,
+        num_threads=effective_num_threads,
+        mt_mode=mt_mode,
         exact_match_probe=exact_match_probe,
     )
 
@@ -744,3 +807,31 @@ def run_blastn(
         output_format=output_format,
         sensitivity_preset=sensitivity_preset,
     )
+
+
+def run_jobs_concurrently(
+    func: Any,
+    jobs: Iterable[dict[str, Any]],
+    max_workers: int,
+) -> list[Any]:
+    """Apply ``func(**job)`` to each job concurrently, preserving input order.
+
+    Each BLAST search is a separate OS process, so threads give real
+    parallelism here despite the GIL. Exceptions are captured and returned in
+    place of a result so one failing database does not abort the batch. Used by
+    the CPU benchmark and (later) the batch route.
+    """
+    ordered_jobs = list(jobs)
+    results: list[Any] = [None] * len(ordered_jobs)
+    workers = max(1, int(max_workers))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        future_to_index = {
+            pool.submit(func, **job): index
+            for index, job in enumerate(ordered_jobs)
+        }
+        for future, index in future_to_index.items():
+            try:
+                results[index] = future.result()
+            except Exception as exc:
+                results[index] = exc
+    return results

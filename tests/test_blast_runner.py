@@ -9,7 +9,10 @@ import pytest
 
 from blast_runner import (
     BLAST_PROGRAMS,
+    COBLAST_NUM_THREADS_ENV,
     EXACT_MATCH_MAX_TARGET_SEQS,
+    EXACT_MATCH_MT_MODE,
+    NUM_THREADS_LIMIT,
     build_blast_parameters,
     coerce_to_fasta_text,
     enforce_local_blast_only,
@@ -17,8 +20,12 @@ from blast_runner import (
     format_float,
     normalize_fasta_lines,
     parse_blast_tabular,
+    parse_mt_mode,
+    resolve_num_threads,
+    run_jobs_concurrently,
     validate_fasta_input,
 )
+from config import allocate_batch_resources, available_cpu_count, default_thread_count
 
 
 try:  # FASTA validation needs Biopython; everything else does not.
@@ -227,3 +234,119 @@ def test_invalid_qcov_hsp_perc_rejected():
             perc_identity=None,
             qcov_hsp_perc="150",
         )
+
+
+# --- CPU threads / mt_mode -------------------------------------------------
+
+def _params(**overrides):
+    base = dict(
+        program="blastn",
+        sensitivity_preset="standard",
+        evalue=None,
+        max_target_seqs=None,
+        word_size=None,
+        perc_identity=None,
+    )
+    base.update(overrides)
+    return build_blast_parameters(**base)
+
+
+def test_config_default_thread_count_within_bounds():
+    total = available_cpu_count()
+    assert total >= 1
+    assert 1 <= default_thread_count() <= total
+
+
+def test_num_threads_added_when_requested():
+    params = _params(num_threads=4)
+    assert params["num_threads"] == "4"
+    assert "mt_mode" not in params  # no mode requested, not an exact-match run
+
+
+def test_num_threads_omitted_by_default():
+    # The adaptive default is resolved in run_blast, not here.
+    assert "num_threads" not in _params()
+
+
+def test_exact_match_uses_query_split_when_multithreaded():
+    params = _params(num_threads=8, exact_match_probe=True)
+    assert params["mt_mode"] == EXACT_MATCH_MT_MODE  # "1" = split work by query
+
+
+def test_mt_mode_omitted_when_single_threaded():
+    # mt_mode is meaningless with a single thread, so it should not be emitted.
+    assert "mt_mode" not in _params(num_threads=1, exact_match_probe=True)
+
+
+def test_parse_mt_mode_rejects_bad_value():
+    with pytest.raises(ValueError):
+        parse_mt_mode("9")
+
+
+def test_resolve_num_threads_explicit_request_wins(monkeypatch):
+    monkeypatch.delenv(COBLAST_NUM_THREADS_ENV, raising=False)
+    assert resolve_num_threads(3) == 3
+
+
+def test_resolve_num_threads_env_override(monkeypatch):
+    monkeypatch.setenv(COBLAST_NUM_THREADS_ENV, "2")
+    assert resolve_num_threads(None) == 2
+
+
+def test_resolve_num_threads_falls_back_to_default(monkeypatch):
+    monkeypatch.delenv(COBLAST_NUM_THREADS_ENV, raising=False)
+    assert resolve_num_threads(None) == default_thread_count()
+
+
+def test_resolve_num_threads_rejects_out_of_range(monkeypatch):
+    monkeypatch.delenv(COBLAST_NUM_THREADS_ENV, raising=False)
+    with pytest.raises(ValueError):
+        resolve_num_threads(NUM_THREADS_LIMIT + 1)
+
+
+def test_run_jobs_concurrently_preserves_order_and_captures_errors():
+    def work(x):
+        if x == 2:
+            raise ValueError("boom")
+        return x * 10
+
+    jobs = [{"x": 0}, {"x": 1}, {"x": 2}, {"x": 3}]
+    results = run_jobs_concurrently(work, jobs, max_workers=2)
+    assert results[0] == 0
+    assert results[1] == 10
+    assert isinstance(results[2], ValueError)  # captured in place, not raised
+    assert results[3] == 30
+
+
+# --- batch core-budget allocation -----------------------------------------
+
+def test_allocate_batch_resources_never_oversubscribes(monkeypatch):
+    monkeypatch.delenv("COBLAST_BATCH_WORKERS", raising=False)
+    budget = default_thread_count()
+    for jobs in (1, 2, 5, budget, budget + 7):
+        workers, threads = allocate_batch_resources(jobs)
+        assert workers >= 1 and threads >= 1
+        assert workers <= jobs
+        assert workers * threads <= budget  # no CPU oversubscription
+
+
+def test_allocate_batch_resources_prefers_concurrency_when_many_jobs(monkeypatch):
+    monkeypatch.delenv("COBLAST_BATCH_WORKERS", raising=False)
+    budget = default_thread_count()
+    workers, threads = allocate_batch_resources(budget + 10)
+    assert workers == budget  # spend the budget on workers
+    assert threads == 1
+
+
+def test_allocate_batch_resources_single_job_uses_threads(monkeypatch):
+    monkeypatch.delenv("COBLAST_BATCH_WORKERS", raising=False)
+    budget = default_thread_count()
+    workers, threads = allocate_batch_resources(1)
+    assert workers == 1
+    assert threads == budget  # one database: hand the spare cores to threads
+
+
+def test_allocate_batch_resources_env_override(monkeypatch):
+    monkeypatch.setenv("COBLAST_BATCH_WORKERS", "1")
+    workers, _ = allocate_batch_resources(8)
+    assert workers == 1

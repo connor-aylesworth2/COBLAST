@@ -95,3 +95,62 @@ def flask_port() -> int:
     if port < 1 or port > 65535:
         raise ValueError("BLAST_FLASK_PORT must be between 1 and 65535.")
     return port
+
+
+# Cores held back from a default BLAST run so the machine stays responsive.
+CPU_RESERVE_SMALL = 1  # machines with <= 4 logical cores
+CPU_RESERVE_LARGE = 2  # machines with > 4 logical cores
+
+
+def available_cpu_count() -> int:
+    """Return the number of logical CPUs visible to this process (>= 1)."""
+    return os.cpu_count() or 1
+
+
+def default_thread_count() -> int:
+    """Choose a sensible default for BLAST ``-num_threads``.
+
+    Uses most of the machine but reserves a core or two so a clinician's
+    desktop stays responsive during a search. The ``COBLAST_NUM_THREADS``
+    environment variable and the per-job advanced field can override this.
+    """
+    total = available_cpu_count()
+    reserve = CPU_RESERVE_SMALL if total <= 4 else CPU_RESERVE_LARGE
+    return max(1, total - reserve)
+
+
+COBLAST_BATCH_WORKERS_ENV = "COBLAST_BATCH_WORKERS"
+
+
+def core_budget() -> int:
+    """Total logical cores COBLAST keeps busy at once for a batch.
+
+    Shares the headroom policy of default_thread_count(): use most of the
+    machine but leave a core or two free for responsiveness.
+    """
+    return default_thread_count()
+
+
+def allocate_batch_resources(num_jobs: int) -> tuple[int, int]:
+    """Split the core budget into (concurrent workers, threads per job).
+
+    Benchmarks show concurrency across patient databases scales far better than
+    ``-num_threads`` within one search, so the budget is spent on workers first;
+    leftover cores go to per-job threads only when there are fewer databases
+    than the budget. Without an override the product never exceeds the budget,
+    so runs do not oversubscribe the CPU. ``COBLAST_BATCH_WORKERS`` can force the
+    worker count (and is the user's responsibility if it oversubscribes).
+    """
+    budget = core_budget()
+    jobs = max(1, int(num_jobs))
+    workers = min(budget, jobs)
+
+    override = os.environ.get(COBLAST_BATCH_WORKERS_ENV)
+    if override:
+        try:
+            workers = max(1, min(int(override), jobs))
+        except ValueError:
+            pass
+
+    threads_per_job = max(1, budget // workers)
+    return workers, threads_per_job
