@@ -45,6 +45,18 @@
               <span>Total Runtime</span>
               {{ "%.3f"|format(batch.total_runtime_seconds) }} seconds
             </div>
+            {% if batch.wall_clock_seconds is defined %}
+              <div class="summary-item">
+                <span>Wall Clock</span>
+                {{ "%.3f"|format(batch.wall_clock_seconds) }} seconds
+              </div>
+            {% endif %}
+            {% if batch.batch_workers is defined %}
+              <div class="summary-item">
+                <span>Concurrency</span>
+                {{ batch.batch_workers }} database(s) at a time
+              </div>
+            {% endif %}
             <div class="summary-item">
               <span>Query</span>
               {{ batch.query_count }} record(s), {{ batch.query_total_length }} bases/residues
