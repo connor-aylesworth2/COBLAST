@@ -350,3 +350,27 @@ def test_allocate_batch_resources_env_override(monkeypatch):
     monkeypatch.setenv("COBLAST_BATCH_WORKERS", "1")
     workers, _ = allocate_batch_resources(8)
     assert workers == 1
+
+
+def test_allocate_batch_resources_requested_workers_wins(monkeypatch):
+    monkeypatch.delenv("COBLAST_BATCH_WORKERS", raising=False)
+    workers, _ = allocate_batch_resources(8, requested_workers=2)
+    assert workers == 2
+
+
+def test_allocate_batch_resources_requested_workers_clamped_to_jobs(monkeypatch):
+    monkeypatch.delenv("COBLAST_BATCH_WORKERS", raising=False)
+    workers, _ = allocate_batch_resources(3, requested_workers=99)
+    assert workers == 3
+
+
+def test_allocate_batch_resources_request_beats_env(monkeypatch):
+    monkeypatch.setenv("COBLAST_BATCH_WORKERS", "1")
+    workers, _ = allocate_batch_resources(8, requested_workers=4)
+    assert workers == 4
+
+
+def test_allocate_batch_resources_invalid_request_falls_back(monkeypatch):
+    monkeypatch.delenv("COBLAST_BATCH_WORKERS", raising=False)
+    workers, _ = allocate_batch_resources(8, requested_workers="abc")
+    assert workers == min(default_thread_count(), 8)

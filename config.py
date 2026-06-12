@@ -131,25 +131,30 @@ def core_budget() -> int:
     return default_thread_count()
 
 
-def allocate_batch_resources(num_jobs: int) -> tuple[int, int]:
+def allocate_batch_resources(
+    num_jobs: int, requested_workers: int | str | None = None
+) -> tuple[int, int]:
     """Split the core budget into (concurrent workers, threads per job).
 
     Benchmarks show concurrency across patient databases scales far better than
     ``-num_threads`` within one search, so the budget is spent on workers first;
     leftover cores go to per-job threads only when there are fewer databases
-    than the budget. Without an override the product never exceeds the budget,
-    so runs do not oversubscribe the CPU. ``COBLAST_BATCH_WORKERS`` can force the
-    worker count (and is the user's responsibility if it oversubscribes).
+    than the budget. Left on auto the product never exceeds the budget, so runs
+    do not oversubscribe the CPU. Precedence for the worker count: an explicit
+    ``requested_workers`` (the batch advanced field) > ``COBLAST_BATCH_WORKERS``
+    > auto. A forced value that oversubscribes is the caller's responsibility.
     """
     budget = core_budget()
     jobs = max(1, int(num_jobs))
     workers = min(budget, jobs)
 
-    override = os.environ.get(COBLAST_BATCH_WORKERS_ENV)
-    if override:
+    requested = requested_workers
+    if requested in (None, ""):
+        requested = os.environ.get(COBLAST_BATCH_WORKERS_ENV)
+    if requested not in (None, ""):
         try:
-            workers = max(1, min(int(override), jobs))
-        except ValueError:
+            workers = max(1, min(int(requested), jobs))
+        except (TypeError, ValueError):
             pass
 
     threads_per_job = max(1, budget // workers)

@@ -25,7 +25,13 @@ from etol_summary import (
     etol_preset_records,
 )
 from human_filter import filter_human_hits
-from blast_runner import BLAST_PROGRAMS, SENSITIVITY_PRESETS, run_blast, run_jobs_concurrently
+from blast_runner import (
+    BLAST_PROGRAMS,
+    SENSITIVITY_PRESETS,
+    run_blast,
+    run_jobs_concurrently,
+    validate_fasta_input,
+)
 from database_registry import (
     DB_CATEGORIES,
     DB_TYPES,
@@ -48,7 +54,13 @@ from result_store import (
     save_batch_result,
     save_result,
 )
-from config import FLASK_HOST, allocate_batch_resources, flask_port, resource_path, resource_root
+from config import (
+    FLASK_HOST,
+    allocate_batch_resources,
+    default_thread_count,
+    flask_port,
+    resource_path,
+)
 from database_size import database_storage_bytes, format_bytes
 from sra_workflow import (
     configured_sra_roots,
@@ -105,9 +117,6 @@ def filter_exact_probe_hits(
     return exact_hits
 
 
-PROJECT_ROOT = resource_root()
-
-
 def redirect_to_databases(message: str = "", error: str = ""):
     """Send users back to the database page with optional status text."""
     params = {}
@@ -161,6 +170,7 @@ def index():
         sensitivity_presets=SENSITIVITY_PRESETS,
         databases=databases,
         registry_error=registry_error,
+        default_threads=default_thread_count(),
     )
 
 
@@ -213,6 +223,7 @@ def run_blast_route():
             word_size=request.form.get("word_size") or None,
             perc_identity=request.form.get("perc_identity") or None,
             timeout_seconds=request.form.get("timeout_seconds") or None,
+            num_threads=request.form.get("num_threads") or None,
         )
     except Exception as exc:
         return render_template(
@@ -459,10 +470,30 @@ def run_batch_blast_route():
     perc_identity_value = None if exact_probe_preset else (request.form.get("perc_identity") or None)
     timeout_value = request.form.get("timeout_seconds") or None
 
+    # Validate the shared query once up front rather than inside every worker.
+    # A bad query then fails fast with a single message instead of one identical
+    # error per database, and the workers reuse the parsed result.
+    try:
+        prevalidated_query = validate_fasta_input(
+            sequence, expected_type=str(BLAST_PROGRAMS[program]["query_type"])
+        )
+    except Exception as exc:
+        return render_template(
+            "batch.html",
+            blast_programs=BLAST_PROGRAMS,
+            sensitivity_presets=SENSITIVITY_PRESETS,
+            database_options=database_options(),
+            etol_preset_options=etol_preset_options(),
+            error=str(exc),
+            message="",
+        ), 400
+
     # Benchmarks showed concurrency across patient databases scales far better
     # than -num_threads within one search, so split the core budget into
     # concurrent workers (most of it) plus a small per-job thread count.
-    workers, threads_per_job = allocate_batch_resources(len(database_ids))
+    workers, threads_per_job = allocate_batch_resources(
+        len(database_ids), requested_workers=request.form.get("batch_workers") or None
+    )
 
     def run_single_database(raw_database_id):
         """Run one database's search and shape its result row (never raises)."""
@@ -493,6 +524,7 @@ def run_batch_blast_route():
                 timeout_seconds=timeout_value,
                 num_threads=threads_per_job,
                 exact_match_probe=exact_probe_preset,
+                prevalidated_query=prevalidated_query,
             )
             hits = (
                 filter_exact_probe_hits(result.hits, probe_query_ids)

@@ -223,6 +223,11 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
                 <label for="timeout_seconds">Timeout seconds per database</label>
                 <input id="timeout_seconds" name="timeout_seconds" inputmode="numeric" placeholder="Preset default">
               </div>
+              <div class="field">
+                <label for="batch_workers">Max databases at once</label>
+                <input id="batch_workers" name="batch_workers" inputmode="numeric" placeholder="Auto">
+                <span class="muted">How many patient databases to search in parallel. Higher can be faster on a multi-core machine; leave blank to choose automatically.</span>
+              </div>
             </div>
           </div>
         </details>
