@@ -765,7 +765,9 @@ Removing a database from the database-management page removes it from the
 COBLAST registry only. It does not delete the FASTA file or the BLAST database
 files from disk. Removed toy databases stay removed instead of being seeded
 again on the next page load. To restore any removed database, add its existing
-BLAST prefix again through `Add Existing BLAST Database`.
+BLAST prefix again through `Add Existing BLAST Database`. The database page's
+`Remove All Missing` action removes every entry currently marked `missing`
+while leaving `available` and `invalid` entries registered.
 
 ## Current supported BLAST programs
 

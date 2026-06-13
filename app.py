@@ -41,6 +41,7 @@ from database_registry import (
     list_databases,
     register_existing_database,
     remove_database,
+    remove_missing_databases,
     verify_database,
 )
 from result_store import (
@@ -700,6 +701,9 @@ def databases_page():
         categories=sorted(DB_CATEGORIES),
         db_types=sorted(DB_TYPES),
         databases=databases,
+        missing_database_count=sum(
+            database.status == "missing" for database in databases
+        ),
         error=request.args.get("error") or registry_error,
         message=request.args.get("message", ""),
     )
@@ -895,6 +899,26 @@ def verify_all_databases_route():
     except Exception as exc:
         return redirect_to_databases(error=str(exc))
     return redirect_to_databases(message="All registered databases were verified.")
+
+
+@app.post("/databases/remove-missing")
+def remove_missing_databases_route():
+    """Remove every database currently marked missing from the registry."""
+    try:
+        removed_databases = remove_missing_databases()
+    except Exception as exc:
+        return redirect_to_databases(error=str(exc))
+
+    removed_count = len(removed_databases)
+    if removed_count == 0:
+        return redirect_to_databases(message="No missing databases were found.")
+    noun = "database" if removed_count == 1 else "databases"
+    return redirect_to_databases(
+        message=(
+            f"Removed {removed_count} missing {noun} from the registry. "
+            "BLAST files were not deleted."
+        )
+    )
 
 
 @app.post("/databases/<int:database_id>/remove")

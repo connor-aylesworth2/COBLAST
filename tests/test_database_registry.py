@@ -26,7 +26,13 @@ def isolated_registry(tmp_path, monkeypatch):
     return instance_dir
 
 
-def insert_database(*, display_name: str, prefix: Path, category: str = "custom"):
+def insert_database(
+    *,
+    display_name: str,
+    prefix: Path,
+    category: str = "custom",
+    status: str = "available",
+):
     normalized_prefix = registry.blast_safe_path(prefix)
     now = registry.utc_now()
     with registry.registry_connection() as conn:
@@ -41,9 +47,9 @@ def insert_database(*, display_name: str, prefix: Path, category: str = "custom"
                 last_verified_at,
                 status
             )
-            VALUES (?, 'nucl', ?, ?, ?, ?, 'available')
+            VALUES (?, 'nucl', ?, ?, ?, ?, ?)
             """,
-            (display_name, normalized_prefix, category, now, now),
+            (display_name, normalized_prefix, category, now, now, status),
         )
         database_id = cursor.lastrowid
     return registry.get_database(database_id)
@@ -67,6 +73,40 @@ def test_remove_database_deletes_only_the_registry_row(isolated_registry):
 def test_remove_database_rejects_unknown_id(isolated_registry):
     with pytest.raises(ValueError, match="No registered database exists with ID 999"):
         registry.remove_database(999)
+
+
+def test_remove_missing_databases_removes_only_missing_rows(isolated_registry):
+    missing_one = insert_database(
+        display_name="Missing A",
+        prefix=isolated_registry / "missing-a",
+        status="missing",
+    )
+    available = insert_database(
+        display_name="Available",
+        prefix=isolated_registry / "available",
+    )
+    missing_two = insert_database(
+        display_name="Missing B",
+        prefix=isolated_registry / "missing-b",
+        status="missing",
+    )
+    invalid = insert_database(
+        display_name="Invalid",
+        prefix=isolated_registry / "invalid",
+        status="invalid",
+    )
+
+    removed = registry.remove_missing_databases()
+
+    assert [database.display_name for database in removed] == ["Missing A", "Missing B"]
+    assert [database.id for database in registry.list_databases()] == [
+        available.id,
+        invalid.id,
+    ]
+    assert registry.database_prefix_was_removed(missing_one.db_prefix_path)
+    assert registry.database_prefix_was_removed(missing_two.db_prefix_path)
+    assert not registry.database_prefix_was_removed(available.db_prefix_path)
+    assert not registry.database_prefix_was_removed(invalid.db_prefix_path)
 
 
 def test_removed_demo_database_is_not_seeded_again(isolated_registry, monkeypatch):
@@ -133,6 +173,33 @@ def test_remove_route_names_database_and_explains_files_remain(monkeypatch):
     ]
 
 
+def test_remove_missing_route_reports_removed_count(monkeypatch):
+    monkeypatch.setattr(
+        app_module,
+        "remove_missing_databases",
+        lambda: [SimpleNamespace(), SimpleNamespace()],
+    )
+    client = app_module.app.test_client()
+
+    response = client.post("/databases/remove-missing")
+
+    assert response.status_code == 302
+    query = parse_qs(urlparse(response.headers["Location"]).query)
+    assert query["message"] == [
+        "Removed 2 missing databases from the registry. BLAST files were not deleted."
+    ]
+
+
+def test_remove_missing_route_handles_empty_selection(monkeypatch):
+    monkeypatch.setattr(app_module, "remove_missing_databases", lambda: [])
+    client = app_module.app.test_client()
+
+    response = client.post("/databases/remove-missing")
+
+    query = parse_qs(urlparse(response.headers["Location"]).query)
+    assert query["message"] == ["No missing databases were found."]
+
+
 def test_database_page_includes_remove_confirmation(monkeypatch):
     database = SimpleNamespace(
         id=7,
@@ -140,7 +207,7 @@ def test_database_page_includes_remove_confirmation(monkeypatch):
         description="",
         db_type="nucl",
         category="custom",
-        status="available",
+        status="missing",
         sequence_count=10,
         last_verified_at="2026-06-13T12:00:00+00:00",
         db_prefix_path=r"C:\BLAST\clinical",
@@ -153,4 +220,6 @@ def test_database_page_includes_remove_confirmation(monkeypatch):
 
     assert response.status_code == 200
     assert b'data-remove-database="Clinical DB"' in response.data
+    assert b'data-remove-missing-count="1"' in response.data
+    assert b"Remove All Missing (1)" in response.data
     assert b"The FASTA and BLAST database files will remain on disk." in response.data

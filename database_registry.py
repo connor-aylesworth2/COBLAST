@@ -493,6 +493,31 @@ def verify_database(database_id: int) -> RegisteredDatabase:
     return get_database(database_id)
 
 
+def _remove_database_rows(
+    conn: sqlite3.Connection, rows: list[sqlite3.Row]
+) -> list[RegisteredDatabase]:
+    """Tombstone and delete registry rows within an existing transaction."""
+    databases = [row_to_database(row) for row in rows]
+    if not databases:
+        return []
+
+    removed_at = utc_now()
+    conn.executemany(
+        """
+        INSERT INTO removed_database_prefixes (db_prefix_path, removed_at)
+        VALUES (?, ?)
+        ON CONFLICT(db_prefix_path) DO UPDATE SET
+            removed_at = excluded.removed_at
+        """,
+        [(database.db_prefix_path, removed_at) for database in databases],
+    )
+    conn.executemany(
+        "DELETE FROM blast_databases WHERE id = ?",
+        [(database.id,) for database in databases],
+    )
+    return databases
+
+
 def remove_database(database_id: int) -> RegisteredDatabase:
     """Delete one registry row without deleting user-owned BLAST files."""
     init_registry()
@@ -503,19 +528,21 @@ def remove_database(database_id: int) -> RegisteredDatabase:
         ).fetchone()
         if row is None:
             raise ValueError(f"No registered database exists with ID {database_id}.")
+        return _remove_database_rows(conn, [row])[0]
 
-        database = row_to_database(row)
-        conn.execute(
+
+def remove_missing_databases() -> list[RegisteredDatabase]:
+    """Remove every registry row currently marked as missing."""
+    init_registry()
+    with registry_connection() as conn:
+        rows = conn.execute(
             """
-            INSERT INTO removed_database_prefixes (db_prefix_path, removed_at)
-            VALUES (?, ?)
-            ON CONFLICT(db_prefix_path) DO UPDATE SET
-                removed_at = excluded.removed_at
+            SELECT * FROM blast_databases
+            WHERE status = 'missing'
+            ORDER BY display_name COLLATE NOCASE
             """,
-            (database.db_prefix_path, utc_now()),
-        )
-        conn.execute("DELETE FROM blast_databases WHERE id = ?", (database_id,))
-    return database
+        ).fetchall()
+        return _remove_database_rows(conn, rows)
 
 
 def database_prefix_was_removed(db_prefix_path: str | Path) -> bool:
