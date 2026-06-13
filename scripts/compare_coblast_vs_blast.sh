@@ -24,9 +24,10 @@
 # source FASTA, exactly as COBLAST+ does.
 #
 # ASSUMPTIONS (set the CONFIG block below to match your machine):
-#   * Each SRA has its own subdirectory under DATA_DIR containing a nucleotide
-#     FASTA of its reads. The FASTAs are found recursively, and each sample is
-#     labelled by its top-level subdirectory under DATA_DIR.
+#   * Each SRA has its own directory holding the combined read FASTA. SRA_GLOB
+#     matches it while SRA_EXCLUDE_GLOB skips any paired-end mate files (so
+#     SRRxxxx.fasta is kept and SRRxxxx_1.fasta / _2.fasta are skipped). Each
+#     sample is labelled by the directory its FASTA sits in.
 #   * The human genome is either a FASTA file or an existing BLAST DB prefix.
 #   * If your SRAs are still .sra/FASTQ, convert them to FASTA first
 #     (e.g. fastq-dump --fasta), or ask for a version that adds that step.
@@ -41,7 +42,13 @@ COBLAST_DIR="/path/to/COBLAST-"
 DATA_DIR="/path/to/sra_data"
 
 # Glob matching each SRA's read FASTA (searched recursively under DATA_DIR).
-SRA_GLOB="*.fasta"
+# Pick a pattern for the ONE combined read FASTA per SRA.
+SRA_GLOB="SRR*.fasta"
+
+# Filenames matching this glob are skipped, so paired-end mate files
+# (e.g. SRRxxxx_1.fasta / SRRxxxx_2.fasta) are excluded and only the combined
+# SRRxxxx.fasta is searched. Set to "" to skip nothing.
+SRA_EXCLUDE_GLOB="*_*.fasta"
 
 # Human genome: an absolute path to a FASTA file OR to an existing BLAST
 # nucleotide DB prefix. If it is a FASTA with no DB yet, the DB is built once.
@@ -129,9 +136,10 @@ fi
 
 # --- 3. Discover the per-SRA read FASTAs (recursively; excluding outputs/human) ---
 shopt -s nullglob
-mapfile -t SRA_FILES < <(
-  find "$DATA_DIR" -path "$OUT_DIR" -prune -o -type f -name "$SRA_GLOB" -print | sort
-)
+find_expr=( "$DATA_DIR" -path "$OUT_DIR" -prune -o -type f -name "$SRA_GLOB" )
+[[ -n "$SRA_EXCLUDE_GLOB" ]] && find_expr+=( ! -name "$SRA_EXCLUDE_GLOB" )
+find_expr+=( -print )
+mapfile -t SRA_FILES < <( find "${find_expr[@]}" | sort )
 KEEP=()
 for f in "${SRA_FILES[@]:-}"; do
   [[ "$f" == "$HUMAN_GENOME" ]] && continue
@@ -146,10 +154,8 @@ SUMMARY="$OUT_DIR/summary_probe_counts.tsv"
 printf 'sample\tprobe\texact_hits\n' > "$SUMMARY"
 
 for SRA in "${SRA_FILES[@]}"; do
-  # Sample label = the SRA's top-level subdirectory under DATA_DIR.
-  rel="${SRA#"$DATA_DIR"/}"
-  name="${rel%%/*}"
-  [[ "$name" == "$rel" ]] && name="$(basename "${SRA%.*}")"   # fallback: FASTA sits in DATA_DIR
+  # Sample label = the directory the read FASTA sits in (each SRA's own folder).
+  name="$(basename "$(dirname "$SRA")")"
   echo "=== $name ===" >&2
   sdir="$OUT_DIR/$name"; mkdir -p "$sdir"
 
