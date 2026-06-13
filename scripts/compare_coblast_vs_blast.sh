@@ -24,10 +24,10 @@
 # source FASTA, exactly as COBLAST+ does.
 #
 # ASSUMPTIONS (set the CONFIG block below to match your machine):
-#   * Each SRA has its own directory holding the combined read FASTA. SRA_GLOB
-#     matches it while SRA_EXCLUDE_GLOB skips any paired-end mate files (so
-#     SRRxxxx.fasta is kept and SRRxxxx_1.fasta / _2.fasta are skipped). Each
-#     sample is labelled by the directory its FASTA sits in.
+#   * Each SRA has its own directory directly under DATA_DIR holding the combined
+#     read FASTA. SRA_GLOB matches it while SRA_EXCLUDE_GLOB skips any paired-end
+#     mate files (so SRRxxxx.fasta is kept and SRRxxxx_1.fasta / _2.fasta are
+#     skipped). Each sample is labelled by its folder under DATA_DIR.
 #   * The human genome is either a FASTA file or an existing BLAST DB prefix.
 #   * If your SRAs are still .sra/FASTQ, convert them to FASTA first
 #     (e.g. fastq-dump --fasta), or ask for a version that adds that step.
@@ -154,8 +154,10 @@ SUMMARY="$OUT_DIR/summary_probe_counts.tsv"
 printf 'sample\tprobe\texact_hits\n' > "$SUMMARY"
 
 for SRA in "${SRA_FILES[@]}"; do
-  # Sample label = the directory the read FASTA sits in (each SRA's own folder).
-  name="$(basename "$(dirname "$SRA")")"
+  # Sample label = the SRA's folder directly under DATA_DIR.
+  rel="${SRA#"$DATA_DIR"/}"
+  name="${rel%%/*}"
+  [[ "$name" == "$rel" ]] && name="$(basename "${SRA%.*}")"   # fallback: FASTA sits in DATA_DIR
   echo "=== $name ===" >&2
   sdir="$OUT_DIR/$name"; mkdir -p "$sdir"
 
