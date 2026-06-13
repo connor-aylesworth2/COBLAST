@@ -64,7 +64,7 @@ def registry_connection() -> sqlite3.Connection:
 
 
 def init_registry() -> None:
-    """Create the database registry table on first use."""
+    """Create the database registry tables on first use."""
     with registry_connection() as conn:
         conn.execute(
             """
@@ -84,6 +84,14 @@ def init_registry() -> None:
                 database_title TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL CHECK (status IN ('available', 'missing', 'invalid')),
                 notes TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS removed_database_prefixes (
+                db_prefix_path TEXT PRIMARY KEY,
+                removed_at TEXT NOT NULL
             )
             """
         )
@@ -360,6 +368,11 @@ def upsert_database(
                 registry_notes,
             ),
         )
+        # Explicit registration reverses any earlier removal of this prefix.
+        conn.execute(
+            "DELETE FROM removed_database_prefixes WHERE db_prefix_path = ?",
+            (prefix,),
+        )
         database_id = conn.execute(
             "SELECT id FROM blast_databases WHERE db_prefix_path = ?",
             (prefix,),
@@ -480,11 +493,41 @@ def verify_database(database_id: int) -> RegisteredDatabase:
     return get_database(database_id)
 
 
-def remove_database(database_id: int) -> None:
-    """Delete the registry row without deleting user-owned BLAST files."""
+def remove_database(database_id: int) -> RegisteredDatabase:
+    """Delete one registry row without deleting user-owned BLAST files."""
     init_registry()
     with registry_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM blast_databases WHERE id = ?",
+            (database_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"No registered database exists with ID {database_id}.")
+
+        database = row_to_database(row)
+        conn.execute(
+            """
+            INSERT INTO removed_database_prefixes (db_prefix_path, removed_at)
+            VALUES (?, ?)
+            ON CONFLICT(db_prefix_path) DO UPDATE SET
+                removed_at = excluded.removed_at
+            """,
+            (database.db_prefix_path, utc_now()),
+        )
         conn.execute("DELETE FROM blast_databases WHERE id = ?", (database_id,))
+    return database
+
+
+def database_prefix_was_removed(db_prefix_path: str | Path) -> bool:
+    """Return whether a prefix was explicitly removed from the registry."""
+    init_registry()
+    prefix = blast_safe_path(db_prefix_path)
+    with registry_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM removed_database_prefixes WHERE db_prefix_path = ?",
+            (prefix,),
+        ).fetchone()
+    return row is not None
 
 
 def ensure_demo_databases() -> None:
@@ -514,6 +557,10 @@ def ensure_demo_databases() -> None:
         source = Path(database["source_fasta_path"])
         prefix = Path(database["db_prefix_path"])
         if not source.exists():
+            continue
+
+        if database_prefix_was_removed(prefix):
+            # Do not silently restore a demo database the user removed.
             continue
 
         existing = get_database_by_prefix(prefix)

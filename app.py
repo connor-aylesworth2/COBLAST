@@ -901,11 +901,14 @@ def verify_all_databases_route():
 def remove_database_route(database_id: int):
     """Remove a database from the registry only; BLAST index files remain."""
     try:
-        remove_database(database_id)
+        database = remove_database(database_id)
     except Exception as exc:
         return redirect_to_databases(error=str(exc))
     return redirect_to_databases(
-        message="Database removed from the registry. BLAST files were not deleted."
+        message=(
+            f"{database.display_name} was removed from the registry. "
+            "BLAST files were not deleted."
+        )
     )
 
 

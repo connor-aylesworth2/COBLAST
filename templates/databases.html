@@ -92,8 +92,17 @@
                       <button type="submit" class="button-secondary">Verify</button>
                     </form>
                     {# Remove deletes the registry row, not the BLAST index files. #}
-                    <form class="inline" method="post" action="/databases/{{ database.id }}/remove">
-                      <button type="submit" class="button-danger">Remove</button>
+                    <form
+                      class="inline"
+                      method="post"
+                      action="/databases/{{ database.id }}/remove"
+                      data-remove-database="{{ database.display_name }}"
+                    >
+                      <button
+                        type="submit"
+                        class="button-danger"
+                        aria-label="Remove {{ database.display_name }} from the registry"
+                      >Remove</button>
                     </form>
                   </td>
                 </tr>
@@ -208,5 +217,19 @@
       </details>
     </main>
     <script src="{{ url_for('static', filename='waiting.js') }}"></script>
+    <script>
+      document.querySelectorAll("form[data-remove-database]").forEach((form) => {
+        form.addEventListener("submit", (event) => {
+          const databaseName = form.dataset.removeDatabase;
+          const confirmed = window.confirm(
+            `Remove "${databaseName}" from the COBLAST+ registry? ` +
+            "The FASTA and BLAST database files will remain on disk."
+          );
+          if (!confirmed) {
+            event.preventDefault();
+          }
+        });
+      });
+    </script>
   </body>
 </html>

@@ -763,7 +763,9 @@ Use this when a database has already been created outside COBLAST with
 
 Removing a database from the database-management page removes it from the
 COBLAST registry only. It does not delete the FASTA file or the BLAST database
-files from disk.
+files from disk. Removed toy databases stay removed instead of being seeded
+again on the next page load. To restore any removed database, add its existing
+BLAST prefix again through `Add Existing BLAST Database`.
 
 ## Current supported BLAST programs
 
