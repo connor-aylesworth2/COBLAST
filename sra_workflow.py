@@ -14,7 +14,11 @@ import re
 import subprocess
 
 from config import resource_root, runtime_data_dir
-from database_registry import create_database_from_fasta, register_existing_database
+from database_registry import (
+    create_database_from_fasta,
+    get_database_by_prefix,
+    register_existing_database,
+)
 from database_size import database_storage_bytes, format_bytes
 
 
@@ -223,6 +227,26 @@ def discover_sra_projects() -> list[SraProject]:
     return sorted(projects, key=lambda project: project.accession.lower())
 
 
+def source_fasta_for_blast_prefix(
+    db_prefix_path: str | Path, fasta_files: list[SraFileSummary]
+) -> str:
+    """Choose the source FASTA that most likely produced a discovered BLAST DB."""
+    if not fasta_files:
+        return ""
+
+    prefix_name = Path(db_prefix_path).name.casefold()
+    same_stem = [
+        fasta.path
+        for fasta in fasta_files
+        if Path(fasta.path).stem.casefold() == prefix_name
+    ]
+    if len(same_stem) == 1:
+        return same_stem[0]
+    if len(fasta_files) == 1:
+        return fasta_files[0].path
+    return ""
+
+
 def copy_fasta_subset(source_fasta_path: str | Path, output_fasta_path: str | Path, max_records: int) -> int:
     """Copy the first N FASTA records into a smaller pilot FASTA."""
     if max_records < 1:
@@ -320,12 +344,23 @@ def convert_sra_to_pilot_fasta(
     return fasta_files[0]
 
 
-def register_sra_blast_database(*, accession: str, db_prefix_path: str | Path):
+def register_sra_blast_database(
+    *,
+    accession: str,
+    db_prefix_path: str | Path,
+    source_fasta_path: str | Path | None = None,
+):
     """Register an existing SRA-derived nucleotide BLAST database."""
+    source = source_fasta_path
+    if not source:
+        existing = get_database_by_prefix(db_prefix_path)
+        if existing is not None and existing.source_fasta_path:
+            source = existing.source_fasta_path
     return register_existing_database(
         display_name=f"SRA {accession} reads",
         db_type="nucl",
         db_prefix_path=db_prefix_path,
+        source_fasta_path=source,
         description=f"Local nucleotide BLAST database prepared from {accession}.",
         category="sra",
         notes="Registered from the SRA workbench.",

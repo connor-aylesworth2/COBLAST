@@ -191,14 +191,28 @@ for line in open(sys.argv[2]):
         sys.stdout.write(line)
 PY
 
+  awk '/^>/{sub(/^>/, ""); split($0, fields, /[[:space:]]+/); print fields[1]}' \
+    "$sdir/matched_reads.fasta" | sort -u > "$sdir/recovered_read_ids.txt"
+  comm -23 "$sdir/matched_read_ids.txt" "$sdir/recovered_read_ids.txt" \
+    > "$sdir/unresolved_read_ids.txt"
+  matched_reads=$(wc -l < "$sdir/matched_read_ids.txt")
+  recovered_reads=$(wc -l < "$sdir/recovered_read_ids.txt")
+  unresolved_reads=$(wc -l < "$sdir/unresolved_read_ids.txt")
+  echo "  read recovery: $recovered_reads/$matched_reads recovered; $unresolved_reads unresolved" >&2
+
   # 4e. Human filter: BLAST matched reads vs human genome; collect read IDs that hit.
   if [[ -s "$sdir/matched_reads.fasta" ]]; then
     blastn -task megablast -query "$sdir/matched_reads.fasta" -db "$HUMAN_DB" \
            -num_threads "$THREADS" -evalue "$HUMAN_EVALUE" -max_target_seqs 1 \
-           -outfmt "6 qseqid" | cut -f1 | sort -u > "$sdir/human_read_ids.txt"
+           -outfmt "6 qseqid sseqid pident length qcovs evalue bitscore" \
+           > "$sdir/human_hits.tsv"
+    cut -f1 "$sdir/human_hits.tsv" | sort -u > "$sdir/human_read_ids.txt"
   else
+    : > "$sdir/human_hits.tsv"
     : > "$sdir/human_read_ids.txt"
   fi
+  human_reads=$(wc -l < "$sdir/human_read_ids.txt")
+  echo "  human matches: $human_reads/$recovered_reads recovered read(s)" >&2
 
   # 4f. Drop eToL hits whose read hit the human genome.
   awk -F'\t' 'NR==FNR{h[$1]; next} !($2 in h)' \

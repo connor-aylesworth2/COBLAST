@@ -69,6 +69,7 @@ from sra_workflow import (
     create_pilot_database_from_fasta,
     discover_sra_projects,
     register_sra_blast_database,
+    source_fasta_for_blast_prefix,
     sra_toolkit_bin,
 )
 
@@ -740,6 +741,7 @@ def register_sra_database_route():
         database = register_sra_blast_database(
             accession=request.form.get("accession", ""),
             db_prefix_path=request.form.get("db_prefix_path", ""),
+            source_fasta_path=request.form.get("source_fasta_path") or None,
         )
     except Exception as exc:
         return redirect_to_sra(error=str(exc))
@@ -762,6 +764,10 @@ def register_all_sra_databases_route():
                 register_sra_blast_database(
                     accession=project.accession,
                     db_prefix_path=prefix,
+                    source_fasta_path=source_fasta_for_blast_prefix(
+                        prefix, project.fasta_files
+                    )
+                    or None,
                 )
                 registered += 1
             except Exception as exc:
@@ -786,6 +792,15 @@ def register_selected_sra_databases_route():
 
     registered = 0
     errors = []
+    try:
+        projects = discover_sra_projects()
+    except Exception as exc:
+        return redirect_to_sra(error=str(exc))
+    source_fasta_by_prefix = {
+        prefix: source_fasta_for_blast_prefix(prefix, project.fasta_files)
+        for project in projects
+        for prefix in project.blast_prefixes
+    }
     for selected_database in selected_databases:
         try:
             accession, prefix = selected_database.split("||", 1)
@@ -797,6 +812,7 @@ def register_selected_sra_databases_route():
             register_sra_blast_database(
                 accession=accession,
                 db_prefix_path=prefix,
+                source_fasta_path=source_fasta_by_prefix.get(prefix) or None,
             )
             registered += 1
         except Exception as exc:

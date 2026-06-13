@@ -127,14 +127,18 @@ def extract_reads(
     db_prefix_path: str, source_fasta_path: str, read_ids: list[str]
 ) -> tuple[dict[str, str], str]:
     """Recover patient reads by id, returning (reads, method-used)."""
-    reads = extract_reads_via_blastdbcmd(db_prefix_path, read_ids)
-    if reads:
-        return reads, "blastdbcmd"
-    if source_fasta_path:
-        reads = extract_reads_from_fasta(source_fasta_path, read_ids)
-        if reads:
-            return reads, "source_fasta"
-    return {}, "none"
+    db_reads = extract_reads_via_blastdbcmd(db_prefix_path, read_ids) or {}
+    reads = dict(db_reads)
+    methods = ["blastdbcmd"] if db_reads else []
+
+    missing_ids = [read_id for read_id in read_ids if read_id not in reads]
+    if source_fasta_path and missing_ids:
+        fasta_reads = extract_reads_from_fasta(source_fasta_path, missing_ids)
+        if fasta_reads:
+            reads.update(fasta_reads)
+            methods.append("source_fasta")
+
+    return reads, "+".join(methods) if methods else "none"
 
 
 def find_human_read_ids(

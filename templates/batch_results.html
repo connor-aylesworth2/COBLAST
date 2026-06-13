@@ -256,6 +256,10 @@
                         {% set hf = database_result.human_filter %}
                         {% if hf %}
                           {{ hf.hits_removed }} removed
+                          <br><span class="muted">
+                            {{ hf.reads_checked }}/{{ hf.reads_total }} matched read(s) checked;
+                            {{ hf.human_reads }} human read(s); recovery: {{ hf.method }}
+                          </span>
                           {% if hf.note %}<br><span class="muted">{{ hf.note }}</span>{% endif %}
                         {% else %}
                           &mdash;

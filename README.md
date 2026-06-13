@@ -579,7 +579,9 @@ Matched reads are recovered by their `sseqid` (which equals the read's FASTA
 record id): first with `blastdbcmd` (when the patient database was built with
 `-parse_seqids`), otherwise by scanning the database's stored source FASTA. If a
 read cannot be recovered it is kept unfiltered (never dropped on a guess), and a
-note is shown.
+note is shown. The SRA workbench automatically associates a discovered BLAST
+database with a same-named FASTA in that SRA project. Re-register an older SRA
+database if its registry entry predates this association.
 
 To set up the human genome database, build it once with `makeblastdb` straight
 from the NCBI genome FASTA — `.fna` files are already FASTA, so no conversion is
