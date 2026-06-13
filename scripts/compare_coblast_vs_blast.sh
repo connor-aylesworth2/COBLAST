@@ -17,8 +17,9 @@
 #      outfmt "6 qseqid sseqid stitle pident length qcovs evalue bitscore".
 #      Keep only rows with pident==100 AND qcovs==100 (the exact-match filter).
 #   2. Secondary human filter: BLAST the matched reads against the human genome
-#      (blastn -task megablast -evalue 1e-6 -max_target_seqs 1) and drop eToL
-#      hits whose read also hit the human genome.
+#      (blastn -task megablast -evalue 1e-6 -qcov_hsp_perc 100
+#      -max_target_seqs 1) and drop eToL hits whose read has a full-query-
+#      coverage human-genome HSP.
 #
 # makeblastdb is run WITHOUT -parse_seqids and reads are recovered from the
 # source FASTA, exactly as COBLAST+ does.
@@ -65,6 +66,7 @@ THREADS=8
 PROBES="$COBLAST_DIR/data/eToL_probes.fasta"
 OUTFMT="6 qseqid sseqid stitle pident length qcovs evalue bitscore"
 HUMAN_EVALUE="1e-6"
+HUMAN_QCOV="100"
 MAX_TARGET_SEQS="5000000"
 
 # --- sanity checks ---
@@ -203,10 +205,12 @@ PY
   # 4e. Human filter: BLAST matched reads vs human genome; collect read IDs that hit.
   if [[ -s "$sdir/matched_reads.fasta" ]]; then
     blastn -task megablast -query "$sdir/matched_reads.fasta" -db "$HUMAN_DB" \
-           -num_threads "$THREADS" -evalue "$HUMAN_EVALUE" -max_target_seqs 1 \
-           -outfmt "6 qseqid sseqid pident length qcovs evalue bitscore" \
+           -num_threads "$THREADS" -evalue "$HUMAN_EVALUE" \
+           -qcov_hsp_perc "$HUMAN_QCOV" -max_target_seqs 1 \
+           -outfmt "6 qseqid sseqid pident length qcovhsp evalue bitscore" \
            > "$sdir/human_hits.tsv"
-    cut -f1 "$sdir/human_hits.tsv" | sort -u > "$sdir/human_read_ids.txt"
+    awk -F'\t' '$5==100 {print $1}' "$sdir/human_hits.tsv" \
+      | sort -u > "$sdir/human_read_ids.txt"
   else
     : > "$sdir/human_hits.tsv"
     : > "$sdir/human_read_ids.txt"

@@ -24,10 +24,10 @@ from config import blast_exe
 from database_registry import blast_safe_path
 
 
-# A 150 bp Illumina read that is genuinely human aligns to GRCh38 with an
-# essentially zero E-value; this cutoff keeps real host matches while ignoring
-# short, chance hits from microbial reads.
+# A read is removed only when one human-genome HSP covers the complete query.
+# The E-value cutoff still excludes weak full-length alignments.
 DEFAULT_HUMAN_EVALUE = "1e-6"
+HUMAN_QUERY_COVERAGE_PERCENT = "100"
 DEFAULT_HUMAN_TIMEOUT_SECONDS = 1800
 
 
@@ -148,7 +148,7 @@ def find_human_read_ids(
     evalue: str = DEFAULT_HUMAN_EVALUE,
     timeout_seconds: int = DEFAULT_HUMAN_TIMEOUT_SECONDS,
 ) -> set[str]:
-    """Return the ids of reads that produce any hit against the human genome."""
+    """Return read ids with a full-query-coverage human-genome HSP."""
     if not reads:
         return set()
     with tempfile.TemporaryDirectory(prefix="human_filter_q_") as tmpdir:
@@ -168,10 +168,12 @@ def find_human_read_ids(
                 blast_safe_path(human_db_prefix_path),
                 "-evalue",
                 str(evalue),
+                "-qcov_hsp_perc",
+                HUMAN_QUERY_COVERAGE_PERCENT,
                 "-max_target_seqs",
                 "1",
                 "-outfmt",
-                "6 qseqid",
+                "6 qseqid qcovhsp",
             ],
             capture_output=True,
             text=True,
@@ -183,11 +185,18 @@ def find_human_read_ids(
             "Human-genome BLAST failed: "
             + ((completed.stderr or completed.stdout).strip() or "unknown error")
         )
-    return {
-        line.split("\t", 1)[0].strip()
-        for line in completed.stdout.splitlines()
-        if line.strip()
-    }
+    human_ids: set[str] = set()
+    for line in completed.stdout.splitlines():
+        fields = line.split("\t")
+        if len(fields) < 2:
+            continue
+        try:
+            query_coverage = float(fields[1])
+        except ValueError:
+            continue
+        if query_coverage == 100.0:
+            human_ids.add(fields[0].strip())
+    return human_ids
 
 
 def filter_human_hits(

@@ -71,7 +71,7 @@
             <input id="human_filter" name="human_filter" type="checkbox" value="1">
             <span>
               <strong>Remove reads that also match the human genome</strong>
-              <br><span class="muted">Microbial eToL presets (Full, Quick) only. After the probe search, each matched patient read is BLASTed against the human genome database below; any read with a human match is dropped from the final results.</span>
+              <br><span class="muted">Microbial eToL presets (Full, Quick) only. After the probe search, each matched patient read is BLASTed against the human genome database below; the read is dropped only when a human alignment covers 100% of it.</span>
             </span>
           </label>
           <label for="human_filter_db_id">Human genome database</label>
