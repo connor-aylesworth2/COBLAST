@@ -572,9 +572,11 @@ human-derived — the second-round host filtering recommended in Hu, Haas & Lath
 selector), COBLAST takes the exact-probe hits for each patient database,
 recovers the full matched reads, BLASTs them (`megablast`) against the selected
 human genome database, and drops every hit whose read produces a human HSP with
-100% query coverage (`-qcov_hsp_perc 100`, E-value ≤ 1e-6). Partial human
-alignments are retained. The results page reports how many hits were removed per
-sample, and all summaries/exports reflect the filtered hit list.
+100% query coverage (`-qcov_hsp_perc 100`); 100% query coverage is the sole
+criterion, with no E-value cutoff (the E-value threshold is set permissively so
+it never filters). Partial human alignments are retained. The results page
+reports how many hits were removed per sample, and all summaries/exports reflect
+the filtered hit list.
 
 Matched reads are recovered by their `sseqid` (which equals the read's FASTA
 record id): first with `blastdbcmd` (when the patient database was built with

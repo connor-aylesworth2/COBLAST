@@ -24,9 +24,11 @@ from config import blast_exe
 from database_registry import blast_safe_path
 
 
-# A read is removed only when one human-genome HSP covers the complete query.
-# The E-value cutoff still excludes weak full-length alignments.
-DEFAULT_HUMAN_EVALUE = "1e-6"
+# A read is removed only when one human-genome HSP covers the complete query;
+# 100% query coverage is the sole criterion. The E-value threshold is set
+# permissively high so it never excludes a full-coverage alignment (no e-value
+# filtering happens in this second, human-genome search).
+DEFAULT_HUMAN_EVALUE = "1e9"
 HUMAN_QUERY_COVERAGE_PERCENT = "100"
 DEFAULT_HUMAN_TIMEOUT_SECONDS = 1800
 

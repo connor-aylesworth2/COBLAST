@@ -17,9 +17,10 @@
 #      outfmt "6 qseqid sseqid stitle pident length qcovs evalue bitscore".
 #      Keep only rows with pident==100 AND qcovs==100 (the exact-match filter).
 #   2. Secondary human filter: BLAST the matched reads against the human genome
-#      (blastn -task megablast -evalue 1e-6 -qcov_hsp_perc 100
+#      (blastn -task megablast -evalue 1e9 -qcov_hsp_perc 100
 #      -max_target_seqs 1) and drop eToL hits whose read has a full-query-
-#      coverage human-genome HSP.
+#      coverage human-genome HSP. 100% query coverage is the sole criterion;
+#      the E-value threshold is set permissively so it never filters.
 #
 # makeblastdb is run WITHOUT -parse_seqids and reads are recovered from the
 # source FASTA, exactly as COBLAST+ does.
@@ -65,7 +66,9 @@ THREADS=8
 
 PROBES="$COBLAST_DIR/data/eToL_probes.fasta"
 OUTFMT="6 qseqid sseqid stitle pident length qcovs evalue bitscore"
-HUMAN_EVALUE="1e-6"
+# Permissive E-value so the human search never filters by e-value; the sole
+# criterion for a "human" read is 100% query coverage (HUMAN_QCOV below).
+HUMAN_EVALUE="1e9"
 HUMAN_QCOV="100"
 MAX_TARGET_SEQS="5000000"
 
