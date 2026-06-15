@@ -509,28 +509,42 @@ The batch page also includes **eToL probe presets** built for the
 electronic Tree of Life (eToL) workflow described in Hu, Haas & Lathe,
 *BMC Microbiology* 2022;22:317. Each preset BLASTNs a stored probe panel against
 the selected nucleotide databases. Unlike the APOE genotyper (which saves only
-100% identity / 100% coverage hits), the eToL panels cast the paper's permissive
-*net*: a hit is kept when a probe aligns over at least 70% of its length, with no
-identity filter, so partial and imperfect rRNA matches are retained for the
-secondary human filter to adjudicate. The probe FASTA is supplied automatically,
-so the query box is left empty (read-only) when a preset is on.
+100% identity / 100% coverage hits), the eToL panels reproduce the paper's
+permissive *net*: BLAST's **default megablast** scoring with **no identity or
+coverage filter** (BLAST's default e-value is the only gate), so partial and
+mismatched rRNA matches are all retained for the secondary human filter and
+cross-probe de-duplication to adjudicate. The probe FASTA is supplied
+automatically, so the query box is left empty (read-only) when a preset is on.
 
-So deep patient databases are counted in full, the eToL preset path sets
-`-qcov_hsp_perc 70` with no `-perc_identity` filter and lifts the
-`max_target_seqs` cap (see the `ETOL_NET_*` and `EXACT_MATCH_*` constants in
-`blast_runner.py`), which stops a probe that matches many reads in a deep patient
-database from being silently truncated. The 70% coverage floor is COBLAST's
-operationalization of the paper's net: Hu, Haas & Lathe ran *default* megablast
-(no identity/coverage filter) and observed that ~80–90% of retained matches
-covered 70–100% of the probe, so the floor keeps that bulk while dropping the
-low-coverage tail.
+The only override the net applies is lifting the `max_target_seqs` cap (see the
+`EXACT_MATCH_MAX_TARGET_SEQS` constant in `blast_runner.py`), so a probe that
+matches many reads in a deep patient database is counted in full rather than
+truncated at BLAST's default.
 
-To keep whole-SRA runs fast, the eToL panel is searched in two passes: probes
-that have a 28-base unambiguous window run with `megablast` (much faster on large
-read databases), and the few whose ambiguous bases leave no such window fall back
-to `blastn-short`. In the bundled panel that is a single probe
-(`F3_Gpolymorpha_18S_7`); the partition is computed from each probe's sequence,
-so it self-adjusts if the panel changes.
+To keep whole-SRA runs fast, the eToL panel is searched in two passes (matching
+the paper's two-task approach): probes that have a 28-base unambiguous window run
+with `megablast` (much faster on large read databases), and the few whose
+ambiguous bases leave no such window fall back to `blastn-short`. In the bundled
+microbial panel that is a single probe (`F3_Gpolymorpha_18S_7`); the partition is
+computed from each probe's sequence, so it self-adjusts if the panel changes.
+
+**Cross-probe de-duplication.** Because the probe collection is partly redundant
+(rRNA is conserved, so ~38% of probes share sequence with at least one other),
+the same read can be recovered by several probes. After the human filter,
+COBLAST allocates each matched read to the single probe with the highest
+similarity (ranked by bitscore, then identity, then coverage), exactly as the
+paper specifies, so a read is counted once rather than inflating several probes.
+
+**Host-cell normalization.** The microbial presets are searched together with the
+housekeeping control probes (PGK1, hNSE) in the same run. The control reads are
+counted separately (never human-filtered — they are human by design) and used to
+estimate host abundance: the host-cell count is the mean per-gene control
+readcount divided by ~50 transcripts per cell (`HOST_TRANSCRIPTS_PER_CELL`).
+Microbial counts are then reported both raw and as **reads per host cell**
+(`raw / host cells`), normalizing for how much host material each library
+represents, as in the paper. When no control reads are found, normalization is
+reported as `n/a`. The standalone **eToL Control** preset still runs the control
+probes on their own for QC.
 
 There are three eToL presets, plus the APOE preset; **only one preset can be
 active at a time** (selecting one clears the others):

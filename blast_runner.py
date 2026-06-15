@@ -123,15 +123,15 @@ EXACT_MATCH_MT_MODE = "0"
 # eToL "net" probe search (the microbial/control eToL panels, run via
 # run_blast_probe_panel). Unlike the APOE exact genotyper above, the eToL
 # workflow of Hu, Haas & Lathe 2022 (BMC Microbiology 22:317) deliberately casts
-# a permissive "net": it keeps partial and imperfect probe matches and relies on
-# the secondary human filter to remove host reads. The paper ran default
-# megablast (no identity/coverage filter) and observed that ~80-90% of retained
-# matches covered 70-100% of the probe. COBLAST therefore applies a query-
-# coverage floor with NO identity filter, while still lifting max_target_seqs so
-# deep patient databases are counted in full. The floor is a hit's coverage of
-# the probe (the query), so a read must align over at least this fraction of the
-# 64-mer probe to be retained.
-ETOL_NET_QCOV_HSP_PERC = "70"
+# a permissive "net" to entrap every non-human rRNA read, then relies on the
+# secondary human filter to remove host reads. The paper used BLAST's *default*
+# megablast settings with NO identity or coverage filter (the only gate is
+# BLAST's default e-value), keeping even partial and mismatched matches. COBLAST
+# reproduces that exactly: the net path applies no identity or coverage filter
+# and only lifts max_target_seqs, so a probe matching many reads in a deep
+# patient database is counted in full rather than truncated at BLAST's default
+# cap. The single ambiguous probe that cannot seed megablast runs blastn-short
+# (see run_blast_probe_panel), matching the paper's two-task approach.
 
 # CPU parallelism. -num_threads is BLAST+'s own multi-core switch; mt_mode picks
 # how the work is divided across those threads (0 auto, 1 by query, 2 by db).
@@ -632,12 +632,14 @@ def build_blast_parameters(
         parameters["qcov_hsp_perc"] = EXACT_MATCH_QCOV_HSP_PERC
         parameters["max_target_seqs"] = EXACT_MATCH_MAX_TARGET_SEQS
     elif etol_net_probe:
-        # The eToL net keeps partial/imperfect matches: a query-coverage floor
-        # with no identity filter (any value the caller supplied is dropped),
-        # plus the same lifted target cap as the exact path so deep patient
-        # databases are counted in full.
+        # The eToL net reproduces the paper's first search: BLAST's default
+        # megablast scoring with NO identity or coverage filter, so partial and
+        # mismatched rRNA matches are all retained for the secondary human filter
+        # to adjudicate. Any identity/coverage value the caller supplied is
+        # dropped. Only max_target_seqs is lifted, so a probe matching many reads
+        # in a deep patient database is counted in full rather than truncated.
         parameters.pop("perc_identity", None)
-        parameters["qcov_hsp_perc"] = ETOL_NET_QCOV_HSP_PERC
+        parameters.pop("qcov_hsp_perc", None)
         parameters["max_target_seqs"] = EXACT_MATCH_MAX_TARGET_SEQS
 
     num_threads_text = None if num_threads is None else str(num_threads)
@@ -876,9 +878,9 @@ def run_blast_probe_panel(
     megablast is much faster on whole-SRA databases but needs a 28-base
     unambiguous word to seed. Probes that have such a window run with megablast;
     the few whose ambiguous bases leave no 28-base window run with blastn-short.
-    Both passes use the eToL net enforcement (a query-coverage floor, no identity
-    filter, lifted target cap) and their hits are merged, so the full panel is
-    searched at megablast speed for the bulk of the probes.
+    Both passes use the eToL net enforcement (default scoring, no identity or
+    coverage filter, lifted target cap) and their hits are merged, so the full
+    panel is searched at megablast speed for the bulk of the probes.
     """
     megablast_pairs: list[tuple[str, str]] = []
     short_pairs: list[tuple[str, str]] = []

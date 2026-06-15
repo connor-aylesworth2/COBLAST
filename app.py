@@ -15,19 +15,19 @@ from apoe_summary import apoe_probe_query_ids, build_apoe_probe_summary
 from etol_summary import (
     ETOL_NET_FILTER,
     build_etol_probe_summary,
-    etol_preset_fasta,
+    etol_control_query_ids,
     etol_preset_form_field,
     etol_preset_is_microbial,
     etol_preset_keys,
     etol_preset_label,
     etol_preset_options,
-    etol_preset_query_ids,
     etol_preset_records,
+    etol_search_fasta,
+    etol_search_query_ids,
 )
 from human_filter import filter_human_hits
 from blast_runner import (
     BLAST_PROGRAMS,
-    ETOL_NET_QCOV_HSP_PERC,
     run_blast,
     run_blast_probe_panel,
     run_jobs_concurrently,
@@ -124,33 +124,60 @@ def filter_exact_probe_hits(
     return exact_hits
 
 
-ETOL_NET_MIN_QCOV = float(ETOL_NET_QCOV_HSP_PERC)
-
-
 def filter_net_probe_hits(
-    hits: list[dict[str, str]],
-    probe_query_ids: set[str],
-    min_qcov: float = ETOL_NET_MIN_QCOV,
+    hits: list[dict[str, str]], probe_query_ids: set[str]
 ) -> list[dict[str, str]]:
-    """Keep eToL "net" probe matches after parsing.
+    """Restrict eToL "net" hits to probes in the active panel.
 
-    Following Hu, Haas & Lathe 2022, the eToL panels cast a permissive net: a hit
-    is retained when a panel probe aligns over at least ``min_qcov`` percent of
-    its length, with no identity floor, so partial and imperfect rRNA matches are
-    kept for the secondary human filter to adjudicate. BLAST already enforces the
-    coverage floor (``-qcov_hsp_perc``); re-checking it here also restricts the
-    hits to probes that belong to the active panel.
+    Following Hu, Haas & Lathe 2022, the eToL panels cast a permissive net:
+    default megablast with no identity or coverage filter (BLAST's default
+    e-value is the only gate), so partial and imperfect rRNA matches are kept for
+    the secondary human filter and cross-probe de-duplication to adjudicate. The
+    only post-parse filtering is restricting hits to the active panel's probes.
     """
-    net_hits = []
+    return [hit for hit in hits if hit.get("qseqid", "") in probe_query_ids]
+
+
+def deduplicate_reads_to_best_probe(
+    hits: list[dict[str, str]]
+) -> tuple[list[dict[str, str]], int]:
+    """Allocate each matched read to a single probe (Hu, Haas & Lathe 2022).
+
+    A read (``sseqid``) recovered by more than one probe is counted only once,
+    against the probe showing the highest sequence similarity. "Highest
+    similarity" is ranked by bitscore, then percent identity, then query
+    coverage, with the probe id as a final deterministic tie-break. Returns the
+    de-duplicated hits (input order preserved) and the number of duplicate hits
+    dropped.
+    """
+    best_by_read: dict[str, dict[str, str]] = {}
     for hit in hits:
-        query_coverage = numeric_hit_value(hit, "qcovs")
-        if (
-            hit.get("qseqid", "") in probe_query_ids
-            and query_coverage is not None
-            and query_coverage >= min_qcov
-        ):
-            net_hits.append(hit)
-    return net_hits
+        read_id = hit.get("sseqid", "")
+        if not read_id:
+            continue
+        incumbent = best_by_read.get(read_id)
+        if incumbent is None or _similarity_rank(hit) > _similarity_rank(incumbent):
+            best_by_read[read_id] = hit
+
+    winners = {id(hit) for hit in best_by_read.values()}
+    kept = [hit for hit in hits if id(hit) in winners]
+    return kept, len(hits) - len(kept)
+
+
+def _similarity_rank(hit: dict[str, str]) -> tuple[float, float, float, str]:
+    """Rank key for choosing a read's best probe: higher tuple wins.
+
+    Ordered by bitscore, then percent identity, then query coverage. The probe id
+    (``qseqid``) is the final element so the choice is a deterministic argmax
+    independent of hit order; on a full score tie the lexically greater probe id
+    wins (an arbitrary but stable rule).
+    """
+    return (
+        numeric_hit_value(hit, "bitscore") or 0.0,
+        numeric_hit_value(hit, "pident") or 0.0,
+        numeric_hit_value(hit, "qcovs") or 0.0,
+        hit.get("qseqid", ""),
+    )
 
 
 def redirect_to_databases(message: str = "", error: str = ""):
@@ -441,16 +468,23 @@ def run_batch_blast_route():
         apoe_probe_preset = False
     exact_probe_preset = apoe_probe_preset or etol_preset_key is not None
 
+    # probe_query_ids is the full set of query ids searched (used to restrict
+    # hits to the panel). For the microbial eToL presets the search also includes
+    # the housekeeping control probes, so control_query_ids splits those out for
+    # separate host-cell normalization; microbial_query_ids is the remainder.
     probe_query_ids: set[str] = set()
+    control_query_ids: frozenset[str] = frozenset()
     if apoe_probe_preset:
         sequence = APOE_PROBE_FASTA
         probe_query_ids = APOE_PROBE_QUERY_IDS
     elif etol_preset_key:
-        sequence = etol_preset_fasta(etol_preset_key)
-        probe_query_ids = etol_preset_query_ids(etol_preset_key)
+        sequence = etol_search_fasta(etol_preset_key)
+        probe_query_ids = set(etol_search_query_ids(etol_preset_key))
+        if etol_preset_is_microbial(etol_preset_key):
+            control_query_ids = etol_control_query_ids()
     if exact_probe_preset:
-        # Exact-match probe presets always run BLASTN with tabular parsing so the
-        # 100% identity / 100% coverage filter below can be applied consistently.
+        # Exact-match/net probe presets always run BLASTN with tabular parsing so
+        # the preset hit filters below can be applied consistently.
         program = "blastn"
         output_format = "tabular"
 
@@ -566,16 +600,31 @@ def run_batch_blast_route():
                     prevalidated_query=prevalidated_query,
                 )
             # APOE genotyping keeps only full-length exact matches; the eToL
-            # panels keep the paper's permissive net (>=70% probe coverage, no
-            # identity floor). Non-preset batch runs keep every hit.
+            # panels keep the paper's permissive net (default megablast, no
+            # identity or coverage filter). Non-preset batch runs keep every hit.
+            control_counts: dict[str, int] = {}
             if apoe_probe_preset:
                 hits = filter_exact_probe_hits(result.hits, probe_query_ids)
             elif etol_preset_key:
-                hits = filter_net_probe_hits(result.hits, probe_query_ids)
+                panel_hits = filter_net_probe_hits(result.hits, probe_query_ids)
+                # Split the housekeeping control hits out BEFORE any human
+                # filtering. Control reads (PGK1/hNSE) are human by design and
+                # must never be human-filtered, or the host-cell normalization
+                # denominator would be destroyed. They are counted per probe
+                # (including zeros) for normalization, not as microbial species.
+                control_counts = {probe_id: 0 for probe_id in control_query_ids}
+                hits = []
+                for hit in panel_hits:
+                    probe_id = hit.get("qseqid", "")
+                    if probe_id in control_query_ids:
+                        control_counts[probe_id] += 1
+                    else:
+                        hits.append(hit)
             else:
                 hits = result.hits
-            # Secondary human filter runs on the exact-probe hits; a failure
-            # here keeps the eToL hits unfiltered rather than discarding the run.
+            # Secondary human filter runs on the microbial net hits only; a
+            # failure here keeps the eToL hits unfiltered rather than discarding
+            # the run.
             human_filter_stats = None
             if human_filter_active and human_db is not None:
                 try:
@@ -595,6 +644,13 @@ def run_batch_blast_route():
                         "hits_removed": 0,
                         "note": f"Human filter error: {exc}",
                     }
+            # Cross-probe de-duplication (Hu, Haas & Lathe 2022): after human
+            # removal, allocate each remaining read to the single probe with the
+            # highest similarity so a read recovered by several redundant probes
+            # is counted once. Runs last, as the paper specifies.
+            dedup_removed = 0
+            if etol_preset_key:
+                hits, dedup_removed = deduplicate_reads_to_best_probe(hits)
             run_id = save_result(replace(result, hits=hits))
             row = {
                 "database_id": database.id,
@@ -608,6 +664,8 @@ def run_batch_blast_route():
                 "hits": hits,
                 "run_id": run_id,
                 "human_filter": human_filter_stats,
+                "etol_control_counts": control_counts,
+                "etol_dedup_removed": dedup_removed,
                 "error": "",
             }
             return {
@@ -706,6 +764,11 @@ def run_batch_blast_route():
         "human_filter_hits_removed": sum(
             (result_row.get("human_filter") or {}).get("hits_removed", 0)
             for result_row in database_results
+        ),
+        "etol_normalized": etol_preset_key is not None
+        and etol_preset_is_microbial(etol_preset_key),
+        "etol_dedup_removed": sum(
+            result_row.get("etol_dedup_removed", 0) for result_row in database_results
         ),
         "database_results": database_results,
     }

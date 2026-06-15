@@ -59,7 +59,7 @@
               <input class="probe-preset" id="{{ option.form_field }}" name="{{ option.form_field }}" type="checkbox" value="1" data-preset-panel="{{ option.panel_label }}" data-microbial="{{ 'true' if option.microbial else 'false' }}">
               <span>
                 <strong>{{ option.label }}</strong>
-                <br><span class="muted">{{ option.probe_count }} probes; BLASTN megablast net; &ge;70% probe coverage, no identity filter. {{ option.description }}</span>
+                <br><span class="muted">{{ option.probe_count }} probes; BLASTN default megablast net (no identity or coverage filter); blastn-short for the 1 ambiguous probe. {{ option.description }}</span>
               </span>
             </label>
           {% endfor %}

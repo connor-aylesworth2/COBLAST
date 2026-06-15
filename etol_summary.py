@@ -29,8 +29,9 @@ from config import resource_path
 ETOL_FULL_FASTA_PATH = resource_path("data", "eToL_probes.fasta")
 ETOL_CONTROL_FASTA_PATH = resource_path("data", "eToL_control_probes.fasta")
 # The eToL panels keep the paper's permissive net rather than exact matches:
-# any probe alignment covering >=70% of the probe, with no identity floor.
-ETOL_NET_FILTER = ">=70% query coverage (eToL net; no identity filter)"
+# default megablast significance (BLAST's default e-value), with no identity or
+# coverage filter, so partial and mismatched rRNA matches are all retained.
+ETOL_NET_FILTER = "default megablast net (no identity or coverage filter)"
 
 # Reused to label a sample by its SRA accession when one is present in the
 # database name/path; otherwise we fall back to the display name.
@@ -68,6 +69,8 @@ ETOL_SPECIES_EXPORT_COLUMNS = [
     ("probes_in_panel", "Probes in panel"),
     ("probes_detected", "Probes detected"),
     ("exact_hits", "Total exact probe hits"),
+    ("host_cells", "Est. host cells"),
+    ("normalized_abundance", "Reads per host cell"),
 ]
 
 ETOL_PROBE_EXPORT_COLUMNS = [
@@ -77,6 +80,7 @@ ETOL_PROBE_EXPORT_COLUMNS = [
     ("group", "Class"),
     ("domain", "Domain"),
     ("exact_hits", "Exact hits"),
+    ("normalized_abundance", "Reads per host cell"),
 ]
 
 
@@ -177,10 +181,10 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
                 "description": (
                     "Microbial electronic Tree of Life panel across Archaea, "
                     "Bacteria, Chloroplastida, Amoebozoa, basal Eukaryota, Fungi, "
-                    "and Holozoa/Metazoa; BLASTN megablast net; probe matches "
-                    "covering >=70% of the probe (no identity filter). Counts "
-                    "matching reads per probe and species for each selected "
-                    "patient database."
+                    "and Holozoa/Metazoa; BLASTN default megablast net (no "
+                    "identity or coverage filter). Counts matching reads per probe "
+                    "and species, de-duplicates reads across probes, and reports "
+                    "reads per host cell using the PGK1/hNSE control probes."
                 ),
                 "pairs": _full_pairs,
             },
@@ -258,6 +262,99 @@ def etol_preset_query_ids(key: str) -> frozenset[str]:
 def etol_preset_probe_count(key: str) -> int:
     """Return how many probes are in a preset's panel."""
     return len(etol_preset_records(key))
+
+
+# --- Host-cell normalization (Hu, Haas & Lathe 2022) -----------------------
+# Each microbial panel is searched together with the housekeeping control probes
+# (PGK1, hNSE). Dividing microbial read counts by the estimated host-cell count
+# -- the mean per-gene control readcount over ~50 transcripts per cell -- yields
+# the paper's "reads per host cell" abundance, normalizing for how much host
+# material each library represents.
+HOST_TRANSCRIPTS_PER_CELL = 50.0
+
+
+@lru_cache(maxsize=1)
+def etol_control_records() -> tuple[dict[str, str], ...]:
+    """Return metadata for the housekeeping control probes (PGK1, hNSE)."""
+    return tuple(_record_meta(header) for header, _ in _control_pairs())
+
+
+def etol_control_query_ids() -> frozenset[str]:
+    """Return the control-probe query ids used for host normalization."""
+    return frozenset(record["probe"] for record in etol_control_records())
+
+
+def etol_preset_normalizable(key: str) -> bool:
+    """True when a preset is host-normalized (the microbial panels).
+
+    Microbial presets are searched together with the control probes so their
+    counts can be divided by the host-cell estimate; the standalone control
+    preset has nothing microbial to normalize.
+    """
+    return bool(ETOL_PRESETS[key]["microbial"])
+
+
+def etol_search_pairs(key: str) -> tuple[tuple[str, str], ...]:
+    """Return the (header, sequence) probes actually BLASTed for a preset.
+
+    Microbial presets append the housekeeping control probes so a single search
+    yields both the microbial net and the host-normalization counts. The
+    standalone control preset is searched as-is.
+    """
+    pairs = tuple(ETOL_PRESETS[key]["pairs"]())
+    if etol_preset_normalizable(key):
+        pairs = pairs + _control_pairs()
+    return pairs
+
+
+def etol_search_fasta(key: str) -> str:
+    """Return the FASTA actually sent to BLAST (microbial panel + controls)."""
+    return _pairs_to_fasta(etol_search_pairs(key))
+
+
+def etol_search_query_ids(key: str) -> frozenset[str]:
+    """Return every query id in the searched FASTA (microbial + control)."""
+    return frozenset(header for header, _ in etol_search_pairs(key))
+
+
+def control_gene_means(control_counts: dict[str, int]) -> "OrderedDict[str, float]":
+    """Mean read count per housekeeping gene (PGK1, hNSE) across its probes."""
+    by_gene: "OrderedDict[str, list[int]]" = OrderedDict()
+    for probe, count in (control_counts or {}).items():
+        by_gene.setdefault(_taxon(probe), []).append(int(count))
+    return OrderedDict(
+        (gene, sum(values) / len(values)) for gene, values in by_gene.items() if values
+    )
+
+
+def compute_host_cells(control_counts: dict[str, int]) -> float:
+    """Estimate host-cell count from housekeeping control-probe read counts.
+
+    Per Hu, Haas & Lathe 2022: average the read counts of each gene's probes,
+    take the mean across genes, then divide by ~50 transcripts per host cell.
+    Returns 0.0 when no control reads were counted (normalization undefined).
+    """
+    gene_means = list(control_gene_means(control_counts).values())
+    if not gene_means:
+        return 0.0
+    return (sum(gene_means) / len(gene_means)) / HOST_TRANSCRIPTS_PER_CELL
+
+
+def normalized_abundance(raw_count: int, host_cells: float) -> float | None:
+    """Reads per host cell, or None when the host-cell estimate is unavailable."""
+    if not host_cells or host_cells <= 0:
+        return None
+    return raw_count / host_cells
+
+
+def _format_host_cells(host_cells: float) -> str:
+    """Render the host-cell estimate for export/display (blank when undefined)."""
+    return "" if not host_cells or host_cells <= 0 else f"{host_cells:.4g}"
+
+
+def _format_normalized(value: float | None) -> str:
+    """Render a normalized abundance for export/display (blank when undefined)."""
+    return "" if value is None else f"{value:.4g}"
 
 
 def etol_preset_options() -> list[dict[str, Any]]:
@@ -345,6 +442,11 @@ def build_etol_probe_summary(
     rows = []
     for database_result in database_results:
         counts = _probe_counts(database_result, query_ids)
+        # Host-cell normalization uses the housekeeping control-probe counts that
+        # the microbial search recorded separately (never human-filtered).
+        control_counts = database_result.get("etol_control_counts") or {}
+        host_cells = compute_host_cells(control_counts)
+        gene_means = control_gene_means(control_counts)
 
         detected_species = []
         for taxon in taxa:
@@ -361,6 +463,10 @@ def build_etol_probe_summary(
                         "probes_in_panel": taxon["probes_in_panel"],
                         "probes_detected": probes_detected,
                         "exact_hits": exact_hits,
+                        "normalized_abundance": normalized_abundance(exact_hits, host_cells),
+                        "normalized_label": _format_normalized(
+                            normalized_abundance(exact_hits, host_cells)
+                        ),
                     }
                 )
 
@@ -381,7 +487,11 @@ def build_etol_probe_summary(
                 "species_detected": len(detected_species),
                 "total_exact_probe_hits": total_exact_probe_hits,
                 "detected_species": detected_species,
-                "status": error or f"{total_exact_probe_hits} exact hit(s)",
+                "host_cells": host_cells,
+                "host_cells_label": _format_host_cells(host_cells),
+                "control_gene_means": dict(gene_means),
+                "normalized": host_cells > 0,
+                "status": error or f"{total_exact_probe_hits} matched read(s)",
                 "error": error,
             }
         )
@@ -396,8 +506,10 @@ def etol_probe_count_rows(
     rows = []
     for database_result in database_results:
         counts = _probe_counts(database_result, query_ids)
+        host_cells = compute_host_cells(database_result.get("etol_control_counts") or {})
         sample = _sample_label(database_result)
         for record in records:
+            raw = counts.get(record["probe"], 0)
             rows.append(
                 {
                     "sample_database": sample,
@@ -405,7 +517,10 @@ def etol_probe_count_rows(
                     "species": record["species"],
                     "group": record["group"],
                     "domain": record["domain"],
-                    "exact_hits": counts.get(record["probe"], 0),
+                    "exact_hits": raw,
+                    "normalized_abundance": _format_normalized(
+                        normalized_abundance(raw, host_cells)
+                    ),
                 }
             )
     return rows
@@ -421,6 +536,7 @@ def etol_species_count_rows(
     rows = []
     for database_result in database_results:
         counts = _probe_counts(database_result, query_ids)
+        host_cells = compute_host_cells(database_result.get("etol_control_counts") or {})
         sample = _sample_label(database_result)
         for taxon in taxa:
             taxon_probes = probes_by_taxon[taxon["taxon"]]
@@ -435,6 +551,10 @@ def etol_species_count_rows(
                     "probes_in_panel": taxon["probes_in_panel"],
                     "probes_detected": probes_detected,
                     "exact_hits": exact_hits,
+                    "host_cells": _format_host_cells(host_cells),
+                    "normalized_abundance": _format_normalized(
+                        normalized_abundance(exact_hits, host_cells)
+                    ),
                 }
             )
     return rows

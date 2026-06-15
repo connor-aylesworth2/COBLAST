@@ -83,12 +83,24 @@
                 <span>Hit filter</span>
                 {{ batch.hit_filter }}
               </div>
+              {% if batch.etol_dedup_removed %}
+                <div class="summary-item">
+                  <span>Reads de-duplicated</span>
+                  {{ batch.etol_dedup_removed }} duplicate hit(s) reallocated to best probe
+                </div>
+              {% endif %}
+              {% if batch.etol_normalized %}
+                <div class="summary-item">
+                  <span>Host normalization</span>
+                  reads per host cell (PGK1/hNSE control probes)
+                </div>
+              {% endif %}
             {% endif %}
             {% if batch.human_filter_enabled %}
               <div class="summary-item">
                 <span>Human filter</span>
                 {{ batch.human_filter_hits_removed }} hit(s) removed
-                <span class="muted">vs {{ batch.human_filter_db }}</span>
+                <span class="muted">vs {{ batch.human_filter_db }} (&gt;150 bits)</span>
               </div>
             {% endif %}
           </div>
@@ -182,6 +194,19 @@
                     <span>Species detected</span>
                     {{ sample.species_detected }} / {{ sample.species_total }}
                   </div>
+                  {% if batch.etol_normalized %}
+                    <div class="summary-item">
+                      <span>Est. host cells</span>
+                      {% if sample.normalized %}
+                        {{ sample.host_cells_label }}
+                        <span class="muted">
+                          ({% for gene, mean in sample.control_gene_means.items() %}{{ gene }} {{ '%.0f'|format(mean) }}{% if not loop.last %}, {% endif %}{% endfor %} reads/probe)
+                        </span>
+                      {% else %}
+                        n/a <span class="muted">(no control-probe reads)</span>
+                      {% endif %}
+                    </div>
+                  {% endif %}
                 </div>
                 {% if sample.error %}
                   <p class="error">{{ sample.error }}</p>
@@ -195,6 +220,7 @@
                           <th>Species/Taxon</th>
                           <th>Probes detected</th>
                           <th>Matched reads</th>
+                          {% if batch.etol_normalized %}<th>Reads/host cell</th>{% endif %}
                         </tr>
                       </thead>
                       <tbody>
@@ -205,6 +231,7 @@
                             <td><strong>{{ species.species }}</strong></td>
                             <td class="numeric-cell">{{ species.probes_detected }} / {{ species.probes_in_panel }}</td>
                             <td class="numeric-cell">{{ species.exact_hits }}</td>
+                            {% if batch.etol_normalized %}<td class="numeric-cell">{{ species.normalized_label or "n/a" }}</td>{% endif %}
                           </tr>
                         {% endfor %}
                       </tbody>
