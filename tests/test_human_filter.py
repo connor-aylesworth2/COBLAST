@@ -41,14 +41,15 @@ def test_extract_reads_reports_none_when_no_recovery_method_succeeds(monkeypatch
     assert method == "none"
 
 
-def test_find_human_read_ids_requires_full_query_coverage(monkeypatch):
+def test_find_human_read_ids_uses_bitscore_threshold(monkeypatch):
     captured_command = []
 
     def run(command, **_kwargs):
         captured_command.extend(command)
         return SimpleNamespace(
             returncode=0,
-            stdout="full-read\t100\npartial-read\t99.5\ninvalid\tnot-a-number\n",
+            # 200.5 > 150 -> human; 150 is not strictly > 150 -> kept; 80 -> kept.
+            stdout="human-read\t200.5\nborderline\t150\nweak-read\t80.0\ninvalid\tnope\n",
             stderr="",
         )
 
@@ -56,11 +57,29 @@ def test_find_human_read_ids_requires_full_query_coverage(monkeypatch):
     monkeypatch.setattr(human_filter.subprocess, "run", run)
 
     human_ids = human_filter.find_human_read_ids(
-        {"full-read": "ACGT", "partial-read": "TGCA"}, "human-db"
+        {"human-read": "ACGT", "borderline": "TTTT", "weak-read": "TGCA"}, "human-db"
     )
 
-    assert human_ids == {"full-read"}
-    qcov_index = captured_command.index("-qcov_hsp_perc")
-    assert captured_command[qcov_index + 1] == "100"
+    assert human_ids == {"human-read"}
     outfmt_index = captured_command.index("-outfmt")
-    assert captured_command[outfmt_index + 1] == "6 qseqid qcovhsp"
+    assert captured_command[outfmt_index + 1] == "6 qseqid bitscore"
+    # The bitscore is the sole criterion: no coverage filter is applied.
+    assert "-qcov_hsp_perc" not in captured_command
+
+
+def test_find_human_read_ids_threshold_is_configurable(monkeypatch):
+    def run(_command, **_kwargs):
+        return SimpleNamespace(
+            returncode=0,
+            stdout="read-a\t130\nread-b\t90\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(human_filter, "blast_exe", lambda name: name)
+    monkeypatch.setattr(human_filter.subprocess, "run", run)
+
+    human_ids = human_filter.find_human_read_ids(
+        {"read-a": "ACGT", "read-b": "TGCA"}, "human-db", bitscore_threshold=100.0
+    )
+
+    assert human_ids == {"read-a"}  # 130 > 100, 90 < 100

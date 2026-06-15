@@ -13,7 +13,7 @@ from flask import Flask, Response, abort, redirect, render_template, request, ur
 
 from apoe_summary import apoe_probe_query_ids, build_apoe_probe_summary
 from etol_summary import (
-    ETOL_EXACT_MATCH_FILTER,
+    ETOL_NET_FILTER,
     build_etol_probe_summary,
     etol_preset_fasta,
     etol_preset_form_field,
@@ -27,6 +27,7 @@ from etol_summary import (
 from human_filter import filter_human_hits
 from blast_runner import (
     BLAST_PROGRAMS,
+    ETOL_NET_QCOV_HSP_PERC,
     run_blast,
     run_blast_probe_panel,
     run_jobs_concurrently,
@@ -105,7 +106,11 @@ def numeric_hit_value(hit: dict[str, str], key: str) -> float | None:
 def filter_exact_probe_hits(
     hits: list[dict[str, str]], probe_query_ids: set[str]
 ) -> list[dict[str, str]]:
-    """Keep only exact probe matches (100% identity and coverage) after parsing."""
+    """Keep only exact probe matches (100% identity and coverage) after parsing.
+
+    Used by the APOE genotyping preset, where only full-length exact matches are
+    meaningful. The eToL presets use ``filter_net_probe_hits`` instead.
+    """
     exact_hits = []
     for hit in hits:
         percent_identity = numeric_hit_value(hit, "pident")
@@ -117,6 +122,35 @@ def filter_exact_probe_hits(
         ):
             exact_hits.append(hit)
     return exact_hits
+
+
+ETOL_NET_MIN_QCOV = float(ETOL_NET_QCOV_HSP_PERC)
+
+
+def filter_net_probe_hits(
+    hits: list[dict[str, str]],
+    probe_query_ids: set[str],
+    min_qcov: float = ETOL_NET_MIN_QCOV,
+) -> list[dict[str, str]]:
+    """Keep eToL "net" probe matches after parsing.
+
+    Following Hu, Haas & Lathe 2022, the eToL panels cast a permissive net: a hit
+    is retained when a panel probe aligns over at least ``min_qcov`` percent of
+    its length, with no identity floor, so partial and imperfect rRNA matches are
+    kept for the secondary human filter to adjudicate. BLAST already enforces the
+    coverage floor (``-qcov_hsp_perc``); re-checking it here also restricts the
+    hits to probes that belong to the active panel.
+    """
+    net_hits = []
+    for hit in hits:
+        query_coverage = numeric_hit_value(hit, "qcovs")
+        if (
+            hit.get("qseqid", "") in probe_query_ids
+            and query_coverage is not None
+            and query_coverage >= min_qcov
+        ):
+            net_hits.append(hit)
+    return net_hits
 
 
 def redirect_to_databases(message: str = "", error: str = ""):
@@ -531,11 +565,15 @@ def run_batch_blast_route():
                     exact_match_probe=exact_probe_preset,
                     prevalidated_query=prevalidated_query,
                 )
-            hits = (
-                filter_exact_probe_hits(result.hits, probe_query_ids)
-                if exact_probe_preset
-                else result.hits
-            )
+            # APOE genotyping keeps only full-length exact matches; the eToL
+            # panels keep the paper's permissive net (>=70% probe coverage, no
+            # identity floor). Non-preset batch runs keep every hit.
+            if apoe_probe_preset:
+                hits = filter_exact_probe_hits(result.hits, probe_query_ids)
+            elif etol_preset_key:
+                hits = filter_net_probe_hits(result.hits, probe_query_ids)
+            else:
+                hits = result.hits
             # Secondary human filter runs on the exact-probe hits; a failure
             # here keeps the eToL hits unfiltered rather than discarding the run.
             human_filter_stats = None
@@ -647,7 +685,7 @@ def run_batch_blast_route():
     if apoe_probe_preset:
         hit_filter = APOE_EXACT_MATCH_FILTER
     elif etol_preset_key:
-        hit_filter = ETOL_EXACT_MATCH_FILTER
+        hit_filter = ETOL_NET_FILTER
 
     payload = {
         "program": program,

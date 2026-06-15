@@ -28,7 +28,9 @@ from config import resource_path
 
 ETOL_FULL_FASTA_PATH = resource_path("data", "eToL_probes.fasta")
 ETOL_CONTROL_FASTA_PATH = resource_path("data", "eToL_control_probes.fasta")
-ETOL_EXACT_MATCH_FILTER = "100% identity and 100% query coverage"
+# The eToL panels keep the paper's permissive net rather than exact matches:
+# any probe alignment covering >=70% of the probe, with no identity floor.
+ETOL_NET_FILTER = ">=70% query coverage (eToL net; no identity filter)"
 
 # Reused to label a sample by its SRA accession when one is present in the
 # database name/path; otherwise we fall back to the display name.
@@ -175,9 +177,10 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
                 "description": (
                     "Microbial electronic Tree of Life panel across Archaea, "
                     "Bacteria, Chloroplastida, Amoebozoa, basal Eukaryota, Fungi, "
-                    "and Holozoa/Metazoa; BLASTN; 100% identity and 100% query "
-                    "coverage. Counts exact probe hits per probe and species for "
-                    "each selected patient database."
+                    "and Holozoa/Metazoa; BLASTN megablast net; probe matches "
+                    "covering >=70% of the probe (no identity filter). Counts "
+                    "matching reads per probe and species for each selected "
+                    "patient database."
                 ),
                 "pairs": _full_pairs,
             },

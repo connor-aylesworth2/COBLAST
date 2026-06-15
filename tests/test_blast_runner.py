@@ -10,6 +10,7 @@ import pytest
 from blast_runner import (
     BLAST_PROGRAMS,
     COBLAST_NUM_THREADS_ENV,
+    ETOL_NET_QCOV_HSP_PERC,
     EXACT_MATCH_MAX_TARGET_SEQS,
     EXACT_MATCH_MT_MODE,
     NUM_THREADS_LIMIT,
@@ -208,6 +209,38 @@ def test_exact_match_probe_ignores_user_max_target_seqs():
         exact_match_probe=True,
     )
     assert params["max_target_seqs"] == EXACT_MATCH_MAX_TARGET_SEQS
+
+
+def test_etol_net_probe_sets_coverage_floor_without_identity_filter():
+    # The eToL "net" keeps partial/imperfect matches: a query-coverage floor with
+    # no identity filter, and the same lifted target cap as the exact path so
+    # deep patient databases are counted in full.
+    params = build_blast_parameters(
+        program="blastn",
+        evalue=None,
+        max_target_seqs="25",  # a user value must not truncate net counts either
+        word_size=None,
+        perc_identity=None,
+        etol_net_probe=True,
+    )
+    assert params["qcov_hsp_perc"] == ETOL_NET_QCOV_HSP_PERC
+    assert "perc_identity" not in params
+    assert params["max_target_seqs"] == EXACT_MATCH_MAX_TARGET_SEQS
+
+
+def test_etol_net_probe_drops_user_supplied_identity_floor():
+    # An identity value must not leak through the net path (it would defeat the
+    # purpose of keeping imperfect matches).
+    params = build_blast_parameters(
+        program="blastn",
+        evalue=None,
+        max_target_seqs=None,
+        word_size=None,
+        perc_identity="95",
+        etol_net_probe=True,
+    )
+    assert "perc_identity" not in params
+    assert params["qcov_hsp_perc"] == ETOL_NET_QCOV_HSP_PERC
 
 
 def test_perc_identity_rejected_for_non_blastn():

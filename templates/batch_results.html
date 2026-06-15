@@ -77,7 +77,7 @@
             {% elif batch.etol_probe_preset %}
               <div class="summary-item">
                 <span>Probe preset</span>
-                {{ batch.etol_preset_label or "eToL exact-match probes" }}
+                {{ batch.etol_preset_label or "eToL net probes" }}
               </div>
               <div class="summary-item">
                 <span>Hit filter</span>
@@ -160,17 +160,18 @@
               <h2 class="panel__title">eToL Probe Summary</h2>
             </div>
             <p class="muted">
-              Exact probe hits ({{ batch.hit_filter }}) counted per probe and grouped
-              by species across the electronic Tree of Life. The species shown are
-              those detected in each sample; use the probe-count download for the
-              full per-probe matrix (every probe, including zeros) for plotting.
+              Probe-matched reads ({{ batch.hit_filter }}) counted per probe and
+              grouped by species across the electronic Tree of Life. The species
+              shown are those detected in each sample; use the probe-count download
+              for the full per-probe matrix (every probe, including zeros) for
+              plotting.
             </p>
             {% for sample in batch.etol_probe_summary or [] %}
               <div class="etol-sample">
                 <h3 class="section-title">{{ sample.sample_database }}</h3>
                 <div class="summary-list">
                   <div class="summary-item">
-                    <span>Total exact probe hits</span>
+                    <span>Total probe-matched reads</span>
                     {{ sample.total_exact_probe_hits }}
                   </div>
                   <div class="summary-item">
@@ -193,7 +194,7 @@
                           <th>Class</th>
                           <th>Species/Taxon</th>
                           <th>Probes detected</th>
-                          <th>Exact hits</th>
+                          <th>Matched reads</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -210,7 +211,7 @@
                     </table>
                   </div>
                 {% else %}
-                  <p class="muted">No eToL probes matched exactly in this sample.</p>
+                  <p class="muted">No eToL probes matched in this sample.</p>
                 {% endif %}
               </div>
             {% else %}

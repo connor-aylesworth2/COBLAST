@@ -57,7 +57,7 @@ separate from advanced BLAST parameters.
 For SRA-style batch exploration, COBLAST can run one query across multiple
 registered local databases. It also includes an APOE exact-match batch preset
 that searches four stored APOE probes and summarizes per-sample probe counts in
-a visual table plus CSV/TSV exports, and eToL exact-match batch presets that
+a visual table plus CSV/TSV exports, and eToL batch presets that
 search the electronic Tree of Life probe panel (full 1,017-probe microbial set,
 a human-control set, or a one-probe-per-species quick set) and summarize the
 species detected per sample with per-probe and per-species count exports.
@@ -503,19 +503,27 @@ falls back to the database display name. APOE summary tables can be downloaded
 as CSV or TSV, and the underlying raw exact-hit table remains available for
 troubleshooting.
 
-### eToL exact-match probe presets
+### eToL probe presets (the net)
 
-The batch page also includes **eToL exact-match probe presets** built for the
+The batch page also includes **eToL probe presets** built for the
 electronic Tree of Life (eToL) workflow described in Hu, Haas & Lathe,
 *BMC Microbiology* 2022;22:317. Each preset BLASTNs a stored probe panel against
-the selected nucleotide databases and — exactly like the APOE preset — saves only
-hits with 100% identity and 100% query coverage. The probe FASTA is supplied
-automatically, so the query box is left empty (read-only) when a preset is on.
+the selected nucleotide databases. Unlike the APOE genotyper (which saves only
+100% identity / 100% coverage hits), the eToL panels cast the paper's permissive
+*net*: a hit is kept when a probe aligns over at least 70% of its length, with no
+identity filter, so partial and imperfect rRNA matches are retained for the
+secondary human filter to adjudicate. The probe FASTA is supplied automatically,
+so the query box is left empty (read-only) when a preset is on.
 
-So those counts reflect true read depth, the preset path enforces
-`-perc_identity 100 -qcov_hsp_perc 100` and lifts the `max_target_seqs` cap (see
-the `EXACT_MATCH_*` constants in `blast_runner.py`), which stops a probe that
-matches many reads in a deep patient database from being silently truncated.
+So deep patient databases are counted in full, the eToL preset path sets
+`-qcov_hsp_perc 70` with no `-perc_identity` filter and lifts the
+`max_target_seqs` cap (see the `ETOL_NET_*` and `EXACT_MATCH_*` constants in
+`blast_runner.py`), which stops a probe that matches many reads in a deep patient
+database from being silently truncated. The 70% coverage floor is COBLAST's
+operationalization of the paper's net: Hu, Haas & Lathe ran *default* megablast
+(no identity/coverage filter) and observed that ~80–90% of retained matches
+covered 70–100% of the probe, so the floor keeps that bulk while dropping the
+low-coverage tail.
 
 To keep whole-SRA runs fast, the eToL panel is searched in two passes: probes
 that have a 28-base unambiguous window run with `megablast` (much faster on large
@@ -538,13 +546,13 @@ active at a time** (selecting one clears the others):
 
 This is intended for the patient-sample use case: register a patient's brain (or
 other tissue) RNA-seq reads as a local nucleotide database, select it (or several
-patients) in the batch picker, and run a preset to count exact probe matches.
+patients) in the batch picker, and run a preset to count probe matches (the net).
 
 eToL batch results include an `eToL Probe Summary` section with one block per
-selected sample/database. Each block reports the total exact probe hits, how many
-probes were detected, how many species/taxa were detected, and a table of the
-detected species (grouped by domain and eToL class code, sorted by exact-hit
-count). Species are shown by species label only (the class prefix and rRNA-unit
+selected sample/database. Each block reports the total probe-matched reads, how
+many probes were detected, how many species/taxa were detected, and a table of
+the detected species (grouped by domain and eToL class code, sorted by
+matched-read count). Species are shown by species label only (the class prefix and rRNA-unit
 suffix are stripped, e.g. `B0_Tmaritima_16S` is displayed as `Tmaritima`). Class
 codes map to domains per the eToL paper: A Archaea; B Bacteria; C Chloroplastida;
 D Amoebozoa; E0 basal Eukaryota; F Fungi; H Holozoa/Metazoa.
@@ -567,16 +575,21 @@ number of FASTA query records per run is 1,500 (`MAX_FASTA_RECORDS` in
 
 The microbial eToL presets (eToL Full and eToL Quick) offer an optional
 **secondary human filter** that removes matched patient reads that are actually
-human-derived — the second-round host filtering recommended in Hu, Haas & Lathe
-2022. When enabled (checkbox on the batch page, plus a human-genome database
-selector), COBLAST takes the exact-probe hits for each patient database,
-recovers the full matched reads, BLASTs them (`megablast`) against the selected
-human genome database, and drops every hit whose read produces a human HSP with
-100% query coverage (`-qcov_hsp_perc 100`); 100% query coverage is the sole
-criterion, with no E-value cutoff (the E-value threshold is set permissively so
-it never filters). Partial human alignments are retained. The results page
-reports how many hits were removed per sample, and all summaries/exports reflect
-the filtered hit list.
+human-derived — the second-round host filtering required by Hu, Haas & Lathe
+2022 because sequence similarity is non-transitive (a read can be human yet still
+match a probe that itself has no human match). When enabled (checkbox on the
+batch page, plus a human-genome database selector), COBLAST takes the net probe
+hits for each patient database, recovers the full matched reads, BLASTs them
+(`megablast`) against the selected human genome database, and drops every read
+whose best human alignment scores **above 150 bits**; the bitscore is the sole
+criterion, with no coverage or E-value cutoff (the E-value is set permissively so
+it never filters). The >150-bit cutoff is the value the paper applied to brain
+(and liver/skin) datasets, so it is COBLAST's default for brain samples — note
+the paper *adjusted* this cutoff to each dataset's mean read length (>160 MSBB,
+>126 Rockefeller, >100 Miami), so libraries with very different read lengths may
+warrant a different threshold (`HUMAN_BITSCORE_THRESHOLD` in `human_filter.py`).
+The results page reports how many hits were removed per sample, and all
+summaries/exports reflect the filtered hit list.
 
 Matched reads are recovered by their `sseqid` (which equals the read's FASTA
 record id): first with `blastdbcmd` (when the patient database was built with

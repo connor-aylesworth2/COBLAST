@@ -1,12 +1,14 @@
 """Secondary human-genome read filter for the microbial eToL presets.
 
 After the first eToL BLAST (microbial probes vs a patient database) is reduced to
-exact probe hits, some of the matched patient reads can still be human-derived
-(for example, a read whose probe-matching core is shared with the host). This
-module performs the second-round human filtering described in Hu, Haas & Lathe
-2022: it pulls the matched patient reads back out, BLASTs them against a human
-genome database, and reports which reads hit the human genome so the caller can
-drop those hits from the final eToL results.
+the net of probe hits, some of the matched patient reads can still be human-
+derived (for example, a read whose probe-matching core is shared with the host).
+This is unavoidable because sequence similarity is non-transitive: a read can be
+human yet still match a probe that itself has no human match. This module
+performs the second-round human filtering described in Hu, Haas & Lathe 2022: it
+pulls the matched patient reads back out, BLASTs them against a human genome
+database, and reports which reads score a strong human alignment so the caller
+can drop those hits from the final eToL results.
 
 Reads are recovered by their ``sseqid`` (which equals the FASTA record id):
 first via ``blastdbcmd`` (works when the patient DB was built with
@@ -24,12 +26,17 @@ from config import blast_exe
 from database_registry import blast_safe_path
 
 
-# A read is removed only when one human-genome HSP covers the complete query;
-# 100% query coverage is the sole criterion. The E-value threshold is set
-# permissively high so it never excludes a full-coverage alignment (no e-value
-# filtering happens in this second, human-genome search).
+# A read is removed when its best human-genome alignment scores above
+# HUMAN_BITSCORE_THRESHOLD bits; the bitscore is the sole criterion. Hu, Haas &
+# Lathe 2022 used a per-dataset cutoff adjusted to each library's mean read size
+# (>160 MSBB, >126 Rockefeller, >100 Miami); >150 is the value they applied to
+# brain (and liver/skin) datasets, so it is COBLAST's default for brain samples.
+# Because the cutoff tracks read length, libraries with very different mean read
+# lengths may warrant a different value. The E-value is left permissive so it
+# never pre-filters an alignment, leaving bitscore as the only gate (no coverage
+# or E-value filtering happens in this second, human-genome search).
 DEFAULT_HUMAN_EVALUE = "1e9"
-HUMAN_QUERY_COVERAGE_PERCENT = "100"
+HUMAN_BITSCORE_THRESHOLD = 150.0
 DEFAULT_HUMAN_TIMEOUT_SECONDS = 1800
 
 
@@ -148,9 +155,11 @@ def find_human_read_ids(
     human_db_prefix_path: str,
     *,
     evalue: str = DEFAULT_HUMAN_EVALUE,
+    bitscore_threshold: float = HUMAN_BITSCORE_THRESHOLD,
     timeout_seconds: int = DEFAULT_HUMAN_TIMEOUT_SECONDS,
 ) -> set[str]:
-    """Return read ids with a full-query-coverage human-genome HSP."""
+    """Return read ids whose best human-genome alignment scores above
+    ``bitscore_threshold`` bits (Hu, Haas & Lathe 2022 brain cutoff = 150)."""
     if not reads:
         return set()
     with tempfile.TemporaryDirectory(prefix="human_filter_q_") as tmpdir:
@@ -159,6 +168,8 @@ def find_human_read_ids(
             "".join(f">{read_id}\n{sequence}\n" for read_id, sequence in reads.items()),
             encoding="utf-8",
         )
+        # -max_target_seqs 1 keeps the single best subject, whose top HSP carries
+        # the read's maximum bitscore -- exactly the value the threshold gates on.
         completed = subprocess.run(
             [
                 str(blast_exe("blastn")),
@@ -170,12 +181,10 @@ def find_human_read_ids(
                 blast_safe_path(human_db_prefix_path),
                 "-evalue",
                 str(evalue),
-                "-qcov_hsp_perc",
-                HUMAN_QUERY_COVERAGE_PERCENT,
                 "-max_target_seqs",
                 "1",
                 "-outfmt",
-                "6 qseqid qcovhsp",
+                "6 qseqid bitscore",
             ],
             capture_output=True,
             text=True,
@@ -193,10 +202,10 @@ def find_human_read_ids(
         if len(fields) < 2:
             continue
         try:
-            query_coverage = float(fields[1])
+            bitscore = float(fields[1])
         except ValueError:
             continue
-        if query_coverage == 100.0:
+        if bitscore > bitscore_threshold:
             human_ids.add(fields[0].strip())
     return human_ids
 
@@ -208,12 +217,15 @@ def filter_human_hits(
     source_fasta_path: str,
     human_db_prefix_path: str,
     evalue: str = DEFAULT_HUMAN_EVALUE,
+    bitscore_threshold: float = HUMAN_BITSCORE_THRESHOLD,
     timeout_seconds: int = DEFAULT_HUMAN_TIMEOUT_SECONDS,
 ) -> tuple[list[dict[str, str]], dict[str, Any]]:
-    """Drop hits whose patient read matches the human genome.
+    """Drop hits whose patient read scores a strong human-genome alignment.
 
-    Returns the kept hits plus a stats dict describing what happened. Reads that
-    cannot be recovered are conservatively kept (never dropped on a guess).
+    A read is treated as human when its best human alignment exceeds
+    ``bitscore_threshold`` bits. Returns the kept hits plus a stats dict
+    describing what happened. Reads that cannot be recovered are conservatively
+    kept (never dropped on a guess).
     """
     read_ids = _unique_read_ids(hits)
     stats: dict[str, Any] = {
@@ -244,6 +256,7 @@ def filter_human_hits(
         reads,
         human_db_prefix_path,
         evalue=evalue,
+        bitscore_threshold=bitscore_threshold,
         timeout_seconds=timeout_seconds,
     )
     stats["human_reads"] = len(human_ids)

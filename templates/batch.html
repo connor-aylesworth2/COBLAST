@@ -59,7 +59,7 @@
               <input class="probe-preset" id="{{ option.form_field }}" name="{{ option.form_field }}" type="checkbox" value="1" data-preset-panel="{{ option.panel_label }}" data-microbial="{{ 'true' if option.microbial else 'false' }}">
               <span>
                 <strong>{{ option.label }}</strong>
-                <br><span class="muted">{{ option.probe_count }} probes; BLASTN; 100% identity and 100% query coverage. {{ option.description }}</span>
+                <br><span class="muted">{{ option.probe_count }} probes; BLASTN megablast net; &ge;70% probe coverage, no identity filter. {{ option.description }}</span>
               </span>
             </label>
           {% endfor %}
@@ -71,7 +71,7 @@
             <input id="human_filter" name="human_filter" type="checkbox" value="1">
             <span>
               <strong>Remove reads that also match the human genome</strong>
-              <br><span class="muted">Microbial eToL presets (Full, Quick) only. After the probe search, each matched patient read is BLASTed against the human genome database below; the read is dropped only when a human alignment covers 100% of it.</span>
+              <br><span class="muted">Microbial eToL presets (Full, Quick) only. After the probe search, each matched patient read is BLASTed against the human genome database below; the read is dropped when its best human alignment scores above 150 bits (Hu, Haas &amp; Lathe 2022 brain cutoff).</span>
             </span>
           </label>
           <label for="human_filter_db_id">Human genome database</label>

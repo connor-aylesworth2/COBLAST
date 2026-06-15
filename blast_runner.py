@@ -120,6 +120,19 @@ EXACT_MATCH_MAX_TARGET_SEQS = "5000000"
 # across thread counts.
 EXACT_MATCH_MT_MODE = "0"
 
+# eToL "net" probe search (the microbial/control eToL panels, run via
+# run_blast_probe_panel). Unlike the APOE exact genotyper above, the eToL
+# workflow of Hu, Haas & Lathe 2022 (BMC Microbiology 22:317) deliberately casts
+# a permissive "net": it keeps partial and imperfect probe matches and relies on
+# the secondary human filter to remove host reads. The paper ran default
+# megablast (no identity/coverage filter) and observed that ~80-90% of retained
+# matches covered 70-100% of the probe. COBLAST therefore applies a query-
+# coverage floor with NO identity filter, while still lifting max_target_seqs so
+# deep patient databases are counted in full. The floor is a hit's coverage of
+# the probe (the query), so a read must align over at least this fraction of the
+# 64-mer probe to be retained.
+ETOL_NET_QCOV_HSP_PERC = "70"
+
 # CPU parallelism. -num_threads is BLAST+'s own multi-core switch; mt_mode picks
 # how the work is divided across those threads (0 auto, 1 by query, 2 by db).
 NUM_THREADS_LIMIT = 1024
@@ -570,13 +583,17 @@ def build_blast_parameters(
     num_threads: int | str | None = None,
     mt_mode: str | None = None,
     exact_match_probe: bool = False,
+    etol_net_probe: bool = False,
 ) -> dict[str, str]:
     """Build validated BLAST options from the user-supplied advanced fields.
 
     Any field the user leaves blank is omitted, so BLAST+ applies its own
     defaults (e.g. e-value 10, max_target_seqs 500). When ``exact_match_probe``
-    is set, the eToL/APOE counting workflow overrides identity/coverage and
-    lifts max_target_seqs so per-probe read counts are not truncated.
+    is set, the APOE counting workflow overrides identity/coverage to require
+    full-length exact matches and lifts max_target_seqs. When ``etol_net_probe``
+    is set instead, the eToL workflow casts the paper's permissive "net": a
+    query-coverage floor with no identity filter, plus the same lifted
+    max_target_seqs so per-probe read counts are not truncated.
     """
     parameters: dict[str, str] = {}
 
@@ -614,6 +631,14 @@ def build_blast_parameters(
         parameters["perc_identity"] = EXACT_MATCH_PERC_IDENTITY
         parameters["qcov_hsp_perc"] = EXACT_MATCH_QCOV_HSP_PERC
         parameters["max_target_seqs"] = EXACT_MATCH_MAX_TARGET_SEQS
+    elif etol_net_probe:
+        # The eToL net keeps partial/imperfect matches: a query-coverage floor
+        # with no identity filter (any value the caller supplied is dropped),
+        # plus the same lifted target cap as the exact path so deep patient
+        # databases are counted in full.
+        parameters.pop("perc_identity", None)
+        parameters["qcov_hsp_perc"] = ETOL_NET_QCOV_HSP_PERC
+        parameters["max_target_seqs"] = EXACT_MATCH_MAX_TARGET_SEQS
 
     num_threads_text = None if num_threads is None else str(num_threads)
     parsed_num_threads = parse_bounded_int("CPU threads", num_threads_text, 1, NUM_THREADS_LIMIT)
@@ -622,7 +647,7 @@ def build_blast_parameters(
         # mt_mode only matters with real parallelism; an explicit mode wins, and
         # exact-probe searches use BLAST's workload-aware automatic mode.
         chosen_mt_mode = parse_mt_mode(mt_mode) or (
-            EXACT_MATCH_MT_MODE if exact_match_probe else None
+            EXACT_MATCH_MT_MODE if (exact_match_probe or etol_net_probe) else None
         )
         if int(parsed_num_threads) > 1 and chosen_mt_mode is not None:
             parameters["mt_mode"] = chosen_mt_mode
@@ -645,6 +670,7 @@ def run_blast(
     num_threads: int | str | None = None,
     mt_mode: str | None = None,
     exact_match_probe: bool = False,
+    etol_net_probe: bool = False,
     prevalidated_query: FastaValidationResult | None = None,
 ) -> BlastResult:
     """Run one local BLAST search and return both raw and parsed outputs."""
@@ -688,6 +714,7 @@ def run_blast(
         num_threads=effective_num_threads,
         mt_mode=mt_mode,
         exact_match_probe=exact_match_probe,
+        etol_net_probe=etol_net_probe,
     )
 
     # Callers that fan one query across many databases (the batch route) can
@@ -844,13 +871,14 @@ def run_blast_probe_panel(
     timeout_seconds: int | str | None = None,
     num_threads: int | str | None = None,
 ) -> BlastResult:
-    """Run an exact-match probe panel, splitting it by megablast seed eligibility.
+    """Run the eToL "net" probe panel, splitting it by megablast seed eligibility.
 
     megablast is much faster on whole-SRA databases but needs a 28-base
     unambiguous word to seed. Probes that have such a window run with megablast;
     the few whose ambiguous bases leave no 28-base window run with blastn-short.
-    Both passes use the exact-match enforcement and their hits are merged, so the
-    full panel is searched at megablast speed for the bulk of the probes.
+    Both passes use the eToL net enforcement (a query-coverage floor, no identity
+    filter, lifted target cap) and their hits are merged, so the full panel is
+    searched at megablast speed for the bulk of the probes.
     """
     megablast_pairs: list[tuple[str, str]] = []
     short_pairs: list[tuple[str, str]] = []
@@ -871,7 +899,7 @@ def run_blast_probe_panel(
                 output_format=output_format,
                 timeout_seconds=timeout_seconds,
                 num_threads=num_threads,
-                exact_match_probe=True,
+                etol_net_probe=True,
             )
         )
     if not runs:
