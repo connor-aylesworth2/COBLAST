@@ -174,7 +174,7 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
             "etol_full",
             {
                 "form_field": "etol_probe_preset",
-                "label": "eToL Full exact-match probe batch",
+                "label": "eToL Full probe batch",
                 "short_label": "eToL Full",
                 "panel_label": "eToL Full",
                 "microbial": True,
@@ -193,7 +193,7 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
             "etol_control",
             {
                 "form_field": "etol_control_probe_preset",
-                "label": "eToL Control exact-match probe batch",
+                "label": "eToL Control probe batch",
                 "short_label": "eToL Control (human control)",
                 "panel_label": "eToL Control",
                 "microbial": False,
@@ -208,7 +208,7 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
             "etol_quick",
             {
                 "form_field": "etol_quick_probe_preset",
-                "label": "eToL Quick exact-match probe batch",
+                "label": "eToL Quick probe batch",
                 "short_label": "eToL Quick (one probe per species)",
                 "panel_label": "eToL Quick",
                 "microbial": True,
