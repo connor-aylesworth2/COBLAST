@@ -73,6 +73,7 @@ fi
 mkdir -p "$OUT_DIR"
 QUERY="$OUT_DIR/${PROBE_ID}.fasta"
 RESULTS="$OUT_DIR/${PROBE_ID}_vs_$(basename "$DB_PREFIX").tsv"
+RESULTS_CSV="$OUT_DIR/${PROBE_ID}_vs_$(basename "$DB_PREFIX").csv"
 CMD_LOG="$OUT_DIR/${PROBE_ID}_vs_$(basename "$DB_PREFIX").cmd.txt"
 
 printf '>%s\n%s\n' "$PROBE_ID" "$PROBE_SEQ" > "$QUERY"
@@ -99,9 +100,19 @@ echo "" >&2
 # outfmt 6 prints one tab-delimited line per HSP, no header.
 "${cmd[@]}" > "$RESULTS"
 
+# Excel-friendly copy: same data as a UTF-8-BOM CSV with a header row. Every field
+# is quoted because stitle can contain commas. Double-clicks open in Excel cleanly;
+# the .tsv above stays the byte-for-byte comparison artifact.
+{
+  printf '\xEF\xBB\xBF'
+  echo 'qseqid,sseqid,stitle,pident,length,qcovs,evalue,bitscore'
+  awk -F'\t' 'BEGIN{OFS=","} {for(i=1;i<=NF;i++){gsub(/"/,"\"\"",$i); $i="\"" $i "\""} print}' "$RESULTS"
+} > "$RESULTS_CSV"
+
 HITS=$(grep -c . "$RESULTS" || true)
 echo "Hits (rows) : $HITS   (capped at BLAST's default max_target_seqs=500)" >&2
 echo "Results     : $RESULTS" >&2
+echo "Excel (CSV) : $RESULTS_CSV" >&2
 echo "Command log : $CMD_LOG" >&2
 echo "" >&2
 echo "Columns: qseqid  sseqid  stitle  pident  length  qcovs  evalue  bitscore" >&2
