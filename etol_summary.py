@@ -30,9 +30,10 @@ from config import resource_path
 ETOL_FULL_FASTA_PATH = resource_path("data", "eToL_probes.fasta")
 ETOL_CONTROL_FASTA_PATH = resource_path("data", "eToL_control_probes.fasta")
 # The eToL panels keep the paper's permissive net rather than exact matches:
-# default megablast significance (BLAST's default e-value), with no identity or
-# coverage filter, so partial and mismatched rRNA matches are all retained.
-ETOL_NET_FILTER = "default megablast net (no identity or coverage filter)"
+# default megablast with no identity or coverage filter, gated on E-value < 0.01
+# (Hu, Haas & Lathe 2022), so partial and mismatched rRNA matches are retained
+# but statistically insignificant ones are not.
+ETOL_NET_FILTER = "default megablast net, E-value < 0.01 (no identity or coverage filter)"
 
 # Reused to label a sample by its SRA accession when one is present in the
 # database name/path; otherwise we fall back to the display name.
@@ -159,8 +160,8 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
                 "description": (
                     "Microbial electronic Tree of Life panel across Archaea, "
                     "Bacteria, Chloroplastida, Amoebozoa, basal Eukaryota, Fungi, "
-                    "and Holozoa/Metazoa; BLASTN default megablast net (no "
-                    "identity or coverage filter). Counts matching reads per probe "
+                    "and Holozoa/Metazoa; BLASTN default megablast net (E-value "
+                    "< 0.01, no identity or coverage filter). Counts matching reads per probe "
                     "and species, de-duplicates reads across probes, and reports "
                     "reads per host cell using the PGK1/hNSE control probes."
                 ),

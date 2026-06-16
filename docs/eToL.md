@@ -15,9 +15,11 @@ electronic Tree of Life (eToL) workflow described in Hu, Haas & Lathe,
 the selected nucleotide databases. Unlike the APOE genotyper (which saves only
 100% identity / 100% coverage hits), the eToL panels reproduce the paper's
 permissive *net*: BLAST's **default megablast** scoring with **no identity or
-coverage filter** (BLAST's default e-value is the only gate), so partial and
-mismatched rRNA matches are all retained for the secondary human filter and
-cross-probe de-duplication to adjudicate. The probe FASTA is supplied
+coverage filter**, gated on **E-value < 0.01** (the paper's net cutoff, applied
+in `Abundance_ToL.py`), so partial and mismatched rRNA matches are retained for
+the secondary human filter and cross-probe de-duplication to adjudicate while
+statistically insignificant matches (down to BLAST's default e-value of 10) are
+dropped. The probe FASTA is supplied
 automatically, so the query box is left empty (read-only) when a preset is on.
 
 The only override the net applies is lifting the `max_target_seqs` cap (see the
@@ -41,7 +43,11 @@ paper specifies, so a read is counted once rather than inflating several probes.
 
 **Host-cell normalization.** The microbial presets are searched together with the
 housekeeping control probes (PGK1, hNSE) in the same run. The control reads are
-counted separately (never human-filtered — they are human by design) and used to
+counted separately (never human-filtered — they are human by design); like the
+microbial net they pass the same E-value < 0.01 gate and are de-duplicated so
+each read is allocated to its single best control probe before counting
+(`Abundance_count.py` section 2), so a read recovered by several redundant
+control probes does not inflate the normalization denominator. They are used to
 estimate host abundance: the host-cell count is the mean per-gene control
 readcount divided by ~50 transcripts per cell (`HOST_TRANSCRIPTS_PER_CELL`).
 Microbial counts are then reported both raw and as **reads per host cell**

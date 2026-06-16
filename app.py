@@ -124,18 +124,34 @@ def filter_exact_probe_hits(
     return exact_hits
 
 
+# Hu, Haas & Lathe 2022 gate the first-search net on E-value < 0.01 before
+# counting (Abundance_ToL.py for the microbial probes, Abundance_count.py for the
+# controls), so partial/mismatched rRNA matches are kept but statistically
+# insignificant ones (down to BLAST's default e-value of 10) are not.
+ETOL_EVALUE_THRESHOLD = 0.01
+
+
 def filter_net_probe_hits(
     hits: list[dict[str, str]], probe_query_ids: set[str]
 ) -> list[dict[str, str]]:
-    """Restrict eToL "net" hits to probes in the active panel.
+    """Restrict eToL "net" hits to the active panel and gate them on E-value.
 
     Following Hu, Haas & Lathe 2022, the eToL panels cast a permissive net:
-    default megablast with no identity or coverage filter (BLAST's default
-    e-value is the only gate), so partial and imperfect rRNA matches are kept for
-    the secondary human filter and cross-probe de-duplication to adjudicate. The
-    only post-parse filtering is restricting hits to the active panel's probes.
+    default megablast with no identity or coverage filter, keeping partial and
+    imperfect rRNA matches for the secondary human filter and cross-probe
+    de-duplication to adjudicate. A hit is kept only if it belongs to the active
+    panel and scores E-value < 0.01 (the paper's net cutoff, applied in
+    Abundance_ToL.py); a hit whose E-value cannot be parsed is dropped.
     """
-    return [hit for hit in hits if hit.get("qseqid", "") in probe_query_ids]
+    kept = []
+    for hit in hits:
+        if hit.get("qseqid", "") not in probe_query_ids:
+            continue
+        evalue = numeric_hit_value(hit, "evalue")
+        if evalue is None or evalue >= ETOL_EVALUE_THRESHOLD:
+            continue
+        kept.append(hit)
+    return kept
 
 
 def deduplicate_reads_to_best_probe(
@@ -178,6 +194,28 @@ def _similarity_rank(hit: dict[str, str]) -> tuple[float, float, float, str]:
         numeric_hit_value(hit, "qcovs") or 0.0,
         hit.get("qseqid", ""),
     )
+
+
+def count_control_reads(
+    control_hits: list[dict[str, str]], control_query_ids: frozenset[str]
+) -> dict[str, int]:
+    """Tally host-normalization control reads, one read per best control probe.
+
+    Mirrors Abundance_count.py section 2 (Hu, Haas & Lathe 2022): the control
+    probe hits are de-duplicated so each read is allocated to the single control
+    probe it matches best, then counted per probe (every control probe, including
+    zeros). The E-value < 0.01 net gate is applied upstream by
+    ``filter_net_probe_hits``. These counts are the host-cell normalization
+    denominator, so counting one read against several redundant control probes
+    would bias it.
+    """
+    deduped, _ = deduplicate_reads_to_best_probe(control_hits)
+    counts = {probe_id: 0 for probe_id in control_query_ids}
+    for hit in deduped:
+        probe_id = hit.get("qseqid", "")
+        if probe_id in counts:
+            counts[probe_id] += 1
+    return counts
 
 
 def redirect_to_databases(message: str = "", error: str = ""):
@@ -610,16 +648,18 @@ def run_batch_blast_route():
                 # Split the housekeeping control hits out BEFORE any human
                 # filtering. Control reads (PGK1/hNSE) are human by design and
                 # must never be human-filtered, or the host-cell normalization
-                # denominator would be destroyed. They are counted per probe
-                # (including zeros) for normalization, not as microbial species.
-                control_counts = {probe_id: 0 for probe_id in control_query_ids}
-                hits = []
-                for hit in panel_hits:
-                    probe_id = hit.get("qseqid", "")
-                    if probe_id in control_query_ids:
-                        control_counts[probe_id] += 1
-                    else:
-                        hits.append(hit)
+                # denominator would be destroyed. They are de-duplicated to their
+                # best control probe and counted per probe (including zeros) for
+                # normalization, not as microbial species.
+                control_hits = [
+                    hit for hit in panel_hits
+                    if hit.get("qseqid", "") in control_query_ids
+                ]
+                hits = [
+                    hit for hit in panel_hits
+                    if hit.get("qseqid", "") not in control_query_ids
+                ]
+                control_counts = count_control_reads(control_hits, control_query_ids)
             else:
                 hits = result.hits
             # Secondary human filter runs on the microbial net hits only; a

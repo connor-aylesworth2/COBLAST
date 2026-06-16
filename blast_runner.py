@@ -123,13 +123,14 @@ EXACT_MATCH_MT_MODE = "0"
 # workflow of Hu, Haas & Lathe 2022 (BMC Microbiology 22:317) deliberately casts
 # a permissive "net" to entrap every non-human rRNA read, then relies on the
 # secondary human filter to remove host reads. The paper used BLAST's *default*
-# megablast settings with NO identity or coverage filter (the only gate is
-# BLAST's default e-value), keeping even partial and mismatched matches. COBLAST
-# reproduces that exactly: the net path applies no identity or coverage filter
-# and only lifts max_target_seqs, so a probe matching many reads in a deep
-# patient database is counted in full rather than truncated at BLAST's default
-# cap. The single ambiguous probe that cannot seed megablast runs blastn-short
-# (see run_blast_probe_panel), matching the paper's two-task approach.
+# megablast settings with NO identity or coverage filter, then gated the net on
+# E-value < 0.01 before counting (Abundance_ToL.py), keeping even partial and
+# mismatched matches. COBLAST reproduces that: the search applies no identity or
+# coverage filter and only lifts max_target_seqs (so a probe matching many reads
+# in a deep patient database is counted in full rather than truncated at BLAST's
+# default cap), and the E-value < 0.01 net cutoff is applied post-search in
+# filter_net_probe_hits. The single ambiguous probe that cannot seed megablast
+# runs blastn-short (see run_blast_probe_panel), matching the two-task approach.
 
 # CPU parallelism. -num_threads is BLAST+'s own multi-core switch; mt_mode picks
 # how the work is divided across those threads (0 auto, 1 by query, 2 by db).

@@ -197,6 +197,36 @@ def test_deduplicate_reads_is_order_independent():
     assert deduplicate_reads_to_best_probe(reverse)[0][0]["qseqid"] == "A_x_16S_1"
 
 
+# --- net E-value gate and control-read counting ----------------------------
+
+def test_filter_net_probe_hits_gates_on_evalue_and_panel():
+    from app import filter_net_probe_hits
+
+    panel = {"A_x_16S_1", "B_y_16S_1"}
+    hits = [
+        {"qseqid": "A_x_16S_1", "sseqid": "r1", "evalue": "1e-30"},    # kept
+        {"qseqid": "A_x_16S_1", "sseqid": "r2", "evalue": "0.5"},      # E >= 0.01
+        {"qseqid": "A_x_16S_1", "sseqid": "r3", "evalue": "0.01"},     # not < 0.01
+        {"qseqid": "Z_off_16S_1", "sseqid": "r4", "evalue": "1e-50"},  # off-panel
+        {"qseqid": "B_y_16S_1", "sseqid": "r5"},                       # unparseable E
+    ]
+    assert [hit["sseqid"] for hit in filter_net_probe_hits(hits, panel)] == ["r1"]
+
+
+def test_count_control_reads_dedups_to_best_control_probe():
+    from app import count_control_reads
+
+    control_ids = frozenset({"PGK1_2", "PGK1_3", "hNSE_2"})
+    # read1 hits two PGK1 probes -> counted once, against the higher-bitscore one.
+    hits = [
+        {"qseqid": "PGK1_2", "sseqid": "read1", "bitscore": "50", "pident": "95", "qcovs": "90"},
+        {"qseqid": "PGK1_3", "sseqid": "read1", "bitscore": "120", "pident": "100", "qcovs": "100"},
+        {"qseqid": "hNSE_2", "sseqid": "read2", "bitscore": "80", "pident": "98", "qcovs": "100"},
+    ]
+    # Every control probe is present (incl. zeros); read1 is not double-counted.
+    assert count_control_reads(hits, control_ids) == {"PGK1_2": 0, "PGK1_3": 1, "hNSE_2": 1}
+
+
 # --- megablast / blastn-short partition of the eToL panel ------------------
 
 def test_etol_full_panel_has_exactly_one_non_megablast_probe():

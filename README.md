@@ -520,7 +520,7 @@ Tree of Life microbiome workflow of Hu, Haas & Lathe (*BMC Microbiology*
 microbial set (**eToL Full**), the human housekeeping control set (**eToL
 Control**), or a one-probe-per-species quick set (**eToL Quick**) — against the
 selected nucleotide databases using BLAST's permissive default-megablast *net*
-(no identity or coverage filter), then counts matched reads per probe and species
+(E-value < 0.01, no identity or coverage filter), then counts matched reads per probe and species
 with CSV/TSV exports. The microbial panels offer an optional secondary human
 filter that removes host-derived reads. Only one preset can be active at a time.
 
