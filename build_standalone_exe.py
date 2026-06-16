@@ -108,8 +108,6 @@ def build_command(blast_bin: Path, name: str) -> list[str]:
         "--distpath",
         str(root / "dist"),
         "--collect-submodules",
-        "Bio.SearchIO",
-        "--collect-submodules",
         "Bio.SeqIO",
         "--exclude-module",
         "tkinter",

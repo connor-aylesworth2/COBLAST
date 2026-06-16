@@ -136,10 +136,10 @@ def validate_category(category: str) -> str:
     return cleaned
 
 
-def slugify(value: str) -> str:
+def slugify(value: str, default: str = "blast_database") -> str:
     """Create a safe filename-ish stem for managed database prefixes."""
     slug = re.sub(r"[^a-zA-Z0-9]+", "_", value.strip()).strip("_").lower()
-    return slug or "blast_database"
+    return slug or default
 
 
 def get_windows_short_path(path: Path) -> str:

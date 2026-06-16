@@ -13,11 +13,12 @@ from pathlib import Path
 import re
 import subprocess
 
-from config import resource_root, runtime_data_dir
+from config import resource_root, runtime_data_dir, tool_name
 from database_registry import (
     create_database_from_fasta,
     get_database_by_prefix,
     register_existing_database,
+    slugify,
 )
 from database_size import database_storage_bytes, format_bytes
 
@@ -45,12 +46,6 @@ class SraProject:
     total_bytes: int
     total_size_label: str
     status: str
-
-
-def slugify(value: str) -> str:
-    """Create a path-safe slug for generated pilot outputs."""
-    slug = re.sub(r"[^a-zA-Z0-9]+", "_", value.strip()).strip("_").lower()
-    return slug or "sra_project"
 
 
 def file_summary(path: Path) -> SraFileSummary:
@@ -105,11 +100,6 @@ def sra_toolkit_bin() -> Path | None:
         if (resolved / tool_name("fastq-dump")).exists():
             return resolved
     return None
-
-
-def tool_name(name: str) -> str:
-    """Add the Windows executable suffix when needed."""
-    return f"{name}.exe" if os.name == "nt" and not name.endswith(".exe") else name
 
 
 def sra_tool_exe(name: str) -> Path:
@@ -284,7 +274,7 @@ def create_pilot_database_from_fasta(
     max_records: int,
 ):
     """Create and register a sampled nucleotide BLAST database from FASTA."""
-    accession_slug = slugify(accession)
+    accession_slug = slugify(accession, default="sra_project")
     pilot_dir = runtime_data_dir() / "sra_pilots" / f"{accession_slug}_{max_records}"
     pilot_fasta = pilot_dir / f"{accession_slug}_{max_records}.fasta"
     db_prefix = pilot_dir / "blastdb" / f"{accession_slug}_{max_records}"
@@ -318,7 +308,7 @@ def convert_sra_to_pilot_fasta(
     if not source.exists():
         raise FileNotFoundError(f"SRA file does not exist: {source}")
 
-    accession_slug = slugify(accession or source.stem)
+    accession_slug = slugify(accession or source.stem, default="sra_project")
     output_dir = runtime_data_dir() / "sra_pilots" / f"{accession_slug}_{max_spots}" / "fasta"
     output_dir.mkdir(parents=True, exist_ok=True)
 

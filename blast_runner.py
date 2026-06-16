@@ -27,9 +27,8 @@ from config import (
 from database_size import database_storage_bytes
 
 try:
-    from Bio import SearchIO, SeqIO
+    from Bio import SeqIO
 except ImportError as exc:  # pragma: no cover - exercised only when dependency is absent
-    SearchIO = None
     SeqIO = None
     BIOPYTHON_IMPORT_ERROR = exc
 else:
@@ -88,9 +87,8 @@ BLAST_PROGRAMS = {
     },
 }
 BLAST_OUTPUT_FORMATS = {
-    # Format 6 is tabular; naming the columns keeps SearchIO parsing predictable.
+    # Format 6 is tabular; naming the columns keeps parsing predictable.
     "tabular": "6 " + " ".join(OUTFMT6_FIELDS),
-    "xml": "5",
 }
 # Default wall-clock cap for a single search. BLAST+ itself has no timeout; this
 # is COBLAST's safety net, and the advanced "timeout" field can override it.
@@ -186,7 +184,7 @@ class BlastResult:
 
 def require_biopython() -> None:
     """Fail early with an installation hint if Biopython is unavailable."""
-    if SearchIO is None or SeqIO is None:
+    if SeqIO is None:
         raise RuntimeError(
             "Biopython is required for FASTA validation and BLAST result parsing. "
             "Install dependencies with: python -m pip install -r requirements.txt"
@@ -330,16 +328,6 @@ def validate_fasta_input(
     )
 
 
-def validate_fasta(sequence: str, expected_type: str = "nucleotide") -> str:
-    """Compatibility wrapper for callers that only need normalized FASTA."""
-    return validate_fasta_input(sequence, expected_type=expected_type).fasta
-
-
-def require_searchio() -> None:
-    """Alias used by parsing functions to make their dependency explicit."""
-    require_biopython()
-
-
 def format_float(value: Any, decimals: int) -> str:
     """Render optional numeric values for table cells."""
     if value is None or value == "":
@@ -355,65 +343,6 @@ def format_evalue(value: Any) -> str:
     if number == 0:
         return "0.0"
     return f"{number:.2e}"
-
-
-def percent_identity(hsp: Any) -> float | None:
-    """Read percent identity from SearchIO, with a manual fallback."""
-    if getattr(hsp, "ident_pct", None) is not None:
-        return float(hsp.ident_pct)
-
-    ident_num = getattr(hsp, "ident_num", None)
-    aln_span = getattr(hsp, "aln_span", None)
-    if ident_num is None or not aln_span:
-        return None
-    return (float(ident_num) / float(aln_span)) * 100
-
-
-def query_coverage(qresult: Any, hit: Any, hsp: Any) -> float | None:
-    """Read or calculate query coverage as a percentage."""
-    if getattr(hit, "query_coverage", None) is not None:
-        return float(hit.query_coverage)
-
-    query_span = getattr(hsp, "query_span", None)
-    query_length = getattr(qresult, "seq_len", None)
-    if query_span is None or not query_length:
-        return None
-    return (float(query_span) / float(query_length)) * 100
-
-
-def subject_title(hit: Any, hsp: Any) -> str:
-    """Choose the most descriptive subject label available from SearchIO."""
-    for candidate in (
-        getattr(hit, "title", None),
-        getattr(hit, "description", None),
-        getattr(hsp, "hit_description", None),
-        getattr(hsp, "hit_id", None),
-        getattr(hit, "id", None),
-    ):
-        if candidate and candidate != "<unknown description>":
-            return str(candidate)
-    return ""
-
-
-def searchio_results_to_hits(qresults: Iterable[Any]) -> list[dict[str, str]]:
-    """Flatten SearchIO query/hit/HSP objects into table-row dictionaries."""
-    hits: list[dict[str, str]] = []
-    for qresult in qresults:
-        for hit in qresult:
-            for hsp in hit:
-                hits.append(
-                    {
-                        "qseqid": getattr(hsp, "query_id", None) or qresult.id,
-                        "sseqid": getattr(hsp, "hit_id", None) or hit.id,
-                        "stitle": subject_title(hit, hsp),
-                        "pident": format_float(percent_identity(hsp), 3),
-                        "length": str(getattr(hsp, "aln_span", "")),
-                        "qcovs": format_float(query_coverage(qresult, hit, hsp), 1),
-                        "evalue": format_evalue(getattr(hsp, "evalue", None)),
-                        "bitscore": format_float(getattr(hsp, "bitscore", None), 1),
-                    }
-                )
-    return hits
 
 
 def parse_blast_tabular(stdout: str) -> list[dict[str, str]]:
@@ -448,22 +377,11 @@ def parse_blast_tabular(stdout: str) -> list[dict[str, str]]:
     return hits
 
 
-def parse_blast_xml(stdout: str) -> list[dict[str, str]]:
-    """Parse BLAST XML stdout into result rows."""
-    require_searchio()
-    if not stdout.strip():
-        return []
-    qresults = SearchIO.parse(StringIO(stdout), "blast-xml")
-    return searchio_results_to_hits(qresults)
-
-
 def parse_blast_output(stdout: str, output_format: str = "tabular") -> list[dict[str, str]]:
-    """Dispatch to the parser that matches the selected output format."""
-    if output_format == "tabular":
-        return parse_blast_tabular(stdout)
-    if output_format == "xml":
-        return parse_blast_xml(stdout)
-    raise ValueError(f"Unsupported BLAST output format: {output_format}")
+    """Parse BLAST stdout into result rows (tabular format-6 only)."""
+    if output_format != "tabular":
+        raise ValueError(f"Unsupported BLAST output format: {output_format}")
+    return parse_blast_tabular(stdout)
 
 
 def enforce_local_blast_only(command: list[str]) -> None:
@@ -779,24 +697,6 @@ def run_blast(
         query_count=len(query.records),
         query_total_length=query.total_length,
         parameters=parameters,
-    )
-
-
-def run_blastn(
-    sequence: str,
-    database: str | Path,
-    timeout_seconds: int | str | None = None,
-    task: str = "blastn-short",
-    output_format: str = "tabular",
-) -> BlastResult:
-    """Convenience wrapper retained for older blastn-only callers/tests."""
-    return run_blast(
-        sequence=sequence,
-        database=database,
-        program="blastn",
-        timeout_seconds=timeout_seconds,
-        task=task,
-        output_format=output_format,
     )
 
 

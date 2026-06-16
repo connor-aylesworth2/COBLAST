@@ -146,7 +146,7 @@
                   {% for row in batch.apoe_probe_summary or [] %}
                     <tr>
                       <td>
-                        <strong>{{ row.sample_database or row.database_sample or row.sample }}</strong>
+                        <strong>{{ row.sample_database }}</strong>
                       </td>
                       <td class="numeric-cell">{{ row.ae4_c_hits }}</td>
                       <td class="numeric-cell apoe-t-column">{{ row.ae4_t_hits }}</td>

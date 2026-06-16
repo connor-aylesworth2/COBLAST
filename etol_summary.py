@@ -23,6 +23,7 @@ from functools import lru_cache
 import re
 from typing import Any
 
+from blast_runner import _parse_panel_fasta, _pairs_to_fasta
 from config import resource_path
 
 
@@ -121,33 +122,14 @@ def _record_meta(probe: str) -> dict[str, str]:
     }
 
 
-def _parse_fasta(text: str) -> list[tuple[str, str]]:
-    """Parse FASTA text into a list of (header, sequence) pairs."""
-    pairs: list[tuple[str, str]] = []
-    header: str | None = None
-    sequence: list[str] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith(">"):
-            if header is not None:
-                pairs.append((header, "".join(sequence)))
-            header = line[1:].strip()
-            sequence = []
-        elif line:
-            sequence.append(line)
-    if header is not None:
-        pairs.append((header, "".join(sequence)))
-    return pairs
-
-
 @lru_cache(maxsize=1)
 def _full_pairs() -> tuple[tuple[str, str], ...]:
-    return tuple(_parse_fasta(ETOL_FULL_FASTA_PATH.read_text(encoding="utf-8")))
+    return tuple(_parse_panel_fasta(ETOL_FULL_FASTA_PATH.read_text(encoding="utf-8")))
 
 
 @lru_cache(maxsize=1)
 def _control_pairs() -> tuple[tuple[str, str], ...]:
-    return tuple(_parse_fasta(ETOL_CONTROL_FASTA_PATH.read_text(encoding="utf-8")))
+    return tuple(_parse_panel_fasta(ETOL_CONTROL_FASTA_PATH.read_text(encoding="utf-8")))
 
 
 @lru_cache(maxsize=1)
@@ -161,10 +143,6 @@ def _quick_pairs() -> tuple[tuple[str, str], ...]:
             seen.add(taxon)
             chosen.append((header, sequence))
     return tuple(chosen)
-
-
-def _pairs_to_fasta(pairs: tuple[tuple[str, str], ...]) -> str:
-    return "".join(f">{header}\n{sequence}\n" for header, sequence in pairs)
 
 
 # Each preset: form field name, UI labels/description, and the probe source.
@@ -284,25 +262,16 @@ def etol_control_query_ids() -> frozenset[str]:
     return frozenset(record["probe"] for record in etol_control_records())
 
 
-def etol_preset_normalizable(key: str) -> bool:
-    """True when a preset is host-normalized (the microbial panels).
-
-    Microbial presets are searched together with the control probes so their
-    counts can be divided by the host-cell estimate; the standalone control
-    preset has nothing microbial to normalize.
-    """
-    return bool(ETOL_PRESETS[key]["microbial"])
-
-
 def etol_search_pairs(key: str) -> tuple[tuple[str, str], ...]:
     """Return the (header, sequence) probes actually BLASTed for a preset.
 
     Microbial presets append the housekeeping control probes so a single search
-    yields both the microbial net and the host-normalization counts. The
-    standalone control preset is searched as-is.
+    yields both the microbial net and the host-normalization counts (the control
+    counts are the host-cell normalization denominator). The standalone control
+    preset is searched as-is.
     """
     pairs = tuple(ETOL_PRESETS[key]["pairs"]())
-    if etol_preset_normalizable(key):
+    if etol_preset_is_microbial(key):
         pairs = pairs + _control_pairs()
     return pairs
 

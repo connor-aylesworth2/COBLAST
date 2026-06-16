@@ -74,10 +74,14 @@ def blast_bin_dir() -> Path:
     return DEFAULT_BLAST_BIN
 
 
+def tool_name(name: str) -> str:
+    """Add the Windows ``.exe`` suffix to a bare executable name when needed."""
+    return f"{name}.exe" if os.name == "nt" and not name.endswith(".exe") else name
+
+
 def blast_exe(name: str) -> Path:
     """Resolve one BLAST+ executable and fail with a useful setup message."""
-    suffix = ".exe" if os.name == "nt" and not name.endswith(".exe") else ""
-    exe_path = blast_bin_dir() / f"{name}{suffix}"
+    exe_path = blast_bin_dir() / tool_name(name)
     if not exe_path.exists():
         raise FileNotFoundError(
             f"Could not find {exe_path}. Set BLAST_BIN to your BLAST+ bin directory."
@@ -122,15 +126,6 @@ def default_thread_count() -> int:
 COBLAST_BATCH_WORKERS_ENV = "COBLAST_BATCH_WORKERS"
 
 
-def core_budget() -> int:
-    """Total logical cores COBLAST keeps busy at once for a batch.
-
-    Shares the headroom policy of default_thread_count(): use most of the
-    machine but leave a core or two free for responsiveness.
-    """
-    return default_thread_count()
-
-
 def allocate_batch_resources(
     num_jobs: int, requested_workers: int | str | None = None
 ) -> tuple[int, int]:
@@ -144,7 +139,7 @@ def allocate_batch_resources(
     ``requested_workers`` (the batch advanced field) > ``COBLAST_BATCH_WORKERS``
     > auto. A forced value that oversubscribes is the caller's responsibility.
     """
-    budget = core_budget()
+    budget = default_thread_count()
     jobs = max(1, int(num_jobs))
     workers = min(budget, jobs)
 

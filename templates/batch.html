@@ -190,13 +190,6 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
                 </select>
               </div>
               <div class="field">
-                <label for="output_format">Parser/output format</label>
-                <select id="output_format" name="output_format">
-                  <option value="tabular">Tabular output</option>
-                  <option value="xml">XML output parsed by Bio.SearchIO</option>
-                </select>
-              </div>
-              <div class="field">
                 <label for="timeout_seconds">Timeout seconds per database</label>
                 <input id="timeout_seconds" name="timeout_seconds" inputmode="numeric" placeholder="Default: 3600 seconds">
               </div>
@@ -232,7 +225,6 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       const checkboxes = document.querySelectorAll(".database-checkbox");
       const taskSelect = document.getElementById("task");
       const percentIdentity = document.getElementById("perc_identity");
-      const outputFormat = document.getElementById("output_format");
       const humanFilter = document.getElementById("human_filter");
       const humanFilterDb = document.getElementById("human_filter_db_id");
       const humanFilterField = document.getElementById("human_filter_field");
@@ -291,7 +283,6 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
             readOnly: sequenceInput.readOnly,
             placeholder: sequenceInput.placeholder,
             program: programSelect.value,
-            outputFormat: outputFormat.value,
             percentIdentity: percentIdentity.value,
             task: taskSelect.value,
           };
@@ -301,7 +292,6 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
           sequenceInput.readOnly = true;
           sequenceFile.value = "";
           programSelect.value = "blastn";
-          outputFormat.value = "tabular";
           percentIdentity.value = "100";
           taskSelect.value = "";
           updateCompatibility();
@@ -313,7 +303,6 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
           sequenceInput.readOnly = prePresetState.readOnly;
           sequenceInput.placeholder = prePresetState.placeholder;
           programSelect.value = prePresetState.program;
-          outputFormat.value = prePresetState.outputFormat;
           percentIdentity.value = prePresetState.percentIdentity;
           taskSelect.value = prePresetState.task;
           prePresetState = null;

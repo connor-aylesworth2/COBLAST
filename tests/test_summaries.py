@@ -42,7 +42,7 @@ def _apoe_sample():
 
 def test_apoe_summary_counts_and_ratio():
     row = build_apoe_probe_summary([_apoe_sample()])[0]
-    assert row["sample"] == "SRX123456"  # accession pulled from the path
+    assert row["sample_database"] == "SRX123456"  # accession pulled from the path
     assert row["ae4_c_hits"] == 1
     assert row["ae4_t_hits"] == 2
     assert row["ae2_c_hits"] == 1
