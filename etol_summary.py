@@ -396,6 +396,32 @@ def _probes_by_taxon(records: tuple[dict[str, str], ...]) -> dict[str, list[str]
     return grouped
 
 
+def group_read_ids_by_taxon(
+    hits: list[dict[str, Any]]
+) -> "OrderedDict[str, list[str]]":
+    """Group matched-read ids (``sseqid``) by the species/taxon of their probe.
+
+    The contig-assembly step assembles the reads each species' probes recovered
+    together (per taxon), mirroring the paper's per-group assembly for species
+    identification. Read ids are de-duplicated within a taxon and first-seen
+    order is preserved so the assembler input is stable.
+    """
+    grouped: "OrderedDict[str, list[str]]" = OrderedDict()
+    seen: dict[str, set[str]] = {}
+    for hit in hits:
+        read_id = str(hit.get("sseqid", "") or "")
+        if not read_id:
+            continue
+        taxon = _taxon(str(hit.get("qseqid", "") or ""))
+        if taxon not in grouped:
+            grouped[taxon] = []
+            seen[taxon] = set()
+        if read_id not in seen[taxon]:
+            seen[taxon].add(read_id)
+            grouped[taxon].append(read_id)
+    return grouped
+
+
 def build_etol_probe_summary(
     database_results: list[dict[str, Any]], records: tuple[dict[str, str], ...]
 ) -> list[dict[str, Any]]:

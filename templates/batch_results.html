@@ -95,6 +95,18 @@
                   reads per host cell (PGK1/hNSE control probes)
                 </div>
               {% endif %}
+              {% if batch.assemble_contigs %}
+                <div class="summary-item">
+                  <span>Contig assembly</span>
+                  {{ batch.contig_count }} contig(s) assembled (CAP3)
+                </div>
+              {% endif %}
+              {% if batch.contig_assembly_unavailable %}
+                <div class="summary-item">
+                  <span>Contig assembly</span>
+                  <span class="status-invalid">CAP3 not found &mdash; assembly skipped</span>
+                </div>
+              {% endif %}
             {% endif %}
             {% if batch.human_filter_enabled %}
               <div class="summary-item">
@@ -116,6 +128,9 @@
                 <a class="button button-secondary" href="{{ url_for('download_etol_summary', batch_id=batch.batch_id, file_format='tsv') }}">Download eToL Species Summary TSV</a>
                 <a class="button button-secondary" href="{{ url_for('download_etol_probe_counts', batch_id=batch.batch_id, file_format='csv') }}">Download eToL Probe Counts CSV</a>
                 <a class="button button-secondary" href="{{ url_for('download_etol_probe_counts', batch_id=batch.batch_id, file_format='tsv') }}">Download eToL Probe Counts TSV</a>
+                {% if batch.assemble_contigs and batch.contig_count %}
+                  <a class="button button-secondary" href="{{ url_for('download_etol_contigs', batch_id=batch.batch_id) }}">Download eToL Contigs FASTA</a>
+                {% endif %}
               {% endif %}
               <a class="button button-secondary" href="{{ url_for('download_batch_results', batch_id=batch.batch_id, file_format='csv') }}">Download Raw Hits CSV</a>
               <a class="button button-secondary" href="{{ url_for('download_batch_results', batch_id=batch.batch_id, file_format='tsv') }}">Download Raw Hits TSV</a>
@@ -244,6 +259,69 @@
             {% else %}
               <p class="muted">No eToL summary rows were generated.</p>
             {% endfor %}
+          </section>
+        {% endif %}
+
+        {% if batch.assemble_contigs %}
+          <section class="panel">
+            <div class="panel__header">
+              <h2 class="panel__title">Assembled Contigs (re-probing input)</h2>
+            </div>
+            <p class="muted">
+              The reads each species' probes recovered (after the net, any human
+              filter, and cross-probe de-duplication) assembled with CAP3 into
+              longer contigs, per Hu, Haas &amp; Lathe 2022. These are the input
+              for species-level identification and re-probing &mdash; download the
+              multi-FASTA to BLAST against a curated rRNA database or to re-probe
+              the same library.
+            </p>
+            {% if batch.contig_assembly_unavailable %}
+              <p class="error">CAP3 was not found, so no contigs were assembled. Provide a CAP3 binary via CAP3_BIN, a bundled cap3/bin folder, or PATH, then re-run.</p>
+            {% endif %}
+            {% for database_result in batch.database_results %}
+              {% if database_result.contigs %}
+                <div class="etol-sample">
+                  <h3 class="section-title">{{ database_result.display_name }}</h3>
+                  <div class="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Species/Taxon</th>
+                          <th>Contig</th>
+                          <th>Length (nt)</th>
+                          <th>Reads</th>
+                          <th>Sequence (first 60 nt)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for taxon, contigs in database_result.contigs.items() %}
+                          {% for contig in contigs %}
+                            <tr>
+                              <td>{% if loop.first %}<strong>{{ taxon }}</strong>{% endif %}</td>
+                              <td>{{ contig.id }}</td>
+                              <td class="numeric-cell">{{ contig.length }}</td>
+                              <td class="numeric-cell">{{ contig.num_reads }}</td>
+                              <td><code>{{ contig.sequence[:60] }}{% if contig.length > 60 %}&hellip;{% endif %}</code></td>
+                            </tr>
+                          {% endfor %}
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  {% if database_result.contig_note %}
+                    <p class="muted">{{ database_result.contig_note }}</p>
+                  {% endif %}
+                </div>
+              {% elif database_result.contig_note %}
+                <div class="etol-sample">
+                  <h3 class="section-title">{{ database_result.display_name }}</h3>
+                  <p class="muted">{{ database_result.contig_note }}</p>
+                </div>
+              {% endif %}
+            {% endfor %}
+            {% if batch.contig_count == 0 and not batch.contig_assembly_unavailable %}
+              <p class="muted">No contigs were assembled (no species had two or more recoverable reads to overlap).</p>
+            {% endif %}
           </section>
         {% endif %}
 

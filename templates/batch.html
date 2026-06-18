@@ -84,6 +84,17 @@
           </select>
         </div>
 
+        <div class="field" id="assemble_contigs_field">
+          <span class="field-label">Contig assembly (eToL re-probing)</span>
+          <label class="checkbox-row checkbox-row--wide">
+            <input id="assemble_contigs" name="assemble_contigs" type="checkbox" value="1">
+            <span>
+              <strong>Assemble matched reads into contigs per species</strong>
+              <br><span class="muted">Microbial eToL presets (Full, Quick) only. After the net (and any secondary human filter), the reads each species' probes recovered are assembled with CAP3 into longer contigs for species-level identification and re-probing (Hu, Haas &amp; Lathe 2022). Requires a CAP3 binary (via <code>CAP3_BIN</code>, a bundled <code>cap3/bin</code>, or PATH); if none is found the run continues without contigs and reports it.</span>
+            </span>
+          </label>
+        </div>
+
         <div class="field">
           <label for="sequence">Query input</label>
           <textarea id="sequence" name="sequence">&gt;query
@@ -228,6 +239,8 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       const humanFilter = document.getElementById("human_filter");
       const humanFilterDb = document.getElementById("human_filter_db_id");
       const humanFilterField = document.getElementById("human_filter_field");
+      const assembleContigs = document.getElementById("assemble_contigs");
+      const assembleContigsField = document.getElementById("assemble_contigs_field");
       // Snapshot of the manual query fields, saved when a preset takes over.
       let prePresetState = null;
 
@@ -247,6 +260,17 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         }
       }
 
+      function updateContigAvailability() {
+        // Contig assembly, like the human filter, only applies to microbial eToL presets.
+        const active = activePreset();
+        const microbial = !!active && active.dataset.microbial === "true";
+        assembleContigs.disabled = !microbial;
+        assembleContigsField.style.opacity = microbial ? "" : "0.55";
+        if (!microbial) {
+          assembleContigs.checked = false;
+        }
+      }
+
       function updateCompatibility() {
         const requiredDbType = programRequirements[programSelect.value];
         for (const row of rows) {
@@ -260,6 +284,7 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         }
         updateAdvancedAvailability();
         updateHumanFilterAvailability();
+        updateContigAvailability();
       }
 
       function updateAdvancedAvailability() {

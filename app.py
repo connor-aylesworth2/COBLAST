@@ -12,6 +12,7 @@ from time import perf_counter
 from flask import Flask, Response, abort, redirect, render_template, request, url_for
 
 from apoe_summary import apoe_probe_query_ids, build_apoe_probe_summary
+from assembler import default_assembler
 from etol_summary import (
     ETOL_NET_FILTER,
     build_etol_probe_summary,
@@ -24,8 +25,9 @@ from etol_summary import (
     etol_preset_records,
     etol_search_fasta,
     etol_search_query_ids,
+    group_read_ids_by_taxon,
 )
-from human_filter import filter_human_hits
+from human_filter import extract_reads, filter_human_hits
 from blast_runner import (
     BLAST_PROGRAMS,
     run_blast,
@@ -48,6 +50,7 @@ from database_registry import (
 from result_store import (
     apoe_summary_rows_as_delimited,
     batch_rows_as_delimited,
+    etol_contigs_as_fasta,
     etol_probe_counts_as_delimited,
     etol_summary_rows_as_delimited,
     load_batch_result,
@@ -461,6 +464,26 @@ def download_etol_probe_counts(batch_id: str, file_format: str):
     )
 
 
+@app.get("/batch-results/<batch_id>/etol-contigs.fasta")
+def download_etol_contigs(batch_id: str):
+    """Download all assembled eToL contigs for a batch as a multi-FASTA file."""
+    try:
+        batch_data = load_batch_result(batch_id)
+    except FileNotFoundError:
+        abort(404)
+
+    if not batch_data.get("etol_probe_preset"):
+        abort(404)
+
+    body = etol_contigs_as_fasta(batch_data)
+    filename = f"etol_contigs_{batch_id}.fasta"
+    return Response(
+        body,
+        mimetype="text/plain",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 @app.get("/batch-blast")
 def batch_blast_page():
     """Render the multi-database BLAST form."""
@@ -550,6 +573,21 @@ def run_batch_blast_route():
                 error="Select an available nucleotide human-genome database for the secondary human filter.",
                 message="",
             ), 400
+
+    # Contig assembly (eToL re-probing input): assemble the reads each species'
+    # probes recovered into longer contigs for species-level identification, as
+    # Hu, Haas & Lathe 2022 do with CAP3. Only meaningful for the microbial eToL
+    # presets. The CAP3 binary is optional, so a requested-but-unavailable
+    # assembler degrades to a clear note rather than failing the run.
+    assemble_contigs_requested = request.form.get("assemble_contigs") == "1"
+    assemble_contigs_active = (
+        assemble_contigs_requested
+        and etol_preset_key is not None
+        and etol_preset_is_microbial(etol_preset_key)
+    )
+    assembler = default_assembler()
+    contig_assembly_available = assemble_contigs_active and assembler.is_available()
+    contig_assembly_unavailable = assemble_contigs_active and not contig_assembly_available
 
     if not database_ids:
         return render_template(
@@ -691,6 +729,26 @@ def run_batch_blast_route():
             dedup_removed = 0
             if etol_preset_key:
                 hits, dedup_removed = deduplicate_reads_to_best_probe(hits)
+            # Contig assembly (re-probing input): group the final non-human,
+            # de-duplicated reads by species and assemble each group's reads into
+            # contigs. The read sequences are recovered with the same helper the
+            # human filter uses. A backend failure is recorded as a note rather
+            # than dropping the database from the batch.
+            contigs_by_species: dict[str, list[dict]] = {}
+            contig_note = ""
+            if contig_assembly_available:
+                try:
+                    for taxon, read_ids in group_read_ids_by_taxon(hits).items():
+                        reads, _method = extract_reads(
+                            database.db_prefix_path,
+                            database.source_fasta_path,
+                            read_ids,
+                        )
+                        contigs = assembler.assemble(reads)
+                        if contigs:
+                            contigs_by_species[taxon] = [contig.to_dict() for contig in contigs]
+                except Exception as exc:
+                    contig_note = f"Contig assembly error: {exc}"
             run_id = save_result(replace(result, hits=hits))
             row = {
                 "database_id": database.id,
@@ -706,6 +764,10 @@ def run_batch_blast_route():
                 "human_filter": human_filter_stats,
                 "etol_control_counts": control_counts,
                 "etol_dedup_removed": dedup_removed,
+                "contigs": contigs_by_species,
+                "contig_count": sum(len(items) for items in contigs_by_species.values()),
+                "contig_species_count": len(contigs_by_species),
+                "contig_note": contig_note,
                 "error": "",
             }
             return {
@@ -809,6 +871,11 @@ def run_batch_blast_route():
         and etol_preset_is_microbial(etol_preset_key),
         "etol_dedup_removed": sum(
             result_row.get("etol_dedup_removed", 0) for result_row in database_results
+        ),
+        "assemble_contigs": assemble_contigs_active,
+        "contig_assembly_unavailable": contig_assembly_unavailable,
+        "contig_count": sum(
+            result_row.get("contig_count", 0) for result_row in database_results
         ),
         "database_results": database_results,
     }

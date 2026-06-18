@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import os
+import shutil
 import sys
 
 
@@ -87,6 +88,52 @@ def blast_exe(name: str) -> Path:
             f"Could not find {exe_path}. Set BLAST_BIN to your BLAST+ bin directory."
         )
     return exe_path
+
+
+# CAP3 contig assembler (optional; used by the eToL re-probing workflow). Like
+# BLAST+, the binary is resolved from an env override, then a bundled copy, then
+# PATH, so the same packaging story works from source and from the frozen .exe.
+# Unlike BLAST+, CAP3 is optional: callers gate on availability and skip the
+# assembly step when no binary is present rather than failing the whole run.
+def cap3_bin_dir() -> Path | None:
+    """Locate a directory containing the CAP3 binary, or None to fall back to PATH.
+
+    Precedence: the ``CAP3_BIN`` environment variable (a directory, like
+    ``BLAST_BIN``), then a bundled ``cap3/bin`` folder inside the resource root.
+    """
+    env_cap3_bin = os.environ.get("CAP3_BIN")
+    if env_cap3_bin:
+        return Path(env_cap3_bin)
+
+    bundled_cap3_bin = resource_path("cap3", "bin")
+    if bundled_cap3_bin.exists():
+        return bundled_cap3_bin
+
+    return None
+
+
+def cap3_exe() -> Path:
+    """Resolve the CAP3 executable from CAP3_BIN, a bundled copy, or PATH.
+
+    Raises ``FileNotFoundError`` when CAP3 cannot be found anywhere, with a hint
+    on how to supply it. Callers that treat assembly as optional should check
+    availability first rather than letting this propagate.
+    """
+    directory = cap3_bin_dir()
+    if directory is not None:
+        candidate = directory / tool_name("cap3")
+        if candidate.exists():
+            return candidate
+
+    found = shutil.which("cap3") or shutil.which(tool_name("cap3"))
+    if found:
+        return Path(found)
+
+    raise FileNotFoundError(
+        "Could not find the CAP3 assembler. Set CAP3_BIN to the directory "
+        "containing the cap3 executable, bundle it under cap3/bin, or add cap3 "
+        "to PATH."
+    )
 
 
 def flask_port() -> int:

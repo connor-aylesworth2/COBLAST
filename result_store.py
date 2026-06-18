@@ -22,7 +22,7 @@ from etol_summary import (
     etol_probe_count_rows,
     etol_species_count_rows,
 )
-from blast_runner import BlastResult
+from blast_runner import BlastResult, wrap_sequence
 from config import runtime_data_dir
 
 
@@ -219,6 +219,30 @@ def etol_probe_counts_as_delimited(batch_data: dict, delimiter: str) -> str:
     for row in etol_probe_count_rows(batch_data.get("database_results", []), records):
         writer.writerow([row.get(key, "") for key, _ in ETOL_PROBE_EXPORT_COLUMNS])
     return buffer.getvalue()
+
+
+def etol_contigs_as_fasta(batch_data: dict) -> str:
+    """Render every assembled eToL contig across a batch as multi-FASTA text.
+
+    Each header encodes the sample, species/taxon, contig id, read support, and
+    length, so the file can be taken straight to the next re-probing or
+    species-identification step (e.g. BLAST against a curated rRNA database).
+    """
+    blocks: list[str] = []
+    for database_result in batch_data.get("database_results", []):
+        sample = str(database_result.get("display_name", "") or "sample")
+        contigs_by_species = database_result.get("contigs") or {}
+        for taxon, contigs in contigs_by_species.items():
+            for contig in contigs:
+                sequence = str(contig.get("sequence", "") or "")
+                if not sequence:
+                    continue
+                header = (
+                    f"{sample}|{taxon}|{contig.get('id', '')}"
+                    f"|reads={contig.get('num_reads', 0)}|len={len(sequence)}"
+                )
+                blocks.append(f">{header}\n{wrap_sequence(sequence)}")
+    return ("\n".join(blocks) + "\n") if blocks else ""
 
 
 def apoe_summary_export_value(row: dict, key: str) -> object:
