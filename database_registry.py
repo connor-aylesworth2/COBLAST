@@ -437,6 +437,10 @@ def create_database_from_fasta(
         blast_safe_path(source),
         "-dbtype",
         db_type,
+        # -parse_seqids builds the id index blastdbcmd needs to pull reads back out
+        # by id (the eToL human filter and contig assembly both depend on this);
+        # without it, recovery silently falls back to scanning the source FASTA.
+        "-parse_seqids",
         "-out",
         blast_safe_path(prefix),
     ]

@@ -390,6 +390,15 @@
           <div class="panel__header">
             <h2 class="panel__title">Aggregated Hits</h2>
           </div>
+          {# ponytail: cap the rendered rows so a deep eToL run (100k+ hits) can't #}
+          {# hang the browser; the full set is the "Download Raw Hits" CSV/TSV above. #}
+          {% set max_hit_rows = 500 %}
+          {% if batch.total_hits > max_hit_rows %}
+            <p class="muted">
+              Showing the first {{ max_hit_rows }} of {{ batch.total_hits }} hits to keep this
+              page responsive. Download the Raw Hits CSV/TSV above for the complete set.
+            </p>
+          {% endif %}
           <div class="table-wrap">
             <table>
               <thead>
@@ -410,6 +419,7 @@
                 {% for database_result in batch.database_results %}
                   {% for hit in database_result.hits %}
                     {% set hit_rows.count = hit_rows.count + 1 %}
+                    {% if hit_rows.count <= max_hit_rows %}
                     <tr>
                       <td>{{ database_result.display_name }}</td>
                       <td>{{ hit.qseqid }}</td>
@@ -421,6 +431,7 @@
                       <td>{{ hit.evalue }}</td>
                       <td>{{ hit.bitscore }}</td>
                     </tr>
+                    {% endif %}
                   {% endfor %}
                 {% endfor %}
                 {% if hit_rows.count == 0 %}
