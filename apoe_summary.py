@@ -100,6 +100,7 @@ def build_apoe_probe_summary(database_results: list[dict[str, Any]]) -> list[dic
 
         rows.append(
             {
+                "sample": sample,
                 "sample_database": sample,
                 "database": database_result.get("display_name", ""),
                 "db_prefix_path": database_result.get("db_prefix_path", ""),
