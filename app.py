@@ -5,6 +5,7 @@ delegate BLAST/database work to helper modules, and render templates with the
 objects those helpers return.
 """
 
+import threading
 from dataclasses import replace
 from pathlib import Path
 from time import perf_counter
@@ -84,6 +85,15 @@ app = Flask(
     template_folder=str(resource_path("templates")),
     static_folder=str(resource_path("static")),
 )
+
+# Live progress for the synchronous batch route. The batch POST blocks while it
+# runs, but Flask's dev server is threaded, so a separate poll request can read
+# how many databases have finished. One local user and short-lived entries, so a
+# plain dict under a lock is enough.
+# ponytail: in-memory dict; needs a real store only if this ever serves >1 user.
+_batch_progress: dict[str, dict[str, int]] = {}
+_batch_progress_lock = threading.Lock()
+
 
 APOE_PROBE_FASTA = """>AE4_E4=C
 CGGACATGGAGGACGTGCGCGGCCGCCTGGTGCAGT
@@ -608,6 +618,8 @@ def run_batch_blast_route():
     word_size_value = request.form.get("word_size") or None
     perc_identity_value = None if exact_probe_preset else (request.form.get("perc_identity") or None)
     timeout_value = request.form.get("timeout_seconds") or None
+    # Client-generated id so the waiting page can poll this batch's progress.
+    job_id = request.form.get("job_id", "")
 
     # Validate the shared query once up front rather than inside every worker.
     # A bad query then fails fast with a single message instead of one identical
@@ -817,14 +829,32 @@ def run_batch_blast_route():
                 "error": str(exc),
             }
             return {"row": row, "runtime": 0.0, "hits": 0, "query_count": 0, "query_total_length": 0}
+        finally:
+            # One database finished (success or error); advance the live counter
+            # the waiting page polls.
+            if job_id:
+                with _batch_progress_lock:
+                    entry = _batch_progress.get(job_id)
+                    if entry:
+                        entry["done"] += 1
+
+    # Publish the total up front so the first poll shows a determinate bar.
+    if job_id:
+        with _batch_progress_lock:
+            _batch_progress[job_id] = {"done": 0, "total": len(database_ids)}
 
     # Each BLAST search is a separate process, so threads give real parallelism.
     wall_start = perf_counter()
-    outcomes = run_jobs_concurrently(
-        run_single_database,
-        [{"raw_database_id": raw_database_id} for raw_database_id in database_ids],
-        max_workers=workers,
-    )
+    try:
+        outcomes = run_jobs_concurrently(
+            run_single_database,
+            [{"raw_database_id": raw_database_id} for raw_database_id in database_ids],
+            max_workers=workers,
+        )
+    finally:
+        if job_id:
+            with _batch_progress_lock:
+                _batch_progress.pop(job_id, None)
     wall_clock_seconds = perf_counter() - wall_start
 
     database_results = []
@@ -911,6 +941,18 @@ def run_batch_blast_route():
         batch=payload,
         error=None,
     )
+
+
+@app.get("/batch-progress/<job_id>")
+def batch_progress(job_id: str):
+    """Report how many databases of an in-flight batch have finished.
+
+    Polled by the waiting page to fill its progress bar. Unknown ids (not started
+    yet, or already cleaned up) report zeros so the client stays neutral.
+    """
+    with _batch_progress_lock:
+        entry = _batch_progress.get(job_id)
+        return dict(entry) if entry else {"done": 0, "total": 0}
 
 
 @app.get("/databases")

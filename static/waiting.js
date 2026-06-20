@@ -11,6 +11,7 @@
   let overlay = null;
   let elapsedTimer = null;
   let messageTimer = null;
+  let progressTimer = null;
 
   function formatElapsed(totalSeconds) {
     // Render elapsed time in the same HH:MM:SS style as remote BLAST pages.
@@ -114,6 +115,8 @@
 
           <p class="working-message">This page will be automatically updated in <strong>2</strong> seconds until the local job is done.</p>
           <p class="working-detail">Starting local job.</p>
+          <progress class="working-progress" style="width: 100%;" hidden></progress>
+          <p class="working-progress-label" hidden></p>
         </main>
       </div>
     `;
@@ -140,6 +143,7 @@
 
     clearInterval(elapsedTimer);
     clearInterval(messageTimer);
+    clearInterval(progressTimer);
 
     // Reset every changing field so repeat submissions start from a clean state.
     breadcrumbNode.textContent = `RID-${requestId}`;
@@ -166,6 +170,39 @@
       messageIndex = (messageIndex + 1) % messages.length;
       detailNode.textContent = messages[messageIndex];
     }, 9000);
+
+    // When the form opts in (data-wait-poll), fill a real progress bar from a
+    // server endpoint reporting how many databases of the batch have finished.
+    const progressNode = currentOverlay.querySelector(".working-progress");
+    const progressLabel = currentOverlay.querySelector(".working-progress-label");
+    const pollBase = form.dataset.waitPoll;
+    const jobField = form.querySelector('input[name="job_id"]');
+    if (pollBase && jobField) {
+      jobField.value = requestId;
+      progressNode.removeAttribute("value"); // indeterminate until the first total
+      progressNode.hidden = false;
+      progressLabel.hidden = false;
+      progressLabel.textContent = "Starting databases...";
+      const pollUrl = pollBase + encodeURIComponent(requestId);
+      progressTimer = setInterval(() => {
+        fetch(pollUrl, { cache: "no-store" })
+          .then((response) => (response.ok ? response.json() : null))
+          .then((data) => {
+            if (!data || !data.total) {
+              return;
+            }
+            progressNode.max = data.total;
+            progressNode.value = data.done;
+            progressLabel.textContent = `Databases complete: ${data.done} / ${data.total}`;
+          })
+          .catch(() => {
+            // Transient fetch errors are fine; the next tick retries.
+          });
+      }, 2000);
+    } else {
+      progressNode.hidden = true;
+      progressLabel.hidden = true;
+    }
   }
 
   function attachWaitingScreens() {
@@ -202,6 +239,7 @@
     }
     clearInterval(elapsedTimer);
     clearInterval(messageTimer);
+    clearInterval(progressTimer);
   });
 
   if (document.readyState === "loading") {
