@@ -703,14 +703,20 @@ def run_batch_blast_route():
             # Secondary human filter runs on the microbial net hits only; a
             # failure here keeps the eToL hits unfiltered rather than discarding
             # the run.
+            # Per-phase timing so a slow post-BLAST step (usually the human
+            # filter's read BLAST or CAP3) shows up in the console after one run,
+            # instead of bisecting by toggling features across 35-minute runs.
+            phase_seconds = {"human_filter": 0.0, "dedup": 0.0, "assembly": 0.0}
             human_filter_stats = None
             if human_filter_active and human_db is not None:
+                _phase_start = perf_counter()
                 try:
                     hits, human_filter_stats = filter_human_hits(
                         hits,
                         db_prefix_path=database.db_prefix_path,
                         source_fasta_path=database.source_fasta_path,
                         human_db_prefix_path=human_db.db_prefix_path,
+                        num_threads=threads_per_job,
                     )
                 except Exception as exc:
                     human_filter_stats = {
@@ -722,13 +728,16 @@ def run_batch_blast_route():
                         "hits_removed": 0,
                         "note": f"Human filter error: {exc}",
                     }
+                phase_seconds["human_filter"] = perf_counter() - _phase_start
             # Cross-probe de-duplication (Hu, Haas & Lathe 2022): after human
             # removal, allocate each remaining read to the single probe with the
             # highest similarity so a read recovered by several redundant probes
             # is counted once. Runs last, as the paper specifies.
             dedup_removed = 0
             if etol_preset_key:
+                _phase_start = perf_counter()
                 hits, dedup_removed = deduplicate_reads_to_best_probe(hits)
+                phase_seconds["dedup"] = perf_counter() - _phase_start
             # Contig assembly (re-probing input): group the final non-human,
             # de-duplicated reads by species and assemble each group's reads into
             # contigs. The read sequences are recovered with the same helper the
@@ -737,6 +746,7 @@ def run_batch_blast_route():
             contigs_by_species: dict[str, list[dict]] = {}
             contig_note = ""
             if contig_assembly_available:
+                _phase_start = perf_counter()
                 try:
                     for taxon, read_ids in group_read_ids_by_taxon(hits).items():
                         reads, _method = extract_reads(
@@ -749,6 +759,15 @@ def run_batch_blast_route():
                             contigs_by_species[taxon] = [contig.to_dict() for contig in contigs]
                 except Exception as exc:
                     contig_note = f"Contig assembly error: {exc}"
+                phase_seconds["assembly"] = perf_counter() - _phase_start
+            print(
+                f"[etol-timing] {database.display_name}: "
+                f"blast={result.runtime_seconds:.1f}s "
+                f"human_filter={phase_seconds['human_filter']:.1f}s "
+                f"dedup={phase_seconds['dedup']:.1f}s "
+                f"assembly={phase_seconds['assembly']:.1f}s",
+                flush=True,
+            )
             run_id = save_result(replace(result, hits=hits))
             row = {
                 "database_id": database.id,

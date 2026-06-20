@@ -157,6 +157,7 @@ def find_human_read_ids(
     evalue: str = DEFAULT_HUMAN_EVALUE,
     bitscore_threshold: float = HUMAN_BITSCORE_THRESHOLD,
     timeout_seconds: int = DEFAULT_HUMAN_TIMEOUT_SECONDS,
+    num_threads: int | str | None = None,
 ) -> set[str]:
     """Return read ids whose best human-genome alignment scores above
     ``bitscore_threshold`` bits (Hu, Haas & Lathe 2022 brain cutoff = 150)."""
@@ -170,22 +171,27 @@ def find_human_read_ids(
         )
         # -max_target_seqs 1 keeps the single best subject, whose top HSP carries
         # the read's maximum bitscore -- exactly the value the threshold gates on.
+        command = [
+            str(blast_exe("blastn")),
+            "-task",
+            "megablast",
+            "-query",
+            str(query_path),
+            "-db",
+            blast_safe_path(human_db_prefix_path),
+            "-evalue",
+            str(evalue),
+            "-max_target_seqs",
+            "1",
+            "-outfmt",
+            "6 qseqid bitscore",
+        ]
+        # This search of tens of thousands of matched reads is the eToL pipeline's
+        # heaviest post-BLAST step; run it across the job's cores rather than one.
+        if num_threads:
+            command += ["-num_threads", str(num_threads)]
         completed = subprocess.run(
-            [
-                str(blast_exe("blastn")),
-                "-task",
-                "megablast",
-                "-query",
-                str(query_path),
-                "-db",
-                blast_safe_path(human_db_prefix_path),
-                "-evalue",
-                str(evalue),
-                "-max_target_seqs",
-                "1",
-                "-outfmt",
-                "6 qseqid bitscore",
-            ],
+            command,
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
@@ -219,6 +225,7 @@ def filter_human_hits(
     evalue: str = DEFAULT_HUMAN_EVALUE,
     bitscore_threshold: float = HUMAN_BITSCORE_THRESHOLD,
     timeout_seconds: int = DEFAULT_HUMAN_TIMEOUT_SECONDS,
+    num_threads: int | str | None = None,
 ) -> tuple[list[dict[str, str]], dict[str, Any]]:
     """Drop hits whose patient read scores a strong human-genome alignment.
 
@@ -258,6 +265,7 @@ def filter_human_hits(
         evalue=evalue,
         bitscore_threshold=bitscore_threshold,
         timeout_seconds=timeout_seconds,
+        num_threads=num_threads,
     )
     stats["human_reads"] = len(human_ids)
 
