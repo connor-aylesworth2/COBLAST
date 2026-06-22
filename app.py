@@ -6,6 +6,7 @@ objects those helpers return.
 """
 
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from time import perf_counter, time
@@ -783,23 +784,47 @@ def run_batch_blast_route():
                 try:
                     reads_by_taxon = group_read_ids_by_taxon(hits)
                     total_taxa = len(reads_by_taxon)
-                    for index, (taxon, read_ids) in enumerate(reads_by_taxon.items(), start=1):
-                        # Per-species stage so the waiting page pinpoints which
-                        # group single-threaded CAP3 is grinding on (the usual
-                        # cause of a long, one-core tail with no timeout).
-                        _set_batch_stage(
-                            job_id,
-                            database.display_name,
-                            f"Assembling contigs (CAP3): {index}/{total_taxa} {taxon}",
-                        )
+                    # CAP3 itself is single-threaded, but the per-species
+                    # assemblies are independent (each runs in its own temp dir),
+                    # so submit them to the batch-wide assembly pool: every
+                    # assemble() spawns a CAP3 subprocess that releases the GIL,
+                    # giving real parallelism over the long one-core tail. The pool
+                    # is shared across all databases and capped at the core budget,
+                    # so a single-DB run uses every core, and on a many-DB run the
+                    # last database left assembling can claim the whole budget once
+                    # its peers finish -- no idle cores behind a one-species-at-a-
+                    # time tail -- while total CAP3 processes never exceed budget.
+                    assembled = 0
+                    progress_lock = threading.Lock()
+
+                    def assemble_taxon(taxon, read_ids):
+                        nonlocal assembled
                         reads, _method = extract_reads(
                             database.db_prefix_path,
                             database.source_fasta_path,
                             read_ids,
                         )
                         contigs = assembler.assemble(reads)
-                        if contigs:
-                            contigs_by_species[taxon] = [contig.to_dict() for contig in contigs]
+                        with progress_lock:
+                            assembled += 1
+                            _set_batch_stage(
+                                job_id,
+                                database.display_name,
+                                f"Assembling contigs (CAP3): {assembled}/{total_taxa}",
+                            )
+                        return taxon, [contig.to_dict() for contig in contigs]
+
+                    futures = [
+                        assembly_pool.submit(assemble_taxon, taxon, read_ids)
+                        for taxon, read_ids in reads_by_taxon.items()
+                    ]
+                    for future in futures:
+                        # A failed taxon's exception surfaces here; let it propagate
+                        # so the whole step degrades to a note, as the serial loop
+                        # did, rather than silently dropping that database's contigs.
+                        taxon, contig_dicts = future.result()
+                        if contig_dicts:
+                            contigs_by_species[taxon] = contig_dicts
                 except Exception as exc:
                     contig_note = f"Contig assembly error: {exc}"
                 phase_seconds["assembly"] = perf_counter() - _phase_start
@@ -877,13 +902,23 @@ def run_batch_blast_route():
             _batch_progress[job_id] = {"done": 0, "total": len(database_ids), "stages": {}}
 
     # Each BLAST search is a separate process, so threads give real parallelism.
+    # One assembly pool is shared across every database for the whole batch and
+    # capped at the core budget, so CAP3 work load-balances across databases:
+    # a single-DB job uses every core for its species, and the last database
+    # still assembling in a many-DB job claims the freed cores instead of
+    # crawling through its species one core at a time. run_single_database
+    # (a closure) submits its per-species assemblies here.
+    # ponytail: assembly is capped at budget independently of the BLAST fan, so
+    # the two can briefly sum above budget while some databases still search;
+    # unify them under one scheduler only if that overlap measurably thrashes.
     wall_start = perf_counter()
     try:
-        outcomes = run_jobs_concurrently(
-            run_single_database,
-            [{"raw_database_id": raw_database_id} for raw_database_id in database_ids],
-            max_workers=workers,
-        )
+        with ThreadPoolExecutor(max_workers=default_thread_count()) as assembly_pool:
+            outcomes = run_jobs_concurrently(
+                run_single_database,
+                [{"raw_database_id": raw_database_id} for raw_database_id in database_ids],
+                max_workers=workers,
+            )
     finally:
         if job_id:
             with _batch_progress_lock:
