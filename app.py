@@ -8,7 +8,7 @@ objects those helpers return.
 import threading
 from dataclasses import replace
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, time
 
 from flask import Flask, Response, abort, redirect, render_template, request, url_for
 
@@ -91,8 +91,22 @@ app = Flask(
 # how many databases have finished. One local user and short-lived entries, so a
 # plain dict under a lock is enough.
 # ponytail: in-memory dict; needs a real store only if this ever serves >1 user.
-_batch_progress: dict[str, dict[str, int]] = {}
+_batch_progress: dict[str, dict] = {}
 _batch_progress_lock = threading.Lock()
+
+
+def _set_batch_stage(job_id: str, label: str, stage: str) -> None:
+    """Record that database ``label`` has entered pipeline ``stage`` (live status).
+
+    ``since`` lets the waiting page show how long a database has sat in one stage,
+    which is the whole point for diagnosing slow steps (e.g. single-threaded CAP3).
+    """
+    if not job_id:
+        return
+    with _batch_progress_lock:
+        entry = _batch_progress.get(job_id)
+        if entry is not None:
+            entry["stages"][label] = {"stage": stage, "since": time()}
 
 
 APOE_PROBE_FASTA = """>AE4_E4=C
@@ -657,6 +671,11 @@ def run_batch_blast_route():
             if database.status != "available":
                 raise ValueError(f"{database.display_name} is marked as {database.status}.")
 
+            _set_batch_stage(
+                job_id,
+                database.display_name,
+                "Net BLAST search" if etol_preset_key else "BLAST search",
+            )
             if etol_preset_key:
                 # eToL panels run megablast for the seedable probes and
                 # blastn-short only for the few that cannot seed, which is far
@@ -721,6 +740,7 @@ def run_batch_blast_route():
             phase_seconds = {"human_filter": 0.0, "dedup": 0.0, "assembly": 0.0}
             human_filter_stats = None
             if human_filter_active and human_db is not None:
+                _set_batch_stage(job_id, database.display_name, "Secondary human filter")
                 _phase_start = perf_counter()
                 try:
                     hits, human_filter_stats = filter_human_hits(
@@ -747,6 +767,7 @@ def run_batch_blast_route():
             # is counted once. Runs last, as the paper specifies.
             dedup_removed = 0
             if etol_preset_key:
+                _set_batch_stage(job_id, database.display_name, "De-duplicating reads")
                 _phase_start = perf_counter()
                 hits, dedup_removed = deduplicate_reads_to_best_probe(hits)
                 phase_seconds["dedup"] = perf_counter() - _phase_start
@@ -760,7 +781,17 @@ def run_batch_blast_route():
             if contig_assembly_available:
                 _phase_start = perf_counter()
                 try:
-                    for taxon, read_ids in group_read_ids_by_taxon(hits).items():
+                    reads_by_taxon = group_read_ids_by_taxon(hits)
+                    total_taxa = len(reads_by_taxon)
+                    for index, (taxon, read_ids) in enumerate(reads_by_taxon.items(), start=1):
+                        # Per-species stage so the waiting page pinpoints which
+                        # group single-threaded CAP3 is grinding on (the usual
+                        # cause of a long, one-core tail with no timeout).
+                        _set_batch_stage(
+                            job_id,
+                            database.display_name,
+                            f"Assembling contigs (CAP3): {index}/{total_taxa} {taxon}",
+                        )
                         reads, _method = extract_reads(
                             database.db_prefix_path,
                             database.source_fasta_path,
@@ -780,7 +811,9 @@ def run_batch_blast_route():
                 f"assembly={phase_seconds['assembly']:.1f}s",
                 flush=True,
             )
+            _set_batch_stage(job_id, database.display_name, "Saving results")
             run_id = save_result(replace(result, hits=hits))
+            _set_batch_stage(job_id, database.display_name, "Done")
             row = {
                 "database_id": database.id,
                 "display_name": database.display_name,
@@ -841,7 +874,7 @@ def run_batch_blast_route():
     # Publish the total up front so the first poll shows a determinate bar.
     if job_id:
         with _batch_progress_lock:
-            _batch_progress[job_id] = {"done": 0, "total": len(database_ids)}
+            _batch_progress[job_id] = {"done": 0, "total": len(database_ids), "stages": {}}
 
     # Each BLAST search is a separate process, so threads give real parallelism.
     wall_start = perf_counter()
@@ -952,7 +985,16 @@ def batch_progress(job_id: str):
     """
     with _batch_progress_lock:
         entry = _batch_progress.get(job_id)
-        return dict(entry) if entry else {"done": 0, "total": 0}
+        if not entry:
+            return {"done": 0, "total": 0, "stages": []}
+        return {
+            "done": entry["done"],
+            "total": entry["total"],
+            "stages": [
+                {"label": label, "stage": info["stage"], "since": info["since"]}
+                for label, info in entry.get("stages", {}).items()
+            ],
+        }
 
 
 @app.get("/databases")

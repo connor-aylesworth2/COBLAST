@@ -13,6 +13,13 @@
   let messageTimer = null;
   let progressTimer = null;
 
+  function escapeHtml(text) {
+    // Database names and taxa are interpolated into innerHTML; escape them.
+    const node = document.createElement("div");
+    node.textContent = String(text);
+    return node.innerHTML;
+  }
+
   function formatElapsed(totalSeconds) {
     // Render elapsed time in the same HH:MM:SS style as remote BLAST pages.
     const hours = Math.floor(totalSeconds / 3600);
@@ -117,6 +124,7 @@
           <p class="working-detail">Starting local job.</p>
           <progress class="working-progress" style="width: 100%;" hidden></progress>
           <p class="working-progress-label" hidden></p>
+          <ul class="working-stages" style="list-style: none; padding: 0; text-align: left; font-size: 0.9em;" hidden></ul>
         </main>
       </div>
     `;
@@ -175,6 +183,7 @@
     // server endpoint reporting how many databases of the batch have finished.
     const progressNode = currentOverlay.querySelector(".working-progress");
     const progressLabel = currentOverlay.querySelector(".working-progress-label");
+    const stagesNode = currentOverlay.querySelector(".working-stages");
     const pollBase = form.dataset.waitPoll;
     const jobField = form.querySelector('input[name="job_id"]');
     if (pollBase && jobField) {
@@ -183,6 +192,8 @@
       progressNode.hidden = false;
       progressLabel.hidden = false;
       progressLabel.textContent = "Starting databases...";
+      stagesNode.innerHTML = "";
+      stagesNode.hidden = true;
       const pollUrl = pollBase + encodeURIComponent(requestId);
       progressTimer = setInterval(() => {
         fetch(pollUrl, { cache: "no-store" })
@@ -194,6 +205,19 @@
             progressNode.max = data.total;
             progressNode.value = data.done;
             progressLabel.textContent = `Databases complete: ${data.done} / ${data.total}`;
+            // Per-database current pipeline step, with how long it has been in it
+            // -- the part that makes a slow step (e.g. CAP3) obvious live.
+            const stages = Array.isArray(data.stages) ? data.stages : [];
+            if (stages.length) {
+              const nowSeconds = Date.now() / 1000;
+              stagesNode.innerHTML = stages
+                .map((item) => {
+                  const inStep = formatElapsed(Math.max(0, Math.round(nowSeconds - item.since)));
+                  return `<li><strong>${escapeHtml(item.label)}</strong>: ${escapeHtml(item.stage)} <span>(${inStep} in step)</span></li>`;
+                })
+                .join("");
+              stagesNode.hidden = false;
+            }
           })
           .catch(() => {
             // Transient fetch errors are fine; the next tick retries.
@@ -202,6 +226,7 @@
     } else {
       progressNode.hidden = true;
       progressLabel.hidden = true;
+      stagesNode.hidden = true;
     }
   }
 
