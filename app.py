@@ -677,9 +677,9 @@ def run_batch_blast_route():
                 "Net BLAST search" if etol_preset_key else "BLAST search",
             )
             if etol_preset_key:
-                # eToL panels run megablast for the seedable probes and
-                # blastn-short only for the few that cannot seed, which is far
-                # faster on whole-SRA databases than blastn-short over the panel.
+                # eToL panels run megablast over the whole panel (fast on
+                # whole-SRA databases); a probe that cannot seed megablast is
+                # silently dropped.
                 result = run_blast_probe_panel(
                     panel_fasta=sequence,
                     database=database.db_prefix_path,

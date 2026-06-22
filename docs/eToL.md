@@ -27,12 +27,11 @@ The only override the net applies is lifting the `max_target_seqs` cap (see the
 matches many reads in a deep patient database is counted in full rather than
 truncated at BLAST's default.
 
-To keep whole-SRA runs fast, the eToL panel is searched in two passes (matching
-the paper's two-task approach): probes that have a 28-base unambiguous window run
-with `megablast` (much faster on large read databases), and the few whose
-ambiguous bases leave no such window fall back to `blastn-short`. In the bundled
-microbial panel that is a single probe (`F3_Gpolymorpha_18S_7`); the partition is
-computed from each probe's sequence, so it self-adjusts if the panel changes.
+To keep whole-SRA runs fast, the entire eToL panel is searched with `megablast`
+(much faster on large read databases). `megablast` needs a 28-base unambiguous
+window to seed, so a probe whose ambiguous bases leave no such window finds
+nothing and is silently dropped. In the bundled microbial panel that is a single
+probe (`F3_Gpolymorpha_18S_7`).
 
 **Cross-probe de-duplication.** Because the probe collection is partly redundant
 (rRNA is conserved, so ~38% of probes share sequence with at least one other),

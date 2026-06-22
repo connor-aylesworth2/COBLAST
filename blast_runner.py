@@ -129,8 +129,9 @@ EXACT_MATCH_MT_MODE = "0"
 # coverage filter and only lifts max_target_seqs (so a probe matching many reads
 # in a deep patient database is counted in full rather than truncated at BLAST's
 # default cap), and the E-value < 0.01 net cutoff is applied post-search in
-# filter_net_probe_hits. The single ambiguous probe that cannot seed megablast
-# runs blastn-short (see run_blast_probe_panel), matching the two-task approach.
+# filter_net_probe_hits. The whole panel runs megablast (see
+# run_blast_probe_panel); a probe whose ambiguous bases leave no 28-base seed
+# finds nothing and is silently dropped.
 
 # CPU parallelism. -num_threads is BLAST+'s own multi-core switch; mt_mode picks
 # how the work is divided across those threads (0 auto, 1 by query, 2 by db).
@@ -138,11 +139,10 @@ NUM_THREADS_LIMIT = 1024
 ALLOWED_MT_MODES = {"0", "1", "2"}
 COBLAST_NUM_THREADS_ENV = "COBLAST_NUM_THREADS"
 
-# Probe panels run megablast for the SRA-scale speedup, but megablast needs a
-# 28-base unambiguous word to seed; a probe whose ambiguous bases leave no such
-# window falls back to blastn-short (see run_blast_probe_panel).
+# Probe panels run megablast for the SRA-scale speedup. megablast needs a
+# 28-base unambiguous word to seed, so a probe whose ambiguous bases leave no
+# such window finds nothing and is silently dropped (see run_blast_probe_panel).
 MEGABLAST_TASK = "megablast"
-MEGABLAST_MIN_SEED = 28
 
 
 @dataclass(frozen=True)
@@ -701,19 +701,6 @@ def run_blast(
     )
 
 
-def has_megablast_seed(sequence: str, min_seed: int = MEGABLAST_MIN_SEED) -> bool:
-    """True when a sequence has a contiguous unambiguous (ACGT) run of at least
-    ``min_seed`` bases, which megablast needs to build a word seed for it."""
-    longest = run = 0
-    for base in sequence.upper():
-        if base in "ACGT":
-            run += 1
-            longest = max(longest, run)
-        else:
-            run = 0
-    return longest >= min_seed
-
-
 def _parse_panel_fasta(text: str) -> list[tuple[str, str]]:
     """Parse panel FASTA text into (header, sequence) pairs, keeping headers whole."""
     pairs: list[tuple[str, str]] = []
@@ -737,35 +724,6 @@ def _pairs_to_fasta(pairs: Iterable[tuple[str, str]]) -> str:
     return "".join(f">{header}\n{sequence}\n" for header, sequence in pairs)
 
 
-def _merge_probe_panel_results(runs: list[BlastResult], database: str | Path) -> BlastResult:
-    """Combine the megablast and blastn-short passes into one BlastResult."""
-    hits: list[dict[str, str]] = []
-    command: list[str] = []
-    for index, completed in enumerate(runs):
-        hits.extend(completed.hits)
-        if index:
-            command.append("&&")
-        command.extend(completed.command)
-    first = runs[0]
-    returncode = next((completed.returncode for completed in runs if completed.returncode != 0), 0)
-    return BlastResult(
-        returncode=returncode,
-        hits=hits,
-        stdout="\n".join(completed.stdout for completed in runs),
-        stderr="\n".join(completed.stderr for completed in runs if completed.stderr),
-        command=command,
-        database_path=str(database),
-        database_total_bytes=first.database_total_bytes,
-        output_format=first.output_format,
-        program=first.program,
-        runtime_seconds=sum(completed.runtime_seconds for completed in runs),
-        query_type=first.query_type,
-        query_count=sum(completed.query_count for completed in runs),
-        query_total_length=sum(completed.query_total_length for completed in runs),
-        parameters=first.parameters,
-    )
-
-
 def run_blast_probe_panel(
     panel_fasta: str,
     database: str | Path,
@@ -774,42 +732,24 @@ def run_blast_probe_panel(
     timeout_seconds: int | str | None = None,
     num_threads: int | str | None = None,
 ) -> BlastResult:
-    """Run the eToL "net" probe panel, splitting it by megablast seed eligibility.
+    """Run the eToL "net" probe panel with megablast over the whole panel.
 
-    megablast is much faster on whole-SRA databases but needs a 28-base
-    unambiguous word to seed. Probes that have such a window run with megablast;
-    the few whose ambiguous bases leave no 28-base window run with blastn-short.
-    Both passes use the eToL net enforcement (default scoring, no identity or
-    coverage filter, lifted target cap) and their hits are merged, so the full
-    panel is searched at megablast speed for the bulk of the probes.
+    Uses the eToL net enforcement (default scoring, no identity or coverage
+    filter, lifted target cap). megablast needs a 28-base unambiguous word to
+    seed, so a probe whose ambiguous bases leave no such window finds nothing
+    and is silently dropped — acceptable for the net, and keeps the whole panel
+    at megablast speed on whole-SRA databases.
     """
-    megablast_pairs: list[tuple[str, str]] = []
-    short_pairs: list[tuple[str, str]] = []
-    for header, sequence in _parse_panel_fasta(panel_fasta):
-        target = megablast_pairs if has_megablast_seed(sequence) else short_pairs
-        target.append((header, sequence))
-
-    runs: list[BlastResult] = []
-    for task, pairs in ((MEGABLAST_TASK, megablast_pairs), (EXACT_MATCH_TASK, short_pairs)):
-        if not pairs:
-            continue
-        runs.append(
-            run_blast(
-                sequence=_pairs_to_fasta(pairs),
-                database=database,
-                program="blastn",
-                task=task,
-                output_format=output_format,
-                timeout_seconds=timeout_seconds,
-                num_threads=num_threads,
-                etol_net_probe=True,
-            )
-        )
-    if not runs:
-        raise ValueError("The probe panel contained no probes to search.")
-    if len(runs) == 1:
-        return runs[0]
-    return _merge_probe_panel_results(runs, database)
+    return run_blast(
+        sequence=panel_fasta,
+        database=database,
+        program="blastn",
+        task=MEGABLAST_TASK,
+        output_format=output_format,
+        timeout_seconds=timeout_seconds,
+        num_threads=num_threads,
+        etol_net_probe=True,
+    )
 
 
 def run_jobs_concurrently(

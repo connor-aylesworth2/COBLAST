@@ -227,21 +227,3 @@ def test_count_control_reads_dedups_to_best_control_probe():
     assert count_control_reads(hits, control_ids) == {"PGK1_2": 0, "PGK1_3": 1, "hNSE_2": 1}
 
 
-# --- megablast / blastn-short partition of the eToL panel ------------------
-
-def test_etol_full_panel_has_exactly_one_non_megablast_probe():
-    # Only F3_Gpolymorpha_18S_7 lacks a 28-base unambiguous window, so it is the
-    # single probe that falls back to blastn-short while the other 1,016 use
-    # megablast. Guards the speedup split against future probe-panel edits.
-    from blast_runner import _parse_panel_fasta, has_megablast_seed
-
-    pairs = _parse_panel_fasta(etol_preset_fasta("etol_full"))
-    short = [header for header, seq in pairs if not has_megablast_seed(seq)]
-    assert short == ["F3_Gpolymorpha_18S_7"]
-
-
-def test_etol_quick_panel_is_all_megablast_safe():
-    from blast_runner import _parse_panel_fasta, has_megablast_seed
-
-    pairs = _parse_panel_fasta(etol_preset_fasta("etol_quick"))
-    assert all(has_megablast_seed(seq) for _, seq in pairs)
