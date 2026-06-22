@@ -779,31 +779,47 @@ def run_batch_blast_route():
             # than dropping the database from the batch.
             contigs_by_species: dict[str, list[dict]] = {}
             contig_note = ""
+            extract_seconds = 0.0
+            cap3_seconds = 0.0
             if contig_assembly_available:
                 _phase_start = perf_counter()
                 try:
                     reads_by_taxon = group_read_ids_by_taxon(hits)
                     total_taxa = len(reads_by_taxon)
-                    # CAP3 itself is single-threaded, but the per-species
-                    # assemblies are independent (each runs in its own temp dir),
-                    # so submit them to the batch-wide assembly pool: every
-                    # assemble() spawns a CAP3 subprocess that releases the GIL,
-                    # giving real parallelism over the long one-core tail. The pool
-                    # is shared across all databases and capped at the core budget,
-                    # so a single-DB run uses every core, and on a many-DB run the
-                    # last database left assembling can claim the whole budget once
-                    # its peers finish -- no idle cores behind a one-species-at-a-
-                    # time tail -- while total CAP3 processes never exceed budget.
+                    # Pull every species' reads out of the database in a SINGLE
+                    # pass, then assemble from memory. The per-species version
+                    # re-ran extract_reads (a blastdbcmd subprocess whose FASTA
+                    # output is parsed in pure Python, plus a whole-file FASTA
+                    # fallback) once per species, and that read extraction -- not
+                    # CAP3 -- is what pinned a single core: its Python parsing
+                    # holds the GIL, which the assembly thread pool cannot spread.
+                    # One blastdbcmd call (one DB open, one parse) replaces N and
+                    # leaves CAP3's subprocess as the only per-species work, which
+                    # is what actually parallelizes across the shared pool.
+                    all_read_ids = sorted(
+                        {rid for ids in reads_by_taxon.values() for rid in ids}
+                    )
+                    _set_batch_stage(
+                        job_id,
+                        database.display_name,
+                        f"Extracting {len(all_read_ids)} reads for assembly",
+                    )
+                    _extract_start = perf_counter()
+                    all_reads, _method = extract_reads(
+                        database.db_prefix_path,
+                        database.source_fasta_path,
+                        all_read_ids,
+                    )
+                    extract_seconds = perf_counter() - _extract_start
+
                     assembled = 0
                     progress_lock = threading.Lock()
 
                     def assemble_taxon(taxon, read_ids):
                         nonlocal assembled
-                        reads, _method = extract_reads(
-                            database.db_prefix_path,
-                            database.source_fasta_path,
-                            read_ids,
-                        )
+                        reads = {
+                            rid: all_reads[rid] for rid in read_ids if rid in all_reads
+                        }
                         contigs = assembler.assemble(reads)
                         with progress_lock:
                             assembled += 1
@@ -814,6 +830,7 @@ def run_batch_blast_route():
                             )
                         return taxon, [contig.to_dict() for contig in contigs]
 
+                    _cap3_start = perf_counter()
                     futures = [
                         assembly_pool.submit(assemble_taxon, taxon, read_ids)
                         for taxon, read_ids in reads_by_taxon.items()
@@ -825,6 +842,7 @@ def run_batch_blast_route():
                         taxon, contig_dicts = future.result()
                         if contig_dicts:
                             contigs_by_species[taxon] = contig_dicts
+                    cap3_seconds = perf_counter() - _cap3_start
                 except Exception as exc:
                     contig_note = f"Contig assembly error: {exc}"
                 phase_seconds["assembly"] = perf_counter() - _phase_start
@@ -833,7 +851,8 @@ def run_batch_blast_route():
                 f"blast={result.runtime_seconds:.1f}s "
                 f"human_filter={phase_seconds['human_filter']:.1f}s "
                 f"dedup={phase_seconds['dedup']:.1f}s "
-                f"assembly={phase_seconds['assembly']:.1f}s",
+                f"assembly={phase_seconds['assembly']:.1f}s "
+                f"(extract={extract_seconds:.1f}s cap3={cap3_seconds:.1f}s)",
                 flush=True,
             )
             _set_batch_stage(job_id, database.display_name, "Saving results")
