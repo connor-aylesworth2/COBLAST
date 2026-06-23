@@ -101,6 +101,13 @@
                   {{ batch.contig_count }} contig(s) assembled (CAP3)
                 </div>
               {% endif %}
+              {% if batch.identify_contigs %}
+                <div class="summary-item">
+                  <span>Contig species ID</span>
+                  {{ batch.contigs_identified }} contig(s) identified
+                  <span class="muted">vs {{ batch.species_id_db }} (&ge;99% confirmed)</span>
+                </div>
+              {% endif %}
               {% if batch.contig_assembly_unavailable %}
                 <div class="summary-item">
                   <span>Contig assembly</span>
@@ -236,6 +243,7 @@
                           <th>Probes detected</th>
                           <th>Matched reads</th>
                           {% if batch.etol_normalized %}<th>Reads/host cell</th>{% endif %}
+                          {% if batch.identify_contigs %}<th>Closest homolog (contig)</th><th>Confirmed reads</th>{% endif %}
                         </tr>
                       </thead>
                       <tbody>
@@ -247,6 +255,7 @@
                             <td class="numeric-cell">{{ species.probes_detected }} / {{ species.probes_in_panel }}</td>
                             <td class="numeric-cell">{{ species.exact_hits }}</td>
                             {% if batch.etol_normalized %}<td class="numeric-cell">{{ species.normalized_label or "n/a" }}</td>{% endif %}
+                            {% if batch.identify_contigs %}<td>{{ species.closest_homolog or "n/a" }}</td><td class="numeric-cell">{{ species.confirmed_reads if species.confirmed_reads != "" else "n/a" }}</td>{% endif %}
                           </tr>
                         {% endfor %}
                       </tbody>
@@ -290,6 +299,7 @@
                           <th>Contig</th>
                           <th>Length (nt)</th>
                           <th>Reads</th>
+                          {% if batch.identify_contigs %}<th>Closest homolog</th><th>Confirmed reads</th>{% endif %}
                           <th>Sequence (first 60 nt)</th>
                         </tr>
                       </thead>
@@ -301,6 +311,7 @@
                               <td>{{ contig.id }}</td>
                               <td class="numeric-cell">{{ contig.length }}</td>
                               <td class="numeric-cell">{{ contig.num_reads }}</td>
+                              {% if batch.identify_contigs %}<td>{{ contig.closest_homolog or "n/a" }}</td><td class="numeric-cell">{{ contig.confirmed_reads|default("n/a") }}</td>{% endif %}
                               <td><code>{{ contig.sequence[:60] }}{% if contig.length > 60 %}&hellip;{% endif %}</code></td>
                             </tr>
                           {% endfor %}
@@ -310,6 +321,9 @@
                   </div>
                   {% if database_result.contig_note %}
                     <p class="muted">{{ database_result.contig_note }}</p>
+                  {% endif %}
+                  {% if database_result.contig_id_note %}
+                    <p class="muted">{{ database_result.contig_id_note }}</p>
                   {% endif %}
                 </div>
               {% elif database_result.contig_note %}

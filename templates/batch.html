@@ -97,6 +97,25 @@
           </label>
         </div>
 
+        <div class="field" id="identify_contigs_field">
+          <span class="field-label">Contig species identification</span>
+          <label class="checkbox-row checkbox-row--wide">
+            <input id="identify_contigs" name="identify_contigs" type="checkbox" value="1">
+            <span>
+              <strong>Identify each contig's closest homolog and confirm abundance</strong>
+              <br><span class="muted">Requires contig assembly (above). Each assembled contig is BLASTed against the reference rRNA database below for its closest homolog (the species call), and each species' contigs are BLASTed against that species' own reads to count reads matching at &ge;99% identity (confirmed abundance), per Hu, Haas &amp; Lathe 2022. Re-probing the library with key contigs is not yet implemented.</span>
+            </span>
+          </label>
+          <label for="species_id_db_id">Reference rRNA database</label>
+          <select id="species_id_db_id" name="species_id_db_id">
+            {% for option in database_options if option.database.db_type == "nucl" and option.database.status == "available" %}
+              <option value="{{ option.database.id }}" {% if option.database.category == "reference" %}selected{% endif %}>{{ option.database.display_name }}{% if option.database.category == "reference" %} (reference){% endif %}</option>
+            {% else %}
+              <option value="">No nucleotide databases registered</option>
+            {% endfor %}
+          </select>
+        </div>
+
         <div class="field">
           <label for="sequence">Query input</label>
           <textarea id="sequence" name="sequence">&gt;query
@@ -243,6 +262,9 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       const humanFilterField = document.getElementById("human_filter_field");
       const assembleContigs = document.getElementById("assemble_contigs");
       const assembleContigsField = document.getElementById("assemble_contigs_field");
+      const identifyContigs = document.getElementById("identify_contigs");
+      const identifyContigsDb = document.getElementById("species_id_db_id");
+      const identifyContigsField = document.getElementById("identify_contigs_field");
       // Snapshot of the manual query fields, saved when a preset takes over.
       let prePresetState = null;
 
@@ -270,6 +292,21 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         assembleContigsField.style.opacity = microbial ? "" : "0.55";
         if (!microbial) {
           assembleContigs.checked = false;
+        }
+        updateIdentifyAvailability();
+      }
+
+      function updateIdentifyAvailability() {
+        // Contig identification needs a microbial preset AND contig assembly on
+        // (it has nothing to identify without assembled contigs).
+        const active = activePreset();
+        const microbial = !!active && active.dataset.microbial === "true";
+        const enabled = microbial && assembleContigs.checked;
+        identifyContigs.disabled = !enabled;
+        identifyContigsDb.disabled = !enabled;
+        identifyContigsField.style.opacity = enabled ? "" : "0.55";
+        if (!enabled) {
+          identifyContigs.checked = false;
         }
       }
 
@@ -354,6 +391,8 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
         }
         updateCompatibility();
       });
+
+      assembleContigs.addEventListener("change", updateIdentifyAvailability);
 
       for (const presetCheckbox of presetCheckboxes) {
         presetCheckbox.addEventListener("change", () => {

@@ -15,6 +15,7 @@ from flask import Flask, Response, abort, redirect, render_template, request, ur
 
 from apoe_summary import apoe_probe_query_ids, build_apoe_probe_summary
 from assembler import default_assembler
+from contig_id import identify_contigs
 from etol_summary import (
     ETOL_NET_FILTER,
     build_etol_probe_summary,
@@ -614,6 +615,31 @@ def run_batch_blast_route():
     contig_assembly_available = assemble_contigs_active and assembler.is_available()
     contig_assembly_unavailable = assemble_contigs_active and not contig_assembly_available
 
+    # Contig species identification (Hu, Haas & Lathe 2022): once contigs are
+    # assembled, BLAST each against a local reference rRNA DB for its closest
+    # homolog (species call) and re-BLAST each taxon's contigs against that
+    # taxon's own reads to count near-100%-identity reads (confirmed abundance).
+    # Requires contig assembly to be on plus an available nucleotide reference DB.
+    # The paper's third step -- re-probing the library with key contigs -- is not
+    # implemented yet.
+    identify_contigs_requested = request.form.get("identify_contigs") == "1"
+    identify_contigs_active = identify_contigs_requested and assemble_contigs_active
+    reference_db = None
+    if identify_contigs_active:
+        try:
+            reference_db = get_database(int(request.form.get("species_id_db_id", "")))
+        except Exception:
+            reference_db = None
+        if reference_db is None or reference_db.db_type != "nucl" or reference_db.status != "available":
+            return render_template(
+                "batch.html",
+                blast_programs=BLAST_PROGRAMS,
+                database_options=database_options(),
+                etol_preset_options=etol_preset_options(),
+                error="Select an available nucleotide reference database (e.g. a SILVA rRNA database) for contig species identification.",
+                message="",
+            ), 400
+
     if not database_ids:
         return render_template(
             "batch.html",
@@ -738,7 +764,7 @@ def run_batch_blast_route():
             # Per-phase timing so a slow post-BLAST step (usually the human
             # filter's read BLAST or CAP3) shows up in the console after one run,
             # instead of bisecting by toggling features across 35-minute runs.
-            phase_seconds = {"human_filter": 0.0, "dedup": 0.0, "assembly": 0.0}
+            phase_seconds = {"human_filter": 0.0, "dedup": 0.0, "assembly": 0.0, "identification": 0.0}
             human_filter_stats = None
             if human_filter_active and human_db is not None:
                 _set_batch_stage(job_id, database.display_name, "Secondary human filter")
@@ -781,6 +807,10 @@ def run_batch_blast_route():
             contig_note = ""
             extract_seconds = 0.0
             cap3_seconds = 0.0
+            # Kept in function scope so the identification step below can reuse
+            # them; populated only when assembly actually runs.
+            reads_by_taxon: dict[str, list[str]] = {}
+            all_reads: dict[str, str] = {}
             if contig_assembly_available:
                 _phase_start = perf_counter()
                 try:
@@ -846,12 +876,37 @@ def run_batch_blast_route():
                 except Exception as exc:
                     contig_note = f"Contig assembly error: {exc}"
                 phase_seconds["assembly"] = perf_counter() - _phase_start
+            # Contig species identification + confirmed abundance: BLAST the
+            # assembled contigs against the reference rRNA DB (closest homolog)
+            # and against each taxon's own reads (>= identity). Annotates the
+            # contig dicts in place. A failure degrades to a note, like assembly.
+            contig_identification: dict[str, dict] = {}
+            contig_id_note = ""
+            if identify_contigs_active and reference_db is not None and contigs_by_species:
+                _set_batch_stage(
+                    job_id,
+                    database.display_name,
+                    "Identifying contigs (species ID + confirmed abundance)",
+                )
+                _phase_start = perf_counter()
+                try:
+                    contig_identification = identify_contigs(
+                        contigs_by_species,
+                        reads_by_taxon,
+                        all_reads,
+                        reference_db_prefix=reference_db.db_prefix_path,
+                        num_threads=threads_per_job,
+                    )
+                except Exception as exc:
+                    contig_id_note = f"Contig identification error: {exc}"
+                phase_seconds["identification"] = perf_counter() - _phase_start
             print(
                 f"[etol-timing] {database.display_name}: "
                 f"blast={result.runtime_seconds:.1f}s "
                 f"human_filter={phase_seconds['human_filter']:.1f}s "
                 f"dedup={phase_seconds['dedup']:.1f}s "
                 f"assembly={phase_seconds['assembly']:.1f}s "
+                f"identification={phase_seconds['identification']:.1f}s "
                 f"(extract={extract_seconds:.1f}s cap3={cap3_seconds:.1f}s)",
                 flush=True,
             )
@@ -876,6 +931,14 @@ def run_batch_blast_route():
                 "contig_count": sum(len(items) for items in contigs_by_species.values()),
                 "contig_species_count": len(contigs_by_species),
                 "contig_note": contig_note,
+                "contig_identification": contig_identification,
+                "contig_id_note": contig_id_note,
+                "contigs_identified": sum(
+                    1
+                    for items in contigs_by_species.values()
+                    for contig in items
+                    if contig.get("closest_homolog")
+                ),
                 "error": "",
             }
             return {
@@ -1012,6 +1075,11 @@ def run_batch_blast_route():
         "contig_assembly_unavailable": contig_assembly_unavailable,
         "contig_count": sum(
             result_row.get("contig_count", 0) for result_row in database_results
+        ),
+        "identify_contigs": identify_contigs_active,
+        "species_id_db": reference_db.display_name if reference_db else "",
+        "contigs_identified": sum(
+            result_row.get("contigs_identified", 0) for result_row in database_results
         ),
         "database_results": database_results,
     }

@@ -73,6 +73,11 @@ ETOL_SPECIES_EXPORT_COLUMNS = [
     ("exact_hits", "Total exact probe hits"),
     ("host_cells", "Est. host cells"),
     ("normalized_abundance", "Reads per host cell"),
+    # Contig-based species identification (optional; blank unless the run BLASTed
+    # the assembled contigs against a reference rRNA DB). Appended last so the
+    # existing column order/headers stay stable for downstream plots.
+    ("closest_homolog", "Closest homolog (contig)"),
+    ("confirmed_reads", "Confirmed reads (contig)"),
 ]
 
 ETOL_PROBE_EXPORT_COLUMNS = [
@@ -443,6 +448,9 @@ def build_etol_probe_summary(
         control_counts = database_result.get("etol_control_counts") or {}
         host_cells = compute_host_cells(control_counts)
         gene_means = control_gene_means(control_counts)
+        # Optional contig identification (closest homolog + confirmed reads per
+        # taxon); empty dict when the run did not identify contigs.
+        contig_identification = database_result.get("contig_identification") or {}
 
         detected_species = []
         for taxon in taxa:
@@ -450,6 +458,7 @@ def build_etol_probe_summary(
             exact_hits = sum(counts.get(probe, 0) for probe in taxon_probes)
             probes_detected = sum(1 for probe in taxon_probes if counts.get(probe, 0) > 0)
             if exact_hits > 0:
+                ident = contig_identification.get(taxon["taxon"], {})
                 detected_species.append(
                     {
                         "taxon": taxon["taxon"],
@@ -463,6 +472,8 @@ def build_etol_probe_summary(
                         "normalized_label": _format_normalized(
                             normalized_abundance(exact_hits, host_cells)
                         ),
+                        "closest_homolog": ident.get("closest_homolog", ""),
+                        "confirmed_reads": ident.get("confirmed_reads", ""),
                     }
                 )
 
@@ -533,11 +544,13 @@ def etol_species_count_rows(
     for database_result in database_results:
         counts = _probe_counts(database_result, query_ids)
         host_cells = compute_host_cells(database_result.get("etol_control_counts") or {})
+        contig_identification = database_result.get("contig_identification") or {}
         sample = _sample_label(database_result)
         for taxon in taxa:
             taxon_probes = probes_by_taxon[taxon["taxon"]]
             exact_hits = sum(counts.get(probe, 0) for probe in taxon_probes)
             probes_detected = sum(1 for probe in taxon_probes if counts.get(probe, 0) > 0)
+            ident = contig_identification.get(taxon["taxon"], {})
             rows.append(
                 {
                     "sample_database": sample,
@@ -551,6 +564,8 @@ def etol_species_count_rows(
                     "normalized_abundance": _format_normalized(
                         normalized_abundance(exact_hits, host_cells)
                     ),
+                    "closest_homolog": ident.get("closest_homolog", ""),
+                    "confirmed_reads": ident.get("confirmed_reads", ""),
                 }
             )
     return rows

@@ -241,6 +241,13 @@ def etol_contigs_as_fasta(batch_data: dict) -> str:
                     f"{sample}|{taxon}|{contig.get('id', '')}"
                     f"|reads={contig.get('num_reads', 0)}|len={len(sequence)}"
                 )
+                # Append contig identification when the run produced it.
+                homolog = str(contig.get("closest_homolog", "") or "")
+                if homolog:
+                    header += (
+                        f"|confirmed={contig.get('confirmed_reads', 0)}"
+                        f"|homolog={homolog}"
+                    )
                 blocks.append(f">{header}\n{wrap_sequence(sequence)}")
     return ("\n".join(blocks) + "\n") if blocks else ""
 
