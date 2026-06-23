@@ -293,8 +293,17 @@ summary {
 }
 
 .table-wrap {
-  /* Wide BLAST tables should scroll horizontally instead of breaking layout. */
+  /* Wide BLAST tables should scroll horizontally instead of breaking layout.
+     rotateX flips the box so its horizontal scrollbar sits on top; the table
+     child is flipped back so its content reads normally.
+     ponytail: pure-CSS flip, no JS. Swap for a synced top-bar div only if a
+     table ever needs internal vertical scroll (the flip would invert it). */
   overflow-x: auto;
+  transform: rotateX(180deg);
+}
+
+.table-wrap > table {
+  transform: rotateX(180deg);
 }
 
 .section-header {
