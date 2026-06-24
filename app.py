@@ -908,6 +908,7 @@ def run_batch_blast_route():
                             if (human_filter_active and human_db is not None)
                             else None
                         ),
+                        assembly_pool=assembly_pool,
                     )
                 except Exception as exc:
                     reprobe_note = f"Re-probing error: {exc}"

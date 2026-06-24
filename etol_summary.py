@@ -457,7 +457,9 @@ def build_etol_probe_summary(
                         "normalized_label": _format_normalized(
                             normalized_abundance(exact_hits, host_cells)
                         ),
+                        # Full lineage kept for the export; species shown in the table.
                         "closest_homolog": ident.get("closest_homolog", ""),
+                        "closest_species": ident.get("closest_species", ""),
                         "confirmed_reads": ident.get("confirmed_reads", ""),
                     }
                 )

@@ -262,7 +262,7 @@
                             <td class="numeric-cell">{{ species.probes_detected }} / {{ species.probes_in_panel }}</td>
                             <td class="numeric-cell">{{ species.exact_hits }}</td>
                             {% if batch.etol_normalized %}<td class="numeric-cell">{{ species.normalized_label or "n/a" }}</td>{% endif %}
-                            {% if batch.identify_contigs %}<td>{{ species.closest_homolog or "n/a" }}</td><td class="numeric-cell">{{ species.confirmed_reads if species.confirmed_reads != "" else "n/a" }}</td>{% endif %}
+                            {% if batch.identify_contigs %}<td title="{{ species.closest_homolog }}">{{ species.closest_species or "n/a" }}</td><td class="numeric-cell">{{ species.confirmed_reads if species.confirmed_reads != "" else "n/a" }}</td>{% endif %}
                           </tr>
                         {% endfor %}
                       </tbody>

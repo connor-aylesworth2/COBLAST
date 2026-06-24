@@ -63,6 +63,30 @@ def _to_fasta(records: dict[str, str]) -> str:
     return "".join(f">{rec_id}\n{sequence}\n" for rec_id, sequence in records.items())
 
 
+# Reference hit titles look like ``ACC.start.end Domain;Phylum;...;Species``; the
+# species is the last ``;``-delimited rank (the leading accession lives in the
+# first field, so it never reaches the last). Human reads from rRNA can slip the
+# genome-level human filter and assemble into contigs the reference correctly
+# calls Homo sapiens -- the homolog string is the only signal that catches them.
+HUMAN_HOMOLOG_MARKER = "Homo sapiens"
+
+
+def species_from_homolog(stitle: str) -> str:
+    """Reduce a reference hit title to just its species name.
+
+    Takes the last non-empty ``;``-delimited rank, so ``ACC.s.e Bacteria;...;
+    Pseudomonas fluorescens`` becomes ``Pseudomonas fluorescens``. A title with
+    no lineage (no ``;``) is returned as-is, so this never raises.
+    """
+    ranks = [part.strip() for part in (stitle or "").split(";") if part.strip()]
+    return ranks[-1] if ranks else (stitle or "").strip()
+
+
+def _is_human_homolog(stitle: str) -> bool:
+    """True when a contig's closest homolog is human (checked over the lineage)."""
+    return HUMAN_HOMOLOG_MARKER in (stitle or "")
+
+
 def _best_homolog_per_query(tabular_text: str) -> dict[str, dict[str, Any]]:
     """Pick the highest-bitscore reference hit per contig from BLAST outfmt 6.
 
@@ -273,7 +297,20 @@ def identify_contigs(
         taxon, index = origin[synthetic_id]
         contig = contigs_by_species[taxon][index]
         contig["closest_homolog"] = info["homolog"]
+        contig["closest_species"] = species_from_homolog(info["homolog"])
         contig["homolog_pident"] = info["pident"]
+
+    # 1b. Drop human contigs: human rRNA reads can survive the genome-level human
+    #     filter and assemble here; the reference homolog is the only signal that
+    #     identifies them. Removing them from contigs_by_species also shrinks the
+    #     contig_count, exports and FASTA download. ponytail: substring match on
+    #     the homolog lineage; tighten to a taxonomy field only if it misfires.
+    for taxon, contigs in contigs_by_species.items():
+        contigs_by_species[taxon] = [
+            contig
+            for contig in contigs
+            if not _is_human_homolog(str(contig.get("closest_homolog", "")))
+        ]
 
     # 2. Confirmed abundance: per taxon, BLAST that taxon's reads against its own
     #    contigs and count reads at >= identity_pct.
@@ -292,6 +329,7 @@ def identify_contigs(
         representative = _representative_contig(contigs)
         identification[taxon] = {
             "closest_homolog": (representative or {}).get("closest_homolog", ""),
+            "closest_species": (representative or {}).get("closest_species", ""),
             "homolog_pident": (representative or {}).get("homolog_pident"),
             "confirmed_reads": len(confirmed),
         }
@@ -351,6 +389,14 @@ def _reprobe_hits(
         ]
         if num_threads:
             command += ["-num_threads", str(num_threads)]
+            # Split the work by query: re-probing has many key contigs (one per
+            # taxon x top_contigs), so mt_mode 1 parallelizes far better than the
+            # default db split. Only valid with >1 thread (BLAST rejects it at 1).
+            try:
+                if int(num_threads) > 1:
+                    command += ["-mt_mode", "1"]
+            except (TypeError, ValueError):
+                pass
         completed = subprocess.run(
             command,
             capture_output=True,
@@ -385,6 +431,7 @@ def reprobe_and_reassemble(
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     human_db_prefix: str | None = None,
     human_bitscore_threshold: float = HUMAN_BITSCORE_THRESHOLD,
+    assembly_pool: Any = None,
 ) -> dict[str, int]:
     """One round of contig re-probing (Hu, Haas & Lathe 2022, Box 3).
 
@@ -394,6 +441,11 @@ def reprobe_and_reassemble(
     reads. Mutates ``contigs_by_species`` (replacing a taxon's contigs when
     re-assembly yields any), ``reads_by_taxon`` and ``all_reads`` (so the later
     confirmed-abundance step counts against the expanded read set) in place.
+
+    ``assembly_pool`` is an optional ``Executor``: when given, the per-taxon CAP3
+    re-assemblies fan out across it (each runs in its own temp dir, so they are
+    independent); left ``None`` they run serially. The shared-dict mutations are
+    always applied serially afterward.
 
     Returns ``{new_reads, reprobed_taxa, human_removed}`` for reporting.
     """
@@ -441,22 +493,33 @@ def reprobe_and_reassemble(
     all_reads.update(new_reads)
 
     # 5. Re-assemble each re-probed taxon from its original + surviving new reads.
-    # ponytail: serial re-assembly; the dominant cost is the one BLAST above, and
-    # only taxa that gained reads re-assemble. Fan out via a pool only if profiling
-    # shows these CAP3 calls dominate.
-    added_total = 0
-    reprobed_taxa = 0
-    for taxon, novel_ids in new_ids_by_taxon.items():
+    # The CAP3 calls are independent (own temp dir each), so fan them out over the
+    # shared pool when one is supplied; the mutations below stay on this thread.
+    def _reassemble(taxon: str):
+        novel_ids = new_ids_by_taxon[taxon]
         surviving = {rid for rid in novel_ids if rid in new_reads}
         if not surviving:
-            continue
+            return None
         combined_ids = list(existing_by_taxon.get(taxon, set())) + sorted(surviving)
         reads = {rid: all_reads[rid] for rid in combined_ids if rid in all_reads}
-        new_contigs = assembler.assemble(reads)
+        return taxon, combined_ids, len(surviving), assembler.assemble(reads)
+
+    taxa = list(new_ids_by_taxon)
+    if assembly_pool is not None:
+        results = list(assembly_pool.map(_reassemble, taxa))
+    else:
+        results = [_reassemble(taxon) for taxon in taxa]
+
+    added_total = 0
+    reprobed_taxa = 0
+    for result in results:
+        if not result:
+            continue
+        taxon, combined_ids, surviving_count, new_contigs = result
         if new_contigs:
             contigs_by_species[taxon] = [contig.to_dict() for contig in new_contigs]
             reads_by_taxon[taxon] = combined_ids
-            added_total += len(surviving)
+            added_total += surviving_count
             reprobed_taxa += 1
     return {
         "new_reads": added_total,

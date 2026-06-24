@@ -16,7 +16,21 @@ from contig_id import (
     _reprobe_reads_by_query,
     identify_contigs,
     reprobe_and_reassemble,
+    species_from_homolog,
 )
+
+
+# --- homolog -> species parsing ----------------------------------------------
+
+def test_species_from_homolog_takes_last_lineage_rank():
+    # Real reference-title format: accession in the first field, species last.
+    full = ("CP031450.6146683.6148220 Bacteria;Pseudomonadota;Gammaproteobacteria;"
+            "Pseudomonadales;Pseudomonadaceae;Pseudomonas;Pseudomonas fluorescens")
+    assert species_from_homolog(full) == "Pseudomonas fluorescens"
+    # No lineage (bare description) is returned as-is; trailing ';' tolerated.
+    assert species_from_homolog("Thermotoga maritima") == "Thermotoga maritima"
+    assert species_from_homolog("A;B;Hoeflea olei;") == "Hoeflea olei"
+    assert species_from_homolog("") == ""
 
 
 # --- tabular parsers ----------------------------------------------------------
@@ -120,6 +134,44 @@ def test_identify_contigs_annotates_and_summarizes(monkeypatch):
     assert identification["A_Mjannaschii_16S"]["confirmed_reads"] == 1
 
 
+def test_identify_contigs_drops_human_contigs(monkeypatch):
+    contigs_by_species = {
+        "H3_Human_18S": [
+            {"id": "Contig1", "sequence": "AAA", "num_reads": 9, "length": 3},
+        ],
+        "B0_T": [
+            {"id": "Contig1", "sequence": "GGG", "num_reads": 5, "length": 3},
+        ],
+    }
+    reads_by_taxon = {"H3_Human_18S": ["r1"], "B0_T": ["r9"]}
+    all_reads = {"r1": "AAA", "r9": "GGG"}
+
+    seq_homolog = {
+        "AAA": "ACC.1.2 Eukaryota;Metazoa;Chordata;Mammalia;Homo sapiens (human)",
+        "GGG": "ACC.3.4 Bacteria;Thermotogae;Thermotoga maritima",
+    }
+
+    def fake_name(named, reference_db_prefix, **_kwargs):
+        return {
+            sid: {"homolog": seq_homolog[seq], "pident": 99.0, "length": 3, "bitscore": 99.0}
+            for sid, seq in named.items()
+        }
+
+    monkeypatch.setattr(contig_id, "name_contigs", fake_name)
+    monkeypatch.setattr(contig_id, "confirm_contig_reads", lambda *a, **k: ({}, set()))
+
+    identification = identify_contigs(
+        contigs_by_species, reads_by_taxon, all_reads, reference_db_prefix="ref"
+    )
+
+    # Human contig removed from the taxon's list and its identification blanked.
+    assert contigs_by_species["H3_Human_18S"] == []
+    assert identification["H3_Human_18S"]["closest_species"] == ""
+    # Non-human taxon keeps its contig and gets a parsed species name.
+    assert [c["id"] for c in contigs_by_species["B0_T"]] == ["Contig1"]
+    assert identification["B0_T"]["closest_species"] == "Thermotoga maritima"
+
+
 def test_identify_contigs_skips_sequenceless_contigs(monkeypatch):
     contigs_by_species = {"T": [{"id": "Contig1", "sequence": "", "num_reads": 0, "length": 0}]}
     captured = {}
@@ -203,6 +255,43 @@ def test_reprobe_and_reassemble_pulls_reads_and_rebuilds(monkeypatch):
     # The taxon's read set now includes the recovered reads (order-independent).
     assert set(reads_by_taxon["B0_T"]) == {"r1", "r2", "rNEW1", "rNEW2"}
     assert "rNEW1" in all_reads  # new sequences merged in for confirmed-abundance
+
+
+def test_reprobe_reassembles_in_parallel_when_pool_given(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    contigs_by_species = {
+        "B0_T": [{"id": "Contig1", "sequence": "AAA", "num_reads": 5, "length": 3}],
+        "A_M": [{"id": "Contig1", "sequence": "GGG", "num_reads": 9, "length": 3}],
+    }
+    reads_by_taxon = {"B0_T": ["r1"], "A_M": ["r9"]}
+    all_reads = {"r1": "AAA", "r9": "GGG"}
+
+    def fake_reprobe_hits(named, patient_db_prefix, **_kwargs):
+        seq_to_reads = {"AAA": {"rNEW1"}, "GGG": {"r9b"}}
+        return {sid: set(seq_to_reads[seq]) for sid, seq in named.items() if seq in seq_to_reads}
+
+    def fake_extract(db_prefix, source_fasta, read_ids):
+        seqs = {"rNEW1": "AAAACGT", "r9b": "GGGACGT"}
+        return {rid: seqs[rid] for rid in read_ids if rid in seqs}, "blastdbcmd"
+
+    monkeypatch.setattr(contig_id, "_reprobe_hits", fake_reprobe_hits)
+    monkeypatch.setattr(contig_id, "extract_reads", fake_extract)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        stats = reprobe_and_reassemble(
+            contigs_by_species,
+            reads_by_taxon,
+            all_reads,
+            patient_db_prefix="patient",
+            source_fasta_path="",
+            assembler=_fake_assembler(),
+            assembly_pool=pool,
+        )
+
+    assert stats == {"new_reads": 2, "reprobed_taxa": 2, "human_removed": 0}
+    assert [c["id"] for c in contigs_by_species["B0_T"]] == ["Reassembled1"]
+    assert set(reads_by_taxon["A_M"]) == {"r9", "r9b"}
 
 
 def test_reprobe_human_filters_new_reads(monkeypatch):
