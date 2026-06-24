@@ -45,10 +45,14 @@ DEFAULT_CONFIRM_IDENTITY_PCT = 99.0
 DEFAULT_NAME_EVALUE = "1e-5"
 DEFAULT_TIMEOUT_SECONDS = 1800
 
-# Re-probing (Hu, Haas & Lathe 2022, Box 3): use a taxon's most-abundant contigs
-# as fresh probes to pull more reads from the same library, then re-assemble.
-# The paper's example used the "two most abundant" contigs, one round.
-REPROBE_TOP_CONTIGS = 2
+# Re-probing (Hu, Haas & Lathe 2022, Box 3): use a taxon's most-abundant contig
+# as a fresh probe to pull more reads from the same library, then re-assemble.
+# The paper's example used the "two most abundant" contigs; COBLAST uses the
+# single most-abundant one because each extra contig is a full-length, highly-
+# conserved rRNA query against the whole patient library -- the dominant cost of
+# this step. ponytail: 1 contig; raise toward 2 only if recovery sensitivity
+# measurably suffers (after a permissive net first pass it recovers ~0 either way).
+REPROBE_TOP_CONTIGS = 1
 # Re-probe matches are gated on the same E-value as the net (drop E >= this), so
 # re-probing is no more permissive than the first search that found the taxon.
 REPROBE_EVALUE = 0.01
@@ -389,12 +393,13 @@ def _reprobe_hits(
         ]
         if num_threads:
             command += ["-num_threads", str(num_threads)]
-            # Split the work by query: re-probing has many key contigs (one per
-            # taxon x top_contigs), so mt_mode 1 parallelizes far better than the
-            # default db split. Only valid with >1 thread (BLAST rejects it at 1).
+            # mt_mode 0 (let BLAST split by db), matching the eToL net search: the
+            # reprobe is few long contigs vs a huge patient library, so the work is
+            # db-bound. Forcing mt_mode 1 (split by query) flatlines it across
+            # threads -- the regression blast_runner.EXACT_MATCH_MT_MODE documents.
             try:
                 if int(num_threads) > 1:
-                    command += ["-mt_mode", "1"]
+                    command += ["-mt_mode", "0"]
             except (TypeError, ValueError):
                 pass
         completed = subprocess.run(
