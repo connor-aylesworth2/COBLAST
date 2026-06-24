@@ -101,6 +101,13 @@
                   {{ batch.contig_count }} contig(s) assembled (CAP3)
                 </div>
               {% endif %}
+              {% if batch.reprobe_contigs %}
+                <div class="summary-item">
+                  <span>Re-probing</span>
+                  {{ batch.reprobe_new_reads }} extra read(s) recovered
+                  <span class="muted">top contigs re-probed &amp; re-assembled</span>
+                </div>
+              {% endif %}
               {% if batch.identify_contigs %}
                 <div class="summary-item">
                   <span>Contig species ID</span>
@@ -321,6 +328,12 @@
                   </div>
                   {% if database_result.contig_note %}
                     <p class="muted">{{ database_result.contig_note }}</p>
+                  {% endif %}
+                  {% if batch.reprobe_contigs and database_result.reprobe_taxa %}
+                    <p class="muted">Re-probing recovered {{ database_result.reprobe_new_reads }} extra read(s) across {{ database_result.reprobe_taxa }} species and re-assembled them{% if database_result.reprobe_human_removed %} ({{ database_result.reprobe_human_removed }} human read(s) removed){% endif %}.</p>
+                  {% endif %}
+                  {% if database_result.reprobe_note %}
+                    <p class="muted">{{ database_result.reprobe_note }}</p>
                   {% endif %}
                   {% if database_result.contig_id_note %}
                     <p class="muted">{{ database_result.contig_id_note }}</p>

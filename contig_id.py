@@ -29,6 +29,11 @@ from typing import Any
 
 from config import blast_exe
 from database_registry import blast_safe_path
+from human_filter import (
+    HUMAN_BITSCORE_THRESHOLD,
+    extract_reads,
+    find_human_read_ids,
+)
 
 
 # Reads aligning to a contig at or above this percent identity are "confirmed"
@@ -39,6 +44,18 @@ DEFAULT_CONFIRM_IDENTITY_PCT = 99.0
 # confirmation search is identity-gated in Python, so its e-value stays loose.
 DEFAULT_NAME_EVALUE = "1e-5"
 DEFAULT_TIMEOUT_SECONDS = 1800
+
+# Re-probing (Hu, Haas & Lathe 2022, Box 3): use a taxon's most-abundant contigs
+# as fresh probes to pull more reads from the same library, then re-assemble.
+# The paper's example used the "two most abundant" contigs, one round.
+REPROBE_TOP_CONTIGS = 2
+# Re-probe matches are gated on the same E-value as the net (drop E >= this), so
+# re-probing is no more permissive than the first search that found the taxon.
+REPROBE_EVALUE = 0.01
+# A contig can match many reads; lift the default cap so read recovery isn't
+# silently truncated. ponytail: 100k covers ordinary SRAs; raise only if a single
+# contig legitimately matches more reads than this in one library.
+REPROBE_MAX_TARGET_SEQS = "100000"
 
 
 def _to_fasta(records: dict[str, str]) -> str:
@@ -279,3 +296,170 @@ def identify_contigs(
             "confirmed_reads": len(confirmed),
         }
     return identification
+
+
+# --- Re-probing (Box 3): extend contigs with more library reads ---------------
+
+def _reprobe_reads_by_query(tabular_text: str) -> dict[str, set[str]]:
+    """Group library read ids (sseqid) by the contig (qseqid) that recovered them.
+
+    Expects ``6 qseqid sseqid evalue`` rows; keeps matches below ``REPROBE_EVALUE``
+    (the net's gate), so re-probing is no more permissive than the first search.
+    """
+    by_query: dict[str, set[str]] = {}
+    for line in tabular_text.splitlines():
+        fields = line.split("\t")
+        if len(fields) < 3:
+            continue
+        query_id, read_id, evalue_str = fields[0], fields[1], fields[2]
+        try:
+            evalue = float(evalue_str)
+        except ValueError:
+            continue
+        if evalue < REPROBE_EVALUE:
+            by_query.setdefault(query_id, set()).add(read_id)
+    return by_query
+
+
+def _reprobe_hits(
+    named_contigs: dict[str, str],
+    patient_db_prefix: str,
+    *,
+    num_threads: int | str | None = None,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, set[str]]:
+    """BLAST key contigs against the patient library; return reads per contig id."""
+    if not named_contigs:
+        return {}
+    with tempfile.TemporaryDirectory(prefix="contig_reprobe_") as tmpdir:
+        query_path = Path(tmpdir) / "key_contigs.fasta"
+        query_path.write_text(_to_fasta(named_contigs), encoding="utf-8")
+        command = [
+            str(blast_exe("blastn")),
+            "-task",
+            "megablast",
+            "-query",
+            str(query_path),
+            "-db",
+            blast_safe_path(patient_db_prefix),
+            "-evalue",
+            str(REPROBE_EVALUE),
+            "-max_target_seqs",
+            REPROBE_MAX_TARGET_SEQS,
+            "-outfmt",
+            "6 qseqid sseqid evalue",
+        ]
+        if num_threads:
+            command += ["-num_threads", str(num_threads)]
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "Re-probing BLAST failed: "
+            + ((completed.stderr or completed.stdout).strip() or "unknown error")
+        )
+    return _reprobe_reads_by_query(completed.stdout)
+
+
+def _key_contigs(contigs: list[dict[str, Any]], top_contigs: int) -> list[dict[str, Any]]:
+    """The taxon's most-supported contigs (most reads first), capped at top_contigs."""
+    ranked = sorted(contigs, key=lambda c: int(c.get("num_reads", 0)), reverse=True)
+    return [c for c in ranked[:top_contigs] if c.get("sequence")]
+
+
+def reprobe_and_reassemble(
+    contigs_by_species: dict[str, list[dict[str, Any]]],
+    reads_by_taxon: dict[str, list[str]],
+    all_reads: dict[str, str],
+    *,
+    patient_db_prefix: str,
+    source_fasta_path: str,
+    assembler: Any,
+    top_contigs: int = REPROBE_TOP_CONTIGS,
+    num_threads: int | str | None = None,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    human_db_prefix: str | None = None,
+    human_bitscore_threshold: float = HUMAN_BITSCORE_THRESHOLD,
+) -> dict[str, int]:
+    """One round of contig re-probing (Hu, Haas & Lathe 2022, Box 3).
+
+    Uses each taxon's top contigs as probes against the patient library, pulls the
+    new reads they recover, optionally human-filters them (the paper filters
+    re-probe matches too), then re-assembles each taxon from its original + new
+    reads. Mutates ``contigs_by_species`` (replacing a taxon's contigs when
+    re-assembly yields any), ``reads_by_taxon`` and ``all_reads`` (so the later
+    confirmed-abundance step counts against the expanded read set) in place.
+
+    Returns ``{new_reads, reprobed_taxa, human_removed}`` for reporting.
+    """
+    # 1. One batched BLAST of every taxon's key contigs against the library.
+    named: dict[str, str] = {}
+    origin: dict[str, str] = {}
+    for taxon, contigs in contigs_by_species.items():
+        for contig in _key_contigs(contigs, top_contigs):
+            synthetic_id = f"k{len(named)}"
+            named[synthetic_id] = str(contig.get("sequence", ""))
+            origin[synthetic_id] = taxon
+    reads_by_query = _reprobe_hits(
+        named, patient_db_prefix, num_threads=num_threads, timeout_seconds=timeout_seconds
+    )
+
+    # 2. Per taxon, the reads not already assigned to it (the genuinely new ones).
+    existing_by_taxon = {taxon: set(ids) for taxon, ids in reads_by_taxon.items()}
+    new_ids_by_taxon: dict[str, set[str]] = {}
+    all_new_ids: set[str] = set()
+    for synthetic_id, read_ids in reads_by_query.items():
+        taxon = origin[synthetic_id]
+        novel = read_ids - existing_by_taxon.get(taxon, set())
+        if novel:
+            new_ids_by_taxon.setdefault(taxon, set()).update(novel)
+            all_new_ids.update(novel)
+    if not all_new_ids:
+        return {"new_reads": 0, "reprobed_taxa": 0, "human_removed": 0}
+
+    # 3. Recover the new reads' sequences in one pass.
+    new_reads, _method = extract_reads(patient_db_prefix, source_fasta_path, sorted(all_new_ids))
+
+    # 4. Optional human filter on the new reads (paper filters re-probe matches).
+    human_removed = 0
+    if human_db_prefix and new_reads:
+        human_ids = find_human_read_ids(
+            new_reads,
+            human_db_prefix,
+            bitscore_threshold=human_bitscore_threshold,
+            num_threads=num_threads,
+            timeout_seconds=timeout_seconds,
+        )
+        if human_ids:
+            human_removed = len(human_ids)
+            new_reads = {rid: seq for rid, seq in new_reads.items() if rid not in human_ids}
+    all_reads.update(new_reads)
+
+    # 5. Re-assemble each re-probed taxon from its original + surviving new reads.
+    # ponytail: serial re-assembly; the dominant cost is the one BLAST above, and
+    # only taxa that gained reads re-assemble. Fan out via a pool only if profiling
+    # shows these CAP3 calls dominate.
+    added_total = 0
+    reprobed_taxa = 0
+    for taxon, novel_ids in new_ids_by_taxon.items():
+        surviving = {rid for rid in novel_ids if rid in new_reads}
+        if not surviving:
+            continue
+        combined_ids = list(existing_by_taxon.get(taxon, set())) + sorted(surviving)
+        reads = {rid: all_reads[rid] for rid in combined_ids if rid in all_reads}
+        new_contigs = assembler.assemble(reads)
+        if new_contigs:
+            contigs_by_species[taxon] = [contig.to_dict() for contig in new_contigs]
+            reads_by_taxon[taxon] = combined_ids
+            added_total += len(surviving)
+            reprobed_taxa += 1
+    return {
+        "new_reads": added_total,
+        "reprobed_taxa": reprobed_taxa,
+        "human_removed": human_removed,
+    }

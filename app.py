@@ -15,7 +15,7 @@ from flask import Flask, Response, abort, redirect, render_template, request, ur
 
 from apoe_summary import apoe_probe_query_ids, build_apoe_probe_summary
 from assembler import default_assembler
-from contig_id import identify_contigs
+from contig_id import identify_contigs, reprobe_and_reassemble
 from etol_summary import (
     ETOL_NET_FILTER,
     build_etol_probe_summary,
@@ -640,6 +640,14 @@ def run_batch_blast_route():
                 message="",
             ), 400
 
+    # Contig re-probing (Hu, Haas & Lathe 2022, Box 3): one round of using each
+    # taxon's top contigs as probes against the SAME patient library to pull more
+    # reads, then re-assembling. Searches the patient DB already in the batch (no
+    # extra DB needed) and runs between assembly and identification, so naming and
+    # confirmed abundance reflect the extended contigs. Requires assembly to be on.
+    reprobe_requested = request.form.get("reprobe_contigs") == "1"
+    reprobe_active = reprobe_requested and assemble_contigs_active
+
     if not database_ids:
         return render_template(
             "batch.html",
@@ -764,7 +772,7 @@ def run_batch_blast_route():
             # Per-phase timing so a slow post-BLAST step (usually the human
             # filter's read BLAST or CAP3) shows up in the console after one run,
             # instead of bisecting by toggling features across 35-minute runs.
-            phase_seconds = {"human_filter": 0.0, "dedup": 0.0, "assembly": 0.0, "identification": 0.0}
+            phase_seconds = {"human_filter": 0.0, "dedup": 0.0, "assembly": 0.0, "reprobe": 0.0, "identification": 0.0}
             human_filter_stats = None
             if human_filter_active and human_db is not None:
                 _set_batch_stage(job_id, database.display_name, "Secondary human filter")
@@ -876,6 +884,34 @@ def run_batch_blast_route():
                 except Exception as exc:
                     contig_note = f"Contig assembly error: {exc}"
                 phase_seconds["assembly"] = perf_counter() - _phase_start
+            # Contig re-probing (one round): use each taxon's top contigs as
+            # probes against this patient DB to pull more reads, then re-assemble.
+            # Runs before identification so naming/abundance use the longer
+            # contigs. Reuses the run's human DB when the human filter is on. A
+            # failure degrades to a note, like assembly.
+            reprobe_stats: dict[str, int] = {}
+            reprobe_note = ""
+            if reprobe_active and contig_assembly_available and contigs_by_species:
+                _set_batch_stage(job_id, database.display_name, "Re-probing with key contigs")
+                _phase_start = perf_counter()
+                try:
+                    reprobe_stats = reprobe_and_reassemble(
+                        contigs_by_species,
+                        reads_by_taxon,
+                        all_reads,
+                        patient_db_prefix=database.db_prefix_path,
+                        source_fasta_path=database.source_fasta_path,
+                        assembler=assembler,
+                        num_threads=threads_per_job,
+                        human_db_prefix=(
+                            human_db.db_prefix_path
+                            if (human_filter_active and human_db is not None)
+                            else None
+                        ),
+                    )
+                except Exception as exc:
+                    reprobe_note = f"Re-probing error: {exc}"
+                phase_seconds["reprobe"] = perf_counter() - _phase_start
             # Contig species identification + confirmed abundance: BLAST the
             # assembled contigs against the reference rRNA DB (closest homolog)
             # and against each taxon's own reads (>= identity). Annotates the
@@ -906,6 +942,7 @@ def run_batch_blast_route():
                 f"human_filter={phase_seconds['human_filter']:.1f}s "
                 f"dedup={phase_seconds['dedup']:.1f}s "
                 f"assembly={phase_seconds['assembly']:.1f}s "
+                f"reprobe={phase_seconds['reprobe']:.1f}s "
                 f"identification={phase_seconds['identification']:.1f}s "
                 f"(extract={extract_seconds:.1f}s cap3={cap3_seconds:.1f}s)",
                 flush=True,
@@ -931,6 +968,10 @@ def run_batch_blast_route():
                 "contig_count": sum(len(items) for items in contigs_by_species.values()),
                 "contig_species_count": len(contigs_by_species),
                 "contig_note": contig_note,
+                "reprobe_new_reads": reprobe_stats.get("new_reads", 0),
+                "reprobe_taxa": reprobe_stats.get("reprobed_taxa", 0),
+                "reprobe_human_removed": reprobe_stats.get("human_removed", 0),
+                "reprobe_note": reprobe_note,
                 "contig_identification": contig_identification,
                 "contig_id_note": contig_id_note,
                 "contigs_identified": sum(
@@ -1080,6 +1121,10 @@ def run_batch_blast_route():
         "species_id_db": reference_db.display_name if reference_db else "",
         "contigs_identified": sum(
             result_row.get("contigs_identified", 0) for result_row in database_results
+        ),
+        "reprobe_contigs": reprobe_active,
+        "reprobe_new_reads": sum(
+            result_row.get("reprobe_new_reads", 0) for result_row in database_results
         ),
         "database_results": database_results,
     }

@@ -116,6 +116,17 @@
           </select>
         </div>
 
+        <div class="field" id="reprobe_contigs_field">
+          <span class="field-label">Contig re-probing</span>
+          <label class="checkbox-row checkbox-row--wide">
+            <input id="reprobe_contigs" name="reprobe_contigs" type="checkbox" value="1">
+            <span>
+              <strong>Re-probe the library with key contigs and re-assemble</strong>
+              <br><span class="muted">Requires contig assembly (above). One round (Hu, Haas &amp; Lathe 2022, Box 3): each species' two most-abundant contigs are BLASTed back against this same sample's library to recover additional reads, which (when the human filter above is on) are also human-filtered, then the species' reads are re-assembled into longer contigs. Runs before identification, so the closest-homolog and confirmed-read columns reflect the extended contigs. Searches the patient database already selected &mdash; no extra database needed.</span>
+            </span>
+          </label>
+        </div>
+
         <div class="field">
           <label for="sequence">Query input</label>
           <textarea id="sequence" name="sequence">&gt;query
@@ -265,6 +276,8 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       const identifyContigs = document.getElementById("identify_contigs");
       const identifyContigsDb = document.getElementById("species_id_db_id");
       const identifyContigsField = document.getElementById("identify_contigs_field");
+      const reprobeContigs = document.getElementById("reprobe_contigs");
+      const reprobeContigsField = document.getElementById("reprobe_contigs_field");
       // Snapshot of the manual query fields, saved when a preset takes over.
       let prePresetState = null;
 
@@ -297,16 +310,19 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
       }
 
       function updateIdentifyAvailability() {
-        // Contig identification needs a microbial preset AND contig assembly on
-        // (it has nothing to identify without assembled contigs).
+        // Contig identification and re-probing both need a microbial preset AND
+        // contig assembly on (nothing to identify/re-probe without contigs).
         const active = activePreset();
         const microbial = !!active && active.dataset.microbial === "true";
         const enabled = microbial && assembleContigs.checked;
         identifyContigs.disabled = !enabled;
         identifyContigsDb.disabled = !enabled;
         identifyContigsField.style.opacity = enabled ? "" : "0.55";
+        reprobeContigs.disabled = !enabled;
+        reprobeContigsField.style.opacity = enabled ? "" : "0.55";
         if (!enabled) {
           identifyContigs.checked = false;
+          reprobeContigs.checked = false;
         }
       }
 

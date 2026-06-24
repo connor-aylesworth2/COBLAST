@@ -6,12 +6,16 @@ monkeypatched, so the orchestration (synthetic-id mapping, in-place annotation,
 per-taxon summary) is exercised without a real blastn.
 """
 
+from assembler import Contig
+
 import contig_id
 from contig_id import (
     _best_homolog_per_query,
     _confirmed_reads_from_tabular,
     _representative_contig,
+    _reprobe_reads_by_query,
     identify_contigs,
+    reprobe_and_reassemble,
 )
 
 
@@ -129,3 +133,105 @@ def test_identify_contigs_skips_sequenceless_contigs(monkeypatch):
 
     identify_contigs(contigs_by_species, {"T": []}, {}, reference_db_prefix="ref")
     assert captured["named"] == {}  # empty-sequence contig is not sent to BLAST
+
+
+# --- re-probing ---------------------------------------------------------------
+
+def test_reprobe_reads_by_query_groups_and_evalue_gates():
+    # qseqid(contig) sseqid(read) evalue
+    text = (
+        "k0\tr1\t1e-30\n"
+        "k0\tr2\t0.0\n"
+        "k0\tr3\t0.5\n"     # E >= 0.01 -> dropped
+        "k1\tr9\t1e-5\n"
+        "k1\tbad\tnope\n"   # unparseable evalue -> skipped
+    )
+    grouped = _reprobe_reads_by_query(text)
+    assert grouped == {"k0": {"r1", "r2"}, "k1": {"r9"}}
+
+
+def _fake_assembler(num_reads_label=None):
+    """Assembler stand-in: collapses any reads into one labelled contig."""
+
+    class _Fake:
+        name = "fake"
+
+        def assemble(self, reads):
+            if not reads:
+                return []
+            return [Contig(id="Reassembled1", sequence="ACGTACGT", num_reads=len(reads))]
+
+    return _Fake()
+
+
+def test_reprobe_and_reassemble_pulls_reads_and_rebuilds(monkeypatch):
+    contigs_by_species = {
+        "B0_T": [
+            {"id": "Contig1", "sequence": "AAA", "num_reads": 5, "length": 3},
+            {"id": "Contig2", "sequence": "CCC", "num_reads": 2, "length": 3},
+        ],
+        "A_M": [{"id": "Contig1", "sequence": "GGG", "num_reads": 9, "length": 3}],
+    }
+    reads_by_taxon = {"B0_T": ["r1", "r2"], "A_M": ["r9"]}
+    all_reads = {"r1": "AAA", "r2": "AAA", "r9": "GGG"}
+
+    # Re-probe finds new reads keyed by the contig sequence (so it maps back to
+    # whatever synthetic id the orchestrator assigned).
+    def fake_reprobe_hits(named, patient_db_prefix, **_kwargs):
+        seq_to_reads = {"AAA": {"rNEW1", "rNEW2"}, "GGG": {"r9b"}}
+        return {sid: set(seq_to_reads[seq]) for sid, seq in named.items() if seq in seq_to_reads}
+
+    def fake_extract(db_prefix, source_fasta, read_ids):
+        seqs = {"rNEW1": "AAAACGT", "rNEW2": "AAAACGT", "r9b": "GGGACGT"}
+        return {rid: seqs[rid] for rid in read_ids if rid in seqs}, "blastdbcmd"
+
+    monkeypatch.setattr(contig_id, "_reprobe_hits", fake_reprobe_hits)
+    monkeypatch.setattr(contig_id, "extract_reads", fake_extract)
+
+    stats = reprobe_and_reassemble(
+        contigs_by_species,
+        reads_by_taxon,
+        all_reads,
+        patient_db_prefix="patient",
+        source_fasta_path="",
+        assembler=_fake_assembler(),
+    )
+
+    assert stats == {"new_reads": 3, "reprobed_taxa": 2, "human_removed": 0}
+    # Contigs replaced by the re-assembly output.
+    assert [c["id"] for c in contigs_by_species["B0_T"]] == ["Reassembled1"]
+    # The taxon's read set now includes the recovered reads (order-independent).
+    assert set(reads_by_taxon["B0_T"]) == {"r1", "r2", "rNEW1", "rNEW2"}
+    assert "rNEW1" in all_reads  # new sequences merged in for confirmed-abundance
+
+
+def test_reprobe_human_filters_new_reads(monkeypatch):
+    contigs_by_species = {"B0_T": [{"id": "Contig1", "sequence": "AAA", "num_reads": 5, "length": 3}]}
+    reads_by_taxon = {"B0_T": ["r1"]}
+    all_reads = {"r1": "AAA"}
+
+    monkeypatch.setattr(
+        contig_id, "_reprobe_hits", lambda named, db, **k: {sid: {"rNEW1", "rNEW2"} for sid in named}
+    )
+    monkeypatch.setattr(
+        contig_id,
+        "extract_reads",
+        lambda db, src, ids: ({rid: "AAAACGT" for rid in ids}, "blastdbcmd"),
+    )
+    # rNEW2 looks human and must be dropped before re-assembly.
+    monkeypatch.setattr(contig_id, "find_human_read_ids", lambda reads, db, **k: {"rNEW2"})
+
+    stats = reprobe_and_reassemble(
+        contigs_by_species,
+        reads_by_taxon,
+        all_reads,
+        patient_db_prefix="patient",
+        source_fasta_path="",
+        assembler=_fake_assembler(),
+        human_db_prefix="human",
+    )
+
+    assert stats["human_removed"] == 1
+    assert stats["new_reads"] == 1  # only rNEW1 survived
+    assert set(reads_by_taxon["B0_T"]) == {"r1", "rNEW1"}
+    assert "rNEW2" not in all_reads
