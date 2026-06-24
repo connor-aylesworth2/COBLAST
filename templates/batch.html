@@ -79,7 +79,10 @@
             <input id="human_filter" name="human_filter" type="checkbox" value="1">
             <span>
               <strong>Remove reads that also match the human genome</strong>
-              <br><span class="muted">Microbial eToL presets (Full, Quick) only. After the probe search, each matched patient read is BLASTed against the human genome database below; the read is dropped when its best human alignment scores above 150 bits (Hu, Haas &amp; Lathe 2022 brain cutoff).</span>
+              <details class="preset-info">
+                <summary>&#9432; Details</summary>
+                <span class="muted">Microbial eToL presets (Full, Quick) only. After the probe search, each matched patient read is BLASTed against the human genome database below; the read is dropped when its best human alignment scores above 150 bits (Hu, Haas &amp; Lathe 2022 brain cutoff).</span>
+              </details>
             </span>
           </label>
           <label for="human_filter_db_id">Human genome database</label>
@@ -98,7 +101,10 @@
             <input id="assemble_contigs" name="assemble_contigs" type="checkbox" value="1">
             <span>
               <strong>Assemble matched reads into contigs per species</strong>
-              <br><span class="muted">Microbial eToL presets (Full, Quick) only. After the net (and any secondary human filter), the reads each species' probes recovered are assembled with CAP3 into longer contigs for species-level identification and re-probing (Hu, Haas &amp; Lathe 2022). Requires a CAP3 binary (via <code>CAP3_BIN</code>, a bundled <code>cap3/bin</code>, or PATH); if none is found the run continues without contigs and reports it.</span>
+              <details class="preset-info">
+                <summary>&#9432; Details</summary>
+                <span class="muted">Microbial eToL presets (Full, Quick) only. After the net (and any secondary human filter), the reads each species' probes recovered are assembled with CAP3 into longer contigs for species-level identification and re-probing (Hu, Haas &amp; Lathe 2022). Requires a CAP3 binary (via <code>CAP3_BIN</code>, a bundled <code>cap3/bin</code>, or PATH); if none is found the run continues without contigs and reports it.</span>
+              </details>
             </span>
           </label>
         </div>
@@ -109,7 +115,10 @@
             <input id="identify_contigs" name="identify_contigs" type="checkbox" value="1">
             <span>
               <strong>Identify each contig's closest homolog and confirm abundance</strong>
-              <br><span class="muted">Requires contig assembly (above). Each assembled contig is BLASTed against the reference rRNA database below for its closest homolog (the species call), and each species' contigs are BLASTed against that species' own reads to count reads matching at &ge;99% identity (confirmed abundance), per Hu, Haas &amp; Lathe 2022. Re-probing the library with key contigs is not yet implemented.</span>
+              <details class="preset-info">
+                <summary>&#9432; Details</summary>
+                <span class="muted">Requires contig assembly (above). Each assembled contig is BLASTed against the reference rRNA database below for its closest homolog (the species call), and each species' contigs are BLASTed against that species' own reads to count reads matching at &ge;99% identity (confirmed abundance), per Hu, Haas &amp; Lathe 2022. Re-probing the library with key contigs is not yet implemented.</span>
+              </details>
             </span>
           </label>
           <label for="species_id_db_id">Reference rRNA database</label>
@@ -128,7 +137,10 @@
             <input id="reprobe_contigs" name="reprobe_contigs" type="checkbox" value="1">
             <span>
               <strong>Re-probe the library with key contigs and re-assemble</strong>
-              <br><span class="muted">Requires contig assembly (above). One round (Hu, Haas &amp; Lathe 2022, Box 3): each species' two most-abundant contigs are BLASTed back against this same sample's library to recover additional reads, which (when the human filter above is on) are also human-filtered, then the species' reads are re-assembled into longer contigs. Runs before identification, so the closest-homolog and confirmed-read columns reflect the extended contigs. Searches the patient database already selected &mdash; no extra database needed.</span>
+              <details class="preset-info">
+                <summary>&#9432; Details</summary>
+                <span class="muted">Requires contig assembly (above). One round (Hu, Haas &amp; Lathe 2022, Box 3): each species' two most-abundant contigs are BLASTed back against this same sample's library to recover additional reads, which (when the human filter above is on) are also human-filtered, then the species' reads are re-assembled into longer contigs. Runs before identification, so the closest-homolog and confirmed-read columns reflect the extended contigs. Searches the patient database already selected &mdash; no extra database needed.</span>
+              </details>
             </span>
           </label>
         </div>
