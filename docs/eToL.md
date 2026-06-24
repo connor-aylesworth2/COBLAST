@@ -52,18 +52,15 @@ readcount divided by ~50 transcripts per cell (`HOST_TRANSCRIPTS_PER_CELL`).
 Microbial counts are then reported both raw and as **reads per host cell**
 (`raw / host cells`), normalizing for how much host material each library
 represents, as in the paper. When no control reads are found, normalization is
-reported as `n/a`. The standalone **eToL Control** preset still runs the control
-probes on their own for QC.
+reported as `n/a`.
 
-There are three eToL presets, plus the APOE preset; **only one preset can be
-active at a time** (selecting one clears the others):
+There are two eToL presets, plus the APOE preset; **only one preset can be
+active at a time** (selecting one clears the others). Both eToL presets append
+the PGK1/hNSE control probes to their search for host-cell normalization:
 
 - **eToL Full** — the full microbial panel, `data/eToL_probes.fasta` (1,017
   64-mer probes, 120 species across Archaea, Bacteria, Chloroplastida,
   Amoebozoa, basal Eukaryota, Fungi, and Holozoa/Metazoa).
-- **eToL Control** — the human housekeeping control probes only,
-  `data/eToL_control_probes.fasta` (PGK1, hNSE). Same workflow as eToL Full but
-  uses human sequences as a control.
 - **eToL Quick** — one probe per species (the first probe of each of the 120
   species), a slim 120-probe panel for fast test runs.
 
@@ -131,5 +128,5 @@ makeblastdb -in GCF_000001405.40_GRCh38.p14_genomic.fna -dbtype nucl ^
   -title "Human GRCh38.p14" -out human_GRCh38
 ```
 
-The filter is offered only for the microbial presets; the APOE and eToL Control
-panels are human by design, so human-read filtering does not apply to them.
+The filter is offered only for the microbial presets; the APOE panel is human by
+design, so human-read filtering does not apply to it.

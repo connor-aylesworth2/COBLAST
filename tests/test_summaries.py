@@ -63,7 +63,7 @@ def test_apoe_summary_handles_zero_hits():
 def test_etol_panel_sizes():
     assert etol_preset_probe_count("etol_full") == 1017
     assert etol_preset_probe_count("etol_quick") == 120
-    assert etol_preset_probe_count("etol_control") == 4
+    assert len(etol_control_query_ids()) == 4
 
 
 def test_etol_quick_is_one_probe_per_species():
@@ -76,7 +76,7 @@ def test_etol_quick_is_one_probe_per_species():
 
 def test_etol_control_probes_excluded_from_full():
     full_ids = etol_preset_query_ids("etol_full")
-    control_ids = etol_preset_query_ids("etol_control")
+    control_ids = etol_control_query_ids()
     assert "PGK1_2" in control_ids
     assert "PGK1_2" not in full_ids
 
@@ -126,8 +126,6 @@ def test_etol_microbial_search_appends_control_probes():
     control_ids = etol_control_query_ids()
     assert control_ids <= full_ids
     assert len(full_ids) == 1017 + len(control_ids)
-    # The standalone control preset is searched as-is (no microbial appended).
-    assert etol_search_query_ids("etol_control") == control_ids
 
 
 def test_compute_host_cells_means_genes_over_fifty():

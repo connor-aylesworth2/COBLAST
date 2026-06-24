@@ -134,7 +134,7 @@ def main() -> int:
     parser.add_argument("--program", default="blastn")
     parser.add_argument("--db", help="Existing BLAST db prefix (default: synthesize one).")
     parser.add_argument("--query", help="Query FASTA path (default: sample from the db).")
-    parser.add_argument("--etol", choices=["quick", "full", "control"],
+    parser.add_argument("--etol", choices=["quick", "full"],
                         help="Use an eToL probe panel as the query (sets exact-match mode).")
     parser.add_argument("--threads", type=parse_int_list, default=[1, 2, 4],
                         help="Comma-separated thread counts for single mode. Default: 1,2,4")
@@ -176,7 +176,7 @@ def main() -> int:
             if etol_preset_fasta is None:
                 print("Could not load eToL panels.", file=sys.stderr)
                 return 1
-            preset_key = {"quick": "etol_quick", "full": "etol_full", "control": "etol_control"}[args.etol]
+            preset_key = {"quick": "etol_quick", "full": "etol_full"}[args.etol]
             query = etol_preset_fasta(preset_key)
             args.program = "blastn"
             args.exact = True

@@ -53,7 +53,10 @@
             <input class="probe-preset" id="apoe_probe_preset" name="apoe_probe_preset" type="checkbox" value="1" data-preset-panel="APOE" data-microbial="false">
             <span>
               <strong>APOE exact-match probe batch</strong>
-              <br><span class="muted">4 probes; BLASTN; 100% identity and 100% query coverage</span>
+              <details class="preset-info">
+                <summary>&#9432; Details</summary>
+                <span class="muted">4 probes; BLASTN; 100% identity and 100% query coverage</span>
+              </details>
             </span>
           </label>
           {% for option in etol_preset_options %}
@@ -61,7 +64,10 @@
               <input class="probe-preset" id="{{ option.form_field }}" name="{{ option.form_field }}" type="checkbox" value="1" data-preset-panel="{{ option.panel_label }}" data-microbial="{{ 'true' if option.microbial else 'false' }}">
               <span>
                 <strong>{{ option.label }}</strong>
-                <br><span class="muted">{{ option.probe_count }} probes; BLASTN default megablast net (E-value &lt; 0.01, no identity or coverage filter); blastn-short for the 1 ambiguous probe. {{ option.description }}</span>
+                <details class="preset-info">
+                  <summary>&#9432; Details</summary>
+                  <span class="muted">{{ option.probe_count }} probes; BLASTN default megablast net (E-value &lt; 0.01, no identity or coverage filter); blastn-short for the 1 ambiguous probe. {{ option.description }}</span>
+                </details>
               </span>
             </label>
           {% endfor %}

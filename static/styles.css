@@ -263,6 +263,25 @@ summary {
   padding: 16px;
 }
 
+/* Compact inline "Details" toggle that hides a preset's description until clicked. */
+.preset-info {
+  border: none;
+  background: none;
+  margin: 4px 0 0;
+}
+
+.preset-info > summary {
+  color: var(--ncbi-blue);
+  font-size: 0.9rem;
+  padding: 0;
+  width: max-content;
+}
+
+.preset-info > .muted {
+  display: block;
+  margin-top: 6px;
+}
+
 .message,
 .error,
 .warning,

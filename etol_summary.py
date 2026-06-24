@@ -7,12 +7,12 @@ with the bundled eToL panel and aggregates exact probe hits per sample into
 probe-, species-, and domain-level counts that feed the batch results page, the
 CSV/TSV exports, and downstream species plots.
 
-Three eToL batch presets share this machinery, differing only in which probes
-are used as the query (and therefore counted):
+Two eToL batch presets share this machinery, differing only in which microbial
+probes are used as the query (and therefore counted); both append the same
+PGK1/hNSE housekeeping control probes for host-cell normalization:
 
-* ``etol_full``    - the full microbial panel (no human controls).
-* ``etol_control`` - the human housekeeping control probes only (PGK1, hNSE).
-* ``etol_quick``   - one probe per species (the first probe of each species),
+* ``etol_full``  - the full microbial panel.
+* ``etol_quick`` - one probe per species (the first probe of each species),
   a slim panel for fast test runs.
 """
 
@@ -171,21 +171,6 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
                     "reads per host cell using the PGK1/hNSE control probes."
                 ),
                 "pairs": _full_pairs,
-            },
-        ),
-        (
-            "etol_control",
-            {
-                "form_field": "etol_control_probe_preset",
-                "label": "eToL Control probe batch",
-                "short_label": "eToL Control (human control)",
-                "panel_label": "eToL Control",
-                "microbial": False,
-                "description": (
-                    "Same as the eToL Full preset, but only uses human sequences "
-                    "(the PGK1 and hNSE housekeeping probes) for a control."
-                ),
-                "pairs": _control_pairs,
             },
         ),
         (

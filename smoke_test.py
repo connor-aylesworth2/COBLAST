@@ -11,6 +11,7 @@ import tempfile
 from apoe_summary import build_apoe_probe_summary
 from etol_summary import (
     build_etol_probe_summary,
+    etol_control_query_ids,
     etol_preset_probe_count,
     etol_preset_query_ids,
     etol_preset_records,
@@ -110,12 +111,13 @@ def exercise_apoe_summary() -> None:
 def exercise_etol_summary() -> None:
     """Check the bundled eToL panels load and per-species counts aggregate."""
     # Microbial controls are excluded from the full panel; the quick panel keeps
-    # one probe per species; the control panel holds only the human probes.
+    # one probe per species; the 4 human housekeeping control probes are appended
+    # to every microbial search separately.
     assert etol_preset_probe_count("etol_full") == 1017
     assert etol_preset_probe_count("etol_quick") == 120
-    assert etol_preset_probe_count("etol_control") == 4
+    assert len(etol_control_query_ids()) == 4
     assert "PGK1_2" not in etol_preset_query_ids("etol_full")
-    assert "PGK1_2" in etol_preset_query_ids("etol_control")
+    assert "PGK1_2" in etol_control_query_ids()
 
     full_records = etol_preset_records("etol_full")
     query_ids = etol_preset_query_ids("etol_full")
