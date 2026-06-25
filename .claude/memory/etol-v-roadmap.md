@@ -21,15 +21,23 @@ dissertation's normalization (mean PGK / 50) is identical to
 `HOST_TRANSCRIPTS_PER_CELL=50.0` in etol_summary.py. See [[etol-lathe-alignment]].
 
 Only 3 genuinely-new pieces:
-1. Register an `etol_v` preset in `ETOL_PRESETS` (etol_summary.py:155); reuse
-   existing PGK1/hNSE control probes for normalization.
+1. Register an `etol_v` preset in `ETOL_PRESETS` (etol_summary.py:155). For
+   fidelity, normalize on the preset's OWN 2 PGK probes (shipped in
+   `final_probes.fasta`), NOT the cellular preset's PGK1+hNSE. Norm = mean(PGK)/50
+   (identical to `HOST_TRANSCRIPTS_PER_CELL=50`; Veso then ×10 for per-10-cell
+   display).
 2. Viral-aware header parsing: rename probes into the existing
    `Class_Taxon_Subunit_Index` grammar (e.g. `V-HHV_HSV1_gB_3`,
    `V-HCoV_SARSCoV2_S_1`) and extend `ETOL_DOMAIN_BY_LETTER` with viral class
    codes, so `_class_code/_taxon/_species/_domain` are reused, not forked.
-3. Contig artifact rejection: `identify_contigs` (contig_id.py) already keeps the
-   best contig homolog; point it at nt/core_nt and flag contigs whose best hit is
-   Homo sapiens / mitochondrion (the paper's herpes-mito false-positive problem).
+3. Contig artifact rejection (FIDELITY-CRITICAL): `identify_contigs`
+   (contig_id.py) already keeps the best contig homolog + flags Homo
+   sapiens/mitochondrion. BUT the validation DB must be VIRUS-APPROPRIATE —
+   `core_nt`, OR a local RefSeq-viral + human-genome + human-mito build. Do NOT
+   reuse the cellular `ToL_rRNA` (SILVA) DB: viruses have no rRNA, so a herpes→
+   human-mitochondria artifact contig won't match SILVA at all and would slip
+   through as "no hit" instead of being caught. Herpes→mito was the DOMINANT
+   false-positive source in Veso's results — this step is what kills it.
 
 Prereq: `final_probes.fasta` is NOT in the repo — get it from the student's
 GitHub (github.com/B270917-2024/MSc_Dissertation). Build order: get FASTA ->
@@ -37,3 +45,28 @@ rename headers -> register preset (net/human-filter/dedup/PGK/CAP3/CSV all reuse
 -> add nt validation. Heatmap + WGS precision/recall metrics are presentation/
 analysis, NOT pipeline (YAGNI). Part I (t-SNE, NJ trees, probe design scripts) is
 out of scope for a screening tool. Paper-reported perf: 90% precision, 20% recall.
+
+CONFIRMED FROM VESO'S FULL DISSERTATION (2026-06-26):
+- Validated brain virome is THIN: after contig validation only adenovirus-C penton
+  + SARS-CoV-2 probes survive; ~all herpesvirus hits were artifacts matching the
+  human MITOCHONDRIAL genome. Recall ~20% is probe-limited, NOT port-limited.
+- FIDELITY TARGET: a faithful port should reproduce Veso's confusion matrix vs the
+  eToL WGS ground truth on the 35 EBB samples number-for-number: TP=9, FP=1,
+  FN=35, TN=411 (acc 92%, prec 90%, recall 20%, F1 0.3). This IS the proof the
+  port matches her methods.
+- Strand conversion (plusstrand.py) was probe PREP (Part I), not a runtime step —
+  final_probes.fasta is already plus-strand; no per-run work.
+- Net: Veso used web BLASTn, max_target_seqs 5000, counted all hits then validated
+  via contigs (no explicit E gate). COBLAST nets at E<0.01 — keep it, but verify
+  it doesn't drop the 9 TPs (AdC/SARS hits are strong, so safe).
+- Probe set: advisors confirm it's been EXTENDED since Veso to adequate breadth;
+  probe-generation automation NOT needed. Still pull the latest final_probes.fasta
+  from the student GitHub.
+- SARS-CoV-2 anomaly: pre-pandemic EBB samples (deaths 2017-2019) carry sequences
+  that phylogenetically cluster with the pandemic SARS-CoV-2 clade — unresolved
+  (contamination vs real). Optional high-interest, rabbit-hole-risk thread.
+- COBLAST+ removes eToL-V's stated #1 limitation (can't BLASTn vs SRA locally) and
+  beats ViromeScan (Veso: 50h + TB/batch, failed on 34/35 samples).
+- See [[coblast-ad-application-plan]] for the staged AD-application plan this feeds:
+  validation floor (reproduce the matrix above + Hu 2023 cellular shortlist) then
+  the AdC-anchored cellular+viral integrated stretch.
