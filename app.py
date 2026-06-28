@@ -568,7 +568,7 @@ def run_batch_blast_route():
         sequence = etol_search_fasta(etol_preset_key)
         probe_query_ids = set(etol_search_query_ids(etol_preset_key))
         if etol_preset_is_microbial(etol_preset_key):
-            control_query_ids = etol_control_query_ids()
+            control_query_ids = etol_control_query_ids(etol_preset_key)
     if exact_probe_preset:
         # Exact-match/net probe presets always run BLASTN with tabular parsing so
         # the preset hit filters below can be applied consistently.

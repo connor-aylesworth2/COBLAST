@@ -20,7 +20,22 @@ contigs vs reference DB. So it is a NEW PRESET, not a new pipeline. The
 dissertation's normalization (mean PGK / 50) is identical to
 `HOST_TRANSCRIPTS_PER_CELL=50.0` in etol_summary.py. See [[etol-lathe-alignment]].
 
-Only 3 genuinely-new pieces:
+STATUS (2026-06-29): PRESET BUILT. All 3 pieces below are DONE. `etol_v`
+registered in `ETOL_PRESETS` (etol_summary.py); 117 probes (115 viral + this
+panel's OWN 2 PGK controls) loaded from `data/etol_v_probes.fasta` +
+`data/etol_v_control_probes.fasta`. Headers renamed to the cellular grammar with
+viral class codes V-HHV(77)/V-HAdV(7)/V-HPV(10)/V-HCoV(21); `ETOL_DOMAIN_BY_LETTER`
+gained `"V"→Viruses`; controls were made per-preset (`controls` callable in each
+preset dict + `_control_pairs_for(key)`; cellular presets unchanged, still 4
+PGK1/hNSE controls). Subunit kept in the taxon so AdC penton is its own row.
+101 tests pass (3 new etol_v tests in tests/test_summaries.py). Validation DB
+build script shipped: `scripts/build_etol_v_validation_db.sh` (RefSeq viral +
+GRCh38 incl. mito → `ToL_virus_val`; mixed DB so genuine viral contigs survive and
+herpes→mito artifacts get a "Homo sapiens" homolog and are dropped by
+contig_id.py). REMAINING before a real run: (a) run that script on the server to
+build+register `ToL_virus_val`; (b) build patient BLAST DBs from the new RNAseq;
+(c) shakedown run + verify net E<0.01 keeps Veso's 9 TPs. Original 3 pieces,
+now done:
 1. Register an `etol_v` preset in `ETOL_PRESETS` (etol_summary.py:155). For
    fidelity, normalize on the preset's OWN 2 PGK probes (shipped in
    `final_probes.fasta`), NOT the cellular preset's PGK1+hNSE. Norm = mean(PGK)/50

@@ -117,6 +117,53 @@ def test_etol_count_rows_include_every_probe_and_species():
     assert any(row["exact_hits"] == 1 for row in species_rows)
 
 
+# --- eToL-V (viral) preset -------------------------------------------------
+
+def test_etol_v_panel_size_and_own_controls():
+    # 115 viral probes + this panel's own 2 PGK controls (not the cellular 4).
+    assert etol_preset_probe_count("etol_v") == 115
+    v_controls = etol_control_query_ids("etol_v")
+    assert v_controls == {"PGK1_1", "PGK1_2"}
+    # The viral panel is searched together with its own controls (117 total) and
+    # must NOT pull in the cellular hNSE controls.
+    search_ids = etol_search_query_ids("etol_v")
+    assert v_controls <= search_ids
+    assert len(search_ids) == 115 + 2
+    assert not any(qid.startswith("hNSE") for qid in search_ids)
+    # Controls are not searched as a viral taxon.
+    assert "PGK1_1" not in etol_preset_query_ids("etol_v")
+
+
+def test_etol_v_records_map_to_viral_domain_and_families():
+    records = etol_preset_records("etol_v")
+    assert {r["domain"] for r in records} == {"Viruses"}
+    groups = {r["group"] for r in records}
+    assert groups == {"V-HHV", "V-HAdV", "V-HPV", "V-HCoV"}
+    # Subunit is retained in the taxon so AdC penton is its own row (matches the
+    # eToL-V dissertation's reporting granularity).
+    by_probe = {r["probe"]: r for r in records}
+    penton = by_probe["V-HAdV_AdC_penton_1"]
+    assert penton["taxon"] == "V-HAdV_AdC_penton"
+    assert penton["species"] == "AdC_penton"
+
+
+def test_etol_v_summary_normalizes_on_own_pgk():
+    records = etol_preset_records("etol_v")
+    sample = {
+        "display_name": "SRX555 brain virome",
+        "hits": [{"qseqid": "V-HAdV_AdC_penton_1"}] * 12,
+        # mean(PGK1)=300 -> /50 = 6 host cells; 12 reads / 6 = 2 per host cell.
+        "etol_control_counts": {"PGK1_1": 280, "PGK1_2": 320},
+        "error": "",
+    }
+    row = build_etol_probe_summary([sample], records)[0]
+    assert row["host_cells"] == 6.0
+    top = row["detected_species"][0]
+    assert top["species"] == "AdC_penton"
+    assert top["exact_hits"] == 12
+    assert top["normalized_abundance"] == 2.0
+
+
 # --- host-cell normalization ----------------------------------------------
 
 def test_etol_microbial_search_appends_control_probes():

@@ -7,13 +7,15 @@ with the bundled eToL panel and aggregates exact probe hits per sample into
 probe-, species-, and domain-level counts that feed the batch results page, the
 CSV/TSV exports, and downstream species plots.
 
-Two eToL batch presets share this machinery, differing only in which microbial
-probes are used as the query (and therefore counted); both append the same
-PGK1/hNSE housekeeping control probes for host-cell normalization:
+Several eToL batch presets share this machinery, differing in which probes are
+the query (and therefore counted) and which housekeeping control probes are
+appended for host-cell normalization:
 
-* ``etol_full``  - the full microbial panel.
+* ``etol_full``  - the full cellular microbial panel (PGK1/hNSE controls).
 * ``etol_quick`` - one probe per species (the first probe of each species),
-  a slim panel for fast test runs.
+  a slim cellular panel for fast test runs (PGK1/hNSE controls).
+* ``etol_v``     - the viral panel (eToL-V): structural-protein probes across
+  herpes/adeno/papilloma/coronaviruses, normalized on its own PGK controls.
 """
 
 from __future__ import annotations
@@ -29,6 +31,14 @@ from config import resource_path
 
 ETOL_FULL_FASTA_PATH = resource_path("data", "eToL_probes.fasta")
 ETOL_CONTROL_FASTA_PATH = resource_path("data", "eToL_control_probes.fasta")
+# eToL-V (viral) panel: ~115 viral structural-protein probes + 2 PGK controls,
+# ported from the eToL-V dissertation (Edinburgh B270917). Headers are rewritten
+# into the same ``Class_Taxon_Subunit_Index`` grammar as the cellular panel, with
+# viral-class codes (V-HHV/V-HAdV/V-HPV/V-HCoV); the controls are this panel's own
+# PGK probes, kept in a separate file so they are appended -- not searched as a
+# viral taxon -- exactly like the cellular PGK1/hNSE controls.
+ETOL_V_FASTA_PATH = resource_path("data", "etol_v_probes.fasta")
+ETOL_V_CONTROL_FASTA_PATH = resource_path("data", "etol_v_control_probes.fasta")
 # The eToL panels keep the paper's permissive net rather than exact matches:
 # default megablast with no identity or coverage filter, gated on E-value < 0.01
 # (Hu, Haas & Lathe 2022), so partial and mismatched rRNA matches are retained
@@ -54,6 +64,10 @@ ETOL_DOMAIN_BY_LETTER = {
     "E": "Basal Eukaryota",
     "F": "Fungi",
     "H": "Holozoa/Metazoa",
+    # eToL-V viral classes all carry a ``V-`` class-code prefix, so the single
+    # first-letter lookup maps every viral family (V-HHV/V-HAdV/V-HPV/V-HCoV) to
+    # the Viruses domain; the family itself stays in the Class column.
+    "V": "Viruses",
 }
 # Human housekeeping/normalization probes are not microbial taxa.
 ETOL_CONTROL_GROUPS = {"PGK1", "hNSE"}
@@ -139,6 +153,16 @@ def _control_pairs() -> tuple[tuple[str, str], ...]:
 
 
 @lru_cache(maxsize=1)
+def _etol_v_pairs() -> tuple[tuple[str, str], ...]:
+    return tuple(_parse_panel_fasta(ETOL_V_FASTA_PATH.read_text(encoding="utf-8")))
+
+
+@lru_cache(maxsize=1)
+def _etol_v_control_pairs() -> tuple[tuple[str, str], ...]:
+    return tuple(_parse_panel_fasta(ETOL_V_CONTROL_FASTA_PATH.read_text(encoding="utf-8")))
+
+
+@lru_cache(maxsize=1)
 def _quick_pairs() -> tuple[tuple[str, str], ...]:
     """Return the first probe of each species in the full microbial panel."""
     seen: set[str] = set()
@@ -171,6 +195,7 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
                     "reads per host cell using the PGK1/hNSE control probes."
                 ),
                 "pairs": _full_pairs,
+                "controls": _control_pairs,
             },
         ),
         (
@@ -186,6 +211,32 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
                     "of each species (one probe per species) for fast test runs."
                 ),
                 "pairs": _quick_pairs,
+                "controls": _control_pairs,
+            },
+        ),
+        (
+            "etol_v",
+            {
+                "form_field": "etol_v_probe_preset",
+                "label": "eToL-V viral probe batch",
+                "short_label": "eToL-V (viruses)",
+                "panel_label": "eToL-V",
+                "microbial": True,
+                "description": (
+                    "Viral electronic Tree of Life (eToL-V) panel of structural-"
+                    "protein probes across four human viral classes -- "
+                    "herpesviruses (V-HHV), adenoviruses (V-HAdV), papillomaviruses "
+                    "(V-HPV), and coronaviruses (V-HCoV); BLASTN default megablast "
+                    "net (E-value < 0.01, no identity or coverage filter). Counts "
+                    "matching reads per probe and virus, de-duplicates reads across "
+                    "probes, and reports reads per host cell using this panel's own "
+                    "PGK control probes. For faithful artifact rejection, run with "
+                    "contig identification against a virus-appropriate reference DB "
+                    "(RefSeq viral + human genome/mitochondrion), NOT the cellular "
+                    "rRNA DB."
+                ),
+                "pairs": _etol_v_pairs,
+                "controls": _etol_v_control_pairs,
             },
         ),
     ]
@@ -242,15 +293,27 @@ def etol_preset_probe_count(key: str) -> int:
 HOST_TRANSCRIPTS_PER_CELL = 50.0
 
 
-@lru_cache(maxsize=1)
-def etol_control_records() -> tuple[dict[str, str], ...]:
-    """Return metadata for the housekeeping control probes (PGK1, hNSE)."""
-    return tuple(_record_meta(header) for header, _ in _control_pairs())
+def _control_pairs_for(key: str | None) -> tuple[tuple[str, str], ...]:
+    """Return the control (housekeeping) probe pairs for a preset.
+
+    ``key=None`` keeps the historical default (the cellular PGK1/hNSE controls),
+    so existing callers stay correct; each preset otherwise supplies its own
+    controls (e.g. the eToL-V panel normalizes on its own PGK probes).
+    """
+    if key is None:
+        return _control_pairs()
+    return tuple(ETOL_PRESETS[key].get("controls", _control_pairs)())
 
 
-def etol_control_query_ids() -> frozenset[str]:
+@lru_cache(maxsize=None)
+def etol_control_records(key: str | None = None) -> tuple[dict[str, str], ...]:
+    """Return metadata for a preset's housekeeping control probes."""
+    return tuple(_record_meta(header) for header, _ in _control_pairs_for(key))
+
+
+def etol_control_query_ids(key: str | None = None) -> frozenset[str]:
     """Return the control-probe query ids used for host normalization."""
-    return frozenset(record["probe"] for record in etol_control_records())
+    return frozenset(record["probe"] for record in etol_control_records(key))
 
 
 def etol_search_pairs(key: str) -> tuple[tuple[str, str], ...]:
@@ -263,7 +326,7 @@ def etol_search_pairs(key: str) -> tuple[tuple[str, str], ...]:
     """
     pairs = tuple(ETOL_PRESETS[key]["pairs"]())
     if etol_preset_is_microbial(key):
-        pairs = pairs + _control_pairs()
+        pairs = pairs + _control_pairs_for(key)
     return pairs
 
 
