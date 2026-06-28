@@ -79,7 +79,12 @@ echo "" >&2
 # --- 1. RefSeq viral genomes ---
 # Recursive, flattened (-nd), no-parent (-np) fetch of every viral genomic shard.
 echo "==> [1/4] Downloading RefSeq viral genomes ..." >&2
+# -e robots=off is REQUIRED: ftp.ncbi.nlm.nih.gov serves "User-agent: *
+# Disallow: /", and wget honors robots.txt in recursive (-r) mode by default.
+# Without this, wget fetches only robots.txt + the index page and follows zero
+# links, so no shards download and the guard below fires.
 wget -q --show-progress -r -np -nd \
+     -e robots=off \
      -A 'viral.*.genomic.fna.gz' \
      -P "$VIRAL_DIR" \
      "$REFSEQ_VIRAL_URL"
