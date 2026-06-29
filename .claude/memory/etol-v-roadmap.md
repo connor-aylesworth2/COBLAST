@@ -72,10 +72,54 @@ stays lean) — new `build_etol_matrix` + `_sample_condition` (etol_summary.py),
 `etol_matrix_payload` (result_store.py), GET `/batch-results/<id>/etol-matrix.json`
 (app.py), `static/etol_heatmap.js` + styles + panel in batch_results.html;
 per-preset defaults, value/stage/cutoff controls, condition column swatches,
-PNG/SVG export; 103 tests pass (+2 new). TIER 2 (confusion matrix, user said
-"wire in now", HAS the WGS ground truth): pending — consume CSV `sample,taxon,
-present` (omit rows = excluded, e.g. SARS-CoV-2), compute TP/FP/FN/TN at
-probe×sample + Acc/Prec/Rec/F1; fidelity target TP=9/FP=1/FN=35/TN=411. TIER 3:
+PNG/SVG export; 103 tests pass (+2 new). TIER 2 (confusion matrix): user supplied
+Veso's actual WGS ground truth = `WHOLE GENOME SCAN OF EBB.xls` (Sheet1, 20
+viruses × 35 samples, COUNT data). CONSTRUCTION FULLY REVERSE-ENGINEERED + VERIFIED
+(2026-06-29) — reproduces her TP=9/FP=1/FN=35/TN=411, N=456 exactly:
+ • BINARY, present = count>0 (paper p40 "binary classification model"; >0 is the
+   ONLY threshold giving TP+FN=44 — confirmed by parsing the xls).
+ • Sample key: WGS columns are shorthand "srxNN" = SRX176744NN (verified: yields
+   exactly 35 cols, 24 AD / 11 CONTROL). USER RUNS ON SRR, and COBLAST+'s
+   accession regex matches SRX/ERX/DRX NOT SRR — so a SRR↔SRX176744NN crosswalk is
+   the one external blocker (SRA Run Selector / Veso Table S2/S3). Consider adding
+   SRR|ERR|DRR to ETOL_ACCESSION_PATTERN (also fixes heatmap labels for SRR runs).
+ • Universe = the 13 eToL-V-targetable viruses that HAVE a WGS row (AdenoC, COV_229E,
+   HHV1_HSV1, HHV2_HSV2, HHV3_VZV, HHV4_EBV, HHV5_CMV, HHV6A, HHV6B, HHV7, HHV8,
+   HPV6, HPV16) × 35 samples = 455, +1 for the single HPV45-L1 prediction lacking a
+   WGS row (= her FP=1) = 456. WGS-positive cells: AdenoC=30, HSV1=7, CMV=5, EBV=1,
+   HHV8=1 → 44 (=TP+FN). ✓
+ • eToL-V "present" = any of that virus's probes has a VALIDATED (contig-confirmed)
+   hit >0 (compare to Fig 10, not raw Fig 8). SARS-CoV-2 EXCLUDED (no WGS row);
+   other panel viruses with no WGS row (HPV11/18/31/45, AdB, NL63/OC43/HKU1/MERS)
+   score as WGS-absent → a validated prediction there is an FP.
+ • Build: virus→COBLAST+ taxon crosswalk + loader consuming `sample,virus,count`
+   (binarize >0) + TP/FP/FN/TN + Acc/Prec/Rec/F1 panel. Working xls parser already
+   prototyped (Excel COM → CSV; no pandas/xlrd in env).
+ CROSSWALK RESOLVED + VERIFIED (2026-06-29): user supplied `DATA UPLOADED TO NCBI
+   INCLUDING SRAs (1).ods`; sheet ALL_NCBI_DATA is the full SRA run table for study
+   SRP398685 with Run+Experiment+SampleName in one row. SRR↔SRX mapping is INVERTED,
+   not same-suffix: SRX17674433↔SRR21676133, …34↔…132, …35↔…131 (verify, don't
+   assume!). Closes the join: COBLAST+ label (SRR) → crosswalk → SRX176744NN → WGS
+   truth. Verified 35/35 region agreement (diagnosis 27/35 — the 8 "misses" are
+   AD/VaD+AD/LBD samples WGS coarsely called "AD"; same AD/control split). Crosswalk
+   CSV + normalized truth parsed in scratchpad.
+ UNIVERSE PINNED: Veso's 13-virus set = {Adenovirus C, COV_229E, HHV1_HSV1,
+   HHV2_HSV2, HHV3_VZV, HHV4_EBV, HHV5_CMV, HHV6A, HHV6B, HHV7, HHV8, HPV6, HPV16}
+   × 35 = 455, +1 HPV45 out-of-universe FP = 456. Reproduces 9/1/35/411 EXACTLY
+   (44 positives: AdC 30, HSV1 7, CMV 5, EBV 1, HHV8 1). QUIRK (judgment call, worth
+   Veso confirm): includes HPV6 though the panel has NO HPV6 probe (→always predicted
+   negative), and EXCLUDES Adenovirus A / Adenovirus 54 though they're adenoviruses.
+   SARS-CoV/SARS-CoV-2 fully excluded (no WGS row). Panel viruses w/ no WGS row +
+   a validated hit = FP (only HPV45 fired). Map: AdC→V-HAdV_AdC_*, 229E→HCoV229E,
+   HSV1/2,VZV,EBV,CMV→HHV1/2/3/4/5, HHV6A/6B/7, HHV8→KSHV, HPV16; HPV6→no taxon.
+ TIER 2 CORE DONE (2026-06-29): shipped `data/etol_v_wgs_truth.csv` (srx,virus,count;
+   700 rows) + `data/etol_v_sra_crosswalk.csv` (srr↔srx↔region↔diagnosis; 35) +
+   `etol_validation.py` (loaders, `VESO_UNIVERSE` configurable, `compute_confusion`
+   over a build_etol_matrix payload; validated stage, SRR→SRX join, out-of-universe
+   FP, SARS excluded). `tests/test_etol_validation.py` REPRODUCES her Fig 9 exactly
+   (9/1/35/411, acc .9211/prec .90/rec .2045/F1 .33) from the bundled truth — the
+   fidelity proof. 109 tests pass. REMAINING: in-app confusion-matrix PANEL
+   (endpoint + render on results page, eToL-V only) then TIER 3 plot script. TIER 3:
 optional `scripts/plot_etol.py` (matplotlib/seaborn/sklearn over the CSVs), NOT
 bundled in the exe — paper-pixel-faithful clustermap + ConfusionMatrixDisplay.
 User chose "both" (in-app + script). NOTE: user syncs in-repo git-tracked

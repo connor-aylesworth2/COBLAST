@@ -196,6 +196,22 @@ def test_build_etol_matrix_shape_and_counts():
     assert matrix["confirmed"] is None
 
 
+def test_build_etol_matrix_labels_run_accessions():
+    # SRR/ERR/DRR run accessions (not just SRX experiment accessions) should be
+    # picked up so SRR-built patient databases get a clean column label.
+    records = etol_preset_records("etol_quick")
+    results = [
+        {
+            "display_name": "SRR9999999 AD brain",
+            "db_prefix_path": r"C:\COBLAST_data\sra\SRR9999999\reads",
+            "hits": [],
+        }
+    ]
+    matrix = build_etol_matrix(results, records, level="species")
+    assert matrix["cols"][0]["sample"] == "SRR9999999"
+    assert matrix["cols"][0]["condition"] == "AD"
+
+
 def test_build_etol_matrix_probe_level_and_confirmed_layer():
     records = etol_preset_records("etol_quick")
     taxon = records[0]["taxon"]

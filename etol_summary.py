@@ -46,8 +46,12 @@ ETOL_V_CONTROL_FASTA_PATH = resource_path("data", "etol_v_control_probes.fasta")
 ETOL_NET_FILTER = "default megablast net, E-value < 0.01 (no identity or coverage filter)"
 
 # Reused to label a sample by its SRA accession when one is present in the
-# database name/path; otherwise we fall back to the display name.
-ETOL_ACCESSION_PATTERN = re.compile(r"\b(?:SRX|ERX|DRX)\d+\b", re.IGNORECASE)
+# database name/path; otherwise we fall back to the display name. Both experiment
+# (SRX/ERX/DRX) and run (SRR/ERR/DRR) accessions are recognized so SRR-built
+# patient databases get a clean column label instead of the raw display name.
+ETOL_ACCESSION_PATTERN = re.compile(
+    r"\b(?:SR[XR]|ER[XR]|DR[XR])\d+\b", re.IGNORECASE
+)
 
 # Diagnosis tag a sample carries in its name/path (e.g. ``SRX17674464_AD/LBD``),
 # used only to colour-annotate heatmap columns by condition the way the eToL and
