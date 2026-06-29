@@ -27,6 +27,7 @@ from assembler import default_assembler
 from contig_id import identify_contigs, reprobe_and_reassemble
 from etol_summary import (
     ETOL_NET_FILTER,
+    build_etol_matrix,
     build_etol_probe_summary,
     etol_control_query_ids,
     etol_preset_form_field,
@@ -39,6 +40,7 @@ from etol_summary import (
     etol_search_query_ids,
     group_read_ids_by_taxon,
 )
+from etol_validation import compute_confusion
 from human_filter import extract_reads, filter_human_hits
 from blast_runner import (
     BLAST_PROGRAMS,
@@ -1162,6 +1164,17 @@ def run_batch_blast_route():
         payload["etol_probe_summary"] = build_etol_probe_summary(
             database_results, etol_preset_records(etol_preset_key)
         )
+    # eToL-V runs get a confusion matrix vs the bundled eToL WGS ground truth
+    # (the dissertation's Figure 9 fidelity check). Guarded so a validation
+    # failure never takes down the results page.
+    if etol_preset_key == "etol_v":
+        try:
+            matrix = build_etol_matrix(
+                database_results, etol_preset_records("etol_v")
+            )
+            payload["etol_confusion"] = compute_confusion(matrix)
+        except Exception as exc:  # pragma: no cover - defensive
+            payload["etol_confusion"] = {"error": str(exc)}
     batch_id = save_batch_result(payload)
     payload["batch_id"] = batch_id
     return render_template(

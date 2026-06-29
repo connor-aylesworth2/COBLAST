@@ -118,8 +118,19 @@ viruses × 35 samples, COUNT data). CONSTRUCTION FULLY REVERSE-ENGINEERED + VERI
    over a build_etol_matrix payload; validated stage, SRR→SRX join, out-of-universe
    FP, SARS excluded). `tests/test_etol_validation.py` REPRODUCES her Fig 9 exactly
    (9/1/35/411, acc .9211/prec .90/rec .2045/F1 .33) from the bundled truth — the
-   fidelity proof. 109 tests pass. REMAINING: in-app confusion-matrix PANEL
-   (endpoint + render on results page, eToL-V only) then TIER 3 plot script. TIER 3:
+   fidelity proof. ALL VISUALIZATION TIERS NOW DONE:
+ TIER 2 PANEL DONE (2026-06-29): confusion matrix computed in the /batch-blast POST
+   route (eToL-V only, guarded), persisted in the batch payload, server-rendered as a
+   2×2 + Acc/Prec/Rec/F1 panel in batch_results.html (.confusion CSS); no-overlap and
+   error branches handled. Template render smoke-tested.
+ TIER 3 DONE (2026-06-29): `scripts/plot_etol.py` (matplotlib-only, NOT in the exe,
+   reuses compute_confusion) renders her Fig 9 confusion matrix (+ optional Fig 10
+   heatmap). `--batch-id` or `--matrix-json`; `--print-only` needs no plotting libs and
+   verified TP=9/FP=1/FN=35/TN=411. 110 tests pass.
+ So eToL/eToL-V data-vis is COMPLETE: in-app heatmap (Tier 1) + in-app confusion-matrix
+   panel (Tier 2) + publication script (Tier 3). Only runtime step left for the user: run
+   the eToL-V preset on the 35 SRP398685/EBB SRR samples (with contig id on) to populate
+   real figures; the SRR labels join the SRX-keyed truth via data/etol_v_sra_crosswalk.csv. TIER 3:
 optional `scripts/plot_etol.py` (matplotlib/seaborn/sklearn over the CSVs), NOT
 bundled in the exe — paper-pixel-faithful clustermap + ConfusionMatrixDisplay.
 User chose "both" (in-app + script). NOTE: user syncs in-repo git-tracked

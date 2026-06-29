@@ -334,6 +334,59 @@
             </section>
             <script src="{{ url_for('static', filename='etol_heatmap.js') }}"></script>
           {% endif %}
+
+          {% if batch.etol_preset_key == 'etol_v' and batch.etol_confusion %}
+            {% set c = batch.etol_confusion %}
+            <section class="panel">
+              <div class="panel__header">
+                <h2 class="panel__title">eToL-V Validation: Confusion Matrix</h2>
+              </div>
+              {% if c.error %}
+                <p class="muted">Validation unavailable: {{ c.error }}</p>
+              {% elif not c.scored_samples %}
+                <p class="muted">
+                  None of this batch's samples matched the bundled eToL WGS ground
+                  truth (35 Edinburgh Brain Bank samples, study SRP398685), so no
+                  confusion matrix could be computed. Run the eToL-V preset on those
+                  SRA samples to reproduce the dissertation's Figure 9.
+                </p>
+              {% else %}
+                <p class="muted">
+                  eToL-V's {{ c.stage }} calls vs the eToL whole-genome-shotgun ground
+                  truth, scored over {{ c.scored_samples }} matched sample(s).
+                  Present = WGS read count &gt; 0; a virus is predicted present when any
+                  of its probes has a {{ c.stage }} hit. Fidelity target (Veso, Fig 9):
+                  TP 9 / FP 1 / FN 35 / TN 411.
+                </p>
+                <div class="confusion">
+                  <div class="confusion__grid">
+                    <div class="confusion__corner"></div>
+                    <div class="confusion__head">Predicted &minus;</div>
+                    <div class="confusion__head">Predicted &plus;</div>
+                    <div class="confusion__head confusion__head--row">Actual &minus;</div>
+                    <div class="confusion__cell confusion__cell--tn"><span>TN</span>{{ c.tn }}</div>
+                    <div class="confusion__cell confusion__cell--fp"><span>FP</span>{{ c.fp }}</div>
+                    <div class="confusion__head confusion__head--row">Actual &plus;</div>
+                    <div class="confusion__cell confusion__cell--fn"><span>FN</span>{{ c.fn }}</div>
+                    <div class="confusion__cell confusion__cell--tp"><span>TP</span>{{ c.tp }}</div>
+                  </div>
+                  <ul class="confusion__metrics">
+                    <li><span>Accuracy</span>{{ '%.0f%%'|format(c.accuracy * 100) if c.accuracy is not none else 'n/a' }}</li>
+                    <li><span>Precision</span>{{ '%.0f%%'|format(c.precision * 100) if c.precision is not none else 'n/a' }}</li>
+                    <li><span>Recall</span>{{ '%.0f%%'|format(c.recall * 100) if c.recall is not none else 'n/a' }}</li>
+                    <li><span>F1</span>{{ '%.2f'|format(c.f1) if c.f1 is not none else 'n/a' }}</li>
+                    <li><span>N (cells)</span>{{ c.n }}</li>
+                  </ul>
+                </div>
+                {% if c.unmatched_samples %}
+                  <p class="muted">
+                    {{ c.unmatched_samples|length }} sample(s) had no ground-truth match
+                    and were excluded from scoring.
+                  </p>
+                {% endif %}
+              {% endif %}
+            </section>
+          {% endif %}
         {% endif %}
 
         {% if batch.assemble_contigs %}

@@ -90,6 +90,22 @@ def test_reproduces_veso_confusion_matrix():
     assert round(m["f1"], 2) == 0.33
 
 
+def test_no_ground_truth_overlap_is_graceful():
+    # A batch whose samples are not in the crosswalk scores nothing (no crash,
+    # all-zero matrix), which the results panel renders as an explanatory note.
+    matrix = {
+        "rows": [{"key": "V-HAdV_AdC_penton"}],
+        "cols": [{"sample": "SRR00000001"}, {"sample": "SRR00000002"}],
+        "confirmed": [[3, 0]],
+        "hits": [[3, 0]],
+    }
+    m = compute_confusion(matrix, stage="validated")
+    assert m["scored_samples"] == 0
+    assert (m["tp"], m["fp"], m["fn"], m["tn"]) == (0, 0, 0, 0)
+    assert m["accuracy"] is None
+    assert set(m["unmatched_samples"]) == {"SRR00000001", "SRR00000002"}
+
+
 def test_sars_predictions_are_excluded():
     truth = load_wgs_truth()
     matrix, taxa, srx_order = _zero_matrix()
