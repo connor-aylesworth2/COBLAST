@@ -7,6 +7,7 @@ panels under data/, so run pytest from the repository root.
 
 from apoe_summary import build_apoe_probe_summary
 from etol_summary import (
+    build_etol_matrix,
     build_etol_probe_summary,
     compute_host_cells,
     etol_control_query_ids,
@@ -162,6 +163,57 @@ def test_etol_v_summary_normalizes_on_own_pgk():
     assert top["species"] == "AdC_penton"
     assert top["exact_hits"] == 12
     assert top["normalized_abundance"] == 2.0
+
+
+# --- heatmap matrix --------------------------------------------------------
+
+def test_build_etol_matrix_shape_and_counts():
+    records = etol_preset_records("etol_quick")
+    results = [
+        {
+            "display_name": "SRX111_AD",
+            "db_prefix_path": r"C:\COBLAST_data\sra\SRX111\reads",
+            "hits": [{"qseqid": records[0]["probe"]}] * 3,
+            "etol_control_counts": {"PGK1_2": 100, "hNSE_2": 100},
+        },
+        {
+            "display_name": "SRX222_CTRL",
+            "db_prefix_path": r"C:\COBLAST_data\sra\SRX222\reads",
+            "hits": [],
+        },
+    ]
+    matrix = build_etol_matrix(results, records, level="species")
+    # One row per species/taxon, one column per sample, hits aligned row x col.
+    assert len(matrix["rows"]) == len({r["taxon"] for r in records})
+    assert [c["sample"] for c in matrix["cols"]] == ["SRX111", "SRX222"]
+    assert matrix["cols"][0]["condition"] == "AD"
+    assert matrix["cols"][1]["condition"] == "CTRL"
+    # mean(PGK1_2=100, hNSE_2=100)=100 -> /50 = 2 host cells.
+    assert matrix["cols"][0]["host_cells"] == 2.0
+    total = sum(value for row in matrix["hits"] for value in row)
+    assert total == 3
+    # No contig identification ran, so there is no validated layer.
+    assert matrix["confirmed"] is None
+
+
+def test_build_etol_matrix_probe_level_and_confirmed_layer():
+    records = etol_preset_records("etol_quick")
+    taxon = records[0]["taxon"]
+    results = [
+        {
+            "display_name": "SRX999_AD/LBD",
+            "hits": [{"qseqid": records[0]["probe"]}] * 5,
+            "contig_identification": {taxon: {"confirmed_reads": 4}},
+        }
+    ]
+    probe_matrix = build_etol_matrix(results, records, level="probe")
+    assert len(probe_matrix["rows"]) == len(records)
+    assert probe_matrix["rows"][0]["key"] == records[0]["probe"]
+    # Combined diagnosis suffix is preferred over a bare "AD".
+    assert probe_matrix["cols"][0]["condition"] == "AD/LBD"
+    # Contig identification populates the validated (confirmed) layer per taxon.
+    assert probe_matrix["confirmed"] is not None
+    assert probe_matrix["confirmed"][0][0] == 4
 
 
 # --- host-cell normalization ----------------------------------------------

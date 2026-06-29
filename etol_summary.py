@@ -49,6 +49,15 @@ ETOL_NET_FILTER = "default megablast net, E-value < 0.01 (no identity or coverag
 # database name/path; otherwise we fall back to the display name.
 ETOL_ACCESSION_PATTERN = re.compile(r"\b(?:SRX|ERX|DRX)\d+\b", re.IGNORECASE)
 
+# Diagnosis tag a sample carries in its name/path (e.g. ``SRX17674464_AD/LBD``),
+# used only to colour-annotate heatmap columns by condition the way the eToL and
+# eToL-V papers do (AD vs control). Longer combinations are listed first so the
+# regex prefers ``AD/LBD`` over a bare ``AD``. Purely cosmetic: an unmatched
+# sample simply renders without a condition swatch.
+ETOL_CONDITION_PATTERN = re.compile(
+    r"(AD/LBD|AD/VaD|CTRL|CONTROL|LBD|VaD|AD)", re.IGNORECASE
+)
+
 # Probe headers look like ``B0_Tmaritima_16S_3`` (Bacterium) or ``PGK1_2`` (human
 # housekeeping control). The leading token before the first underscore is the
 # eToL class code (A, B0..B6, C1..C4, D, E0, F0..F6, H0..H3); the header minus
@@ -415,6 +424,23 @@ def _sample_label(database_result: dict[str, Any]) -> str:
     )
 
 
+def _sample_condition(database_result: dict[str, Any]) -> str:
+    """Best-effort diagnosis tag (AD/CTRL/LBD/VaD) for column annotation.
+
+    Read from the database name/path -- not the accession label, which strips the
+    suffix -- so the heatmap can group samples by condition the way both papers
+    present them. Returns "" when no tag is present.
+    """
+    search_text = " ".join(
+        str(database_result.get(key, ""))
+        for key in ("display_name", "db_prefix_path")
+    )
+    match = ETOL_CONDITION_PATTERN.search(search_text)
+    if not match:
+        return ""
+    return match.group(1).upper().replace("CONTROL", "CTRL")
+
+
 def _taxa_from(records: tuple[dict[str, str], ...]) -> list[dict[str, Any]]:
     """Collapse probe records into ordered, de-duplicated species/taxon rows."""
     taxa: "OrderedDict[str, dict[str, Any]]" = OrderedDict()
@@ -619,3 +645,91 @@ def etol_species_count_rows(
                 }
             )
     return rows
+
+
+def build_etol_matrix(
+    database_results: list[dict[str, Any]],
+    records: tuple[dict[str, str], ...],
+    *,
+    level: str = "species",
+) -> dict[str, Any]:
+    """Reshape eToL counts into a ``rows x samples`` matrix for heatmap rendering.
+
+    This is the dense, plot-ready form of the same data behind
+    :func:`etol_species_count_rows`/:func:`etol_probe_count_rows`: rows are the
+    panel's species/taxa (``level="species"``) or every probe (``level="probe"``)
+    and columns are the searched samples. We return the *raw* matched-read counts
+    plus each sample's host-cell estimate and -- when contig identification ran --
+    the post-validation confirmed-read counts, so the client can derive the
+    matched-reads / reads-per-host-cell / log2 views and toggle the raw vs
+    validated stage (Veso's Fig 8 -> Fig 10) without another round-trip.
+
+    ``confirmed`` is per taxon (the granularity contig identification produces),
+    so at ``level="probe"`` every probe of a taxon shares that taxon's confirmed
+    count; it is ``None`` when the run produced no contig identification.
+    """
+    query_ids = frozenset(record["probe"] for record in records)
+
+    if level == "probe":
+        row_meta = [
+            {
+                "key": record["probe"],
+                "label": record["probe"],
+                "species": record["species"],
+                "group": record["group"],
+                "domain": record["domain"],
+            }
+            for record in records
+        ]
+        probes_for_row = {record["probe"]: [record["probe"]] for record in records}
+        taxon_for_row = {record["probe"]: record["taxon"] for record in records}
+    else:
+        level = "species"
+        taxa = _taxa_from(records)
+        probes_by_taxon = _probes_by_taxon(records)
+        row_meta = [
+            {
+                "key": taxon["taxon"],
+                "label": taxon["species"],
+                "species": taxon["species"],
+                "group": taxon["group"],
+                "domain": taxon["domain"],
+            }
+            for taxon in taxa
+        ]
+        probes_for_row = {taxon["taxon"]: probes_by_taxon[taxon["taxon"]] for taxon in taxa}
+        taxon_for_row = {taxon["taxon"]: taxon["taxon"] for taxon in taxa}
+
+    cols: list[dict[str, Any]] = []
+    hits = [[0 for _ in database_results] for _ in row_meta]
+    confirmed = [[None for _ in database_results] for _ in row_meta]
+    any_confirmed = False
+
+    for col_index, database_result in enumerate(database_results):
+        counts = _probe_counts(database_result, query_ids)
+        host_cells = compute_host_cells(database_result.get("etol_control_counts") or {})
+        contig_identification = database_result.get("contig_identification") or {}
+        cols.append(
+            {
+                "sample": _sample_label(database_result),
+                "condition": _sample_condition(database_result),
+                "host_cells": round(host_cells, 4) if host_cells > 0 else 0.0,
+            }
+        )
+        for row_index, meta in enumerate(row_meta):
+            row_probes = probes_for_row[meta["key"]]
+            hits[row_index][col_index] = sum(counts.get(probe, 0) for probe in row_probes)
+            ident = contig_identification.get(taxon_for_row[meta["key"]], {})
+            confirmed_reads = ident.get("confirmed_reads", "")
+            if confirmed_reads != "" and confirmed_reads is not None:
+                confirmed[row_index][col_index] = int(confirmed_reads)
+                any_confirmed = True
+
+    return {
+        "level": level,
+        "rows": row_meta,
+        "cols": cols,
+        "hits": hits,
+        "confirmed": confirmed if any_confirmed else None,
+        "host_transcripts_per_cell": HOST_TRANSCRIPTS_PER_CELL,
+    }

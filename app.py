@@ -11,7 +11,16 @@ from dataclasses import replace
 from pathlib import Path
 from time import perf_counter, time
 
-from flask import Flask, Response, abort, redirect, render_template, request, url_for
+from flask import (
+    Flask,
+    Response,
+    abort,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 
 from apoe_summary import apoe_probe_query_ids, build_apoe_probe_summary
 from assembler import default_assembler
@@ -54,6 +63,7 @@ from result_store import (
     apoe_summary_rows_as_delimited,
     batch_rows_as_delimited,
     etol_contigs_as_fasta,
+    etol_matrix_payload,
     etol_probe_counts_as_delimited,
     etol_summary_rows_as_delimited,
     load_batch_result,
@@ -488,6 +498,23 @@ def download_etol_probe_counts(batch_id: str, file_format: str):
         mimetype=mimetype,
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+@app.get("/batch-results/<batch_id>/etol-matrix.json")
+def etol_matrix_json(batch_id: str):
+    """Serve the plot-ready eToL hit matrix (rows x samples) for the heatmap."""
+    try:
+        batch_data = load_batch_result(batch_id)
+    except FileNotFoundError:
+        abort(404)
+
+    if not batch_data.get("etol_probe_preset"):
+        abort(404)
+
+    level = request.args.get("level", "species")
+    if level not in {"species", "probe"}:
+        level = "species"
+    return jsonify(etol_matrix_payload(batch_data, level=level))
 
 
 @app.get("/batch-results/<batch_id>/etol-contigs.fasta")

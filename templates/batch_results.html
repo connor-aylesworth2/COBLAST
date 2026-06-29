@@ -276,6 +276,64 @@
               <p class="muted">No eToL summary rows were generated.</p>
             {% endfor %}
           </section>
+
+          {% if batch.batch_id %}
+            <section class="panel">
+              <div class="panel__header">
+                <h2 class="panel__title">eToL Result Heatmap</h2>
+              </div>
+              <p class="muted">
+                Probe-matched reads across every sample, rendered as the
+                rows-by-samples heatmap both eToL papers use for result
+                visualisation. The viral panel defaults to raw matched-read counts
+                (Veso, eToL-V); the cellular panels default to log2 reads per host
+                cell with a 3 reads/cell cutoff (Hu/Lathe). Columns are annotated
+                by diagnosis where the sample name carries one.
+              </p>
+              <div
+                id="etol-heatmap"
+                data-matrix-url="{{ url_for('etol_matrix_json', batch_id=batch.batch_id) }}"
+                data-is-viral="{{ '1' if batch.etol_preset_key == 'etol_v' else '0' }}"
+              >
+                <div class="etol-heatmap__controls">
+                  <label>Rows
+                    <select data-role="level">
+                      <option value="species">Species / taxon</option>
+                      <option value="probe">Individual probes</option>
+                    </select>
+                  </label>
+                  <label>Value
+                    <select data-role="value">
+                      <option value="hits">Matched reads</option>
+                      <option value="reads_per_cell">Reads / host cell</option>
+                      <option value="log2">log2(reads / host cell)</option>
+                    </select>
+                  </label>
+                  <label>Stage
+                    <select data-role="stage" disabled title="Run contig identification to enable the validated layer">
+                      <option value="raw">Raw net hits</option>
+                      <option value="validated">Validated (contig-confirmed)</option>
+                    </select>
+                  </label>
+                  <label>Cutoff
+                    <input type="number" data-role="cutoff" min="0" step="0.01" value="0">
+                  </label>
+                  <span class="etol-heatmap__spacer"></span>
+                  <button type="button" class="button button-secondary" data-role="png">Export PNG</button>
+                  <button type="button" class="button button-secondary" data-role="svg">Export SVG</button>
+                </div>
+                <p class="muted etol-heatmap__legend">
+                  Condition: <span class="swatch" style="background:#c0392b"></span>AD
+                  <span class="swatch" style="background:#2e7d32"></span>Control
+                  <span class="swatch" style="background:#6a1b9a"></span>LBD
+                  <span class="swatch" style="background:#e65100"></span>VaD
+                </p>
+                <p class="muted" data-role="status"></p>
+                <div class="etol-heatmap__canvas" data-role="canvas"></div>
+              </div>
+            </section>
+            <script src="{{ url_for('static', filename='etol_heatmap.js') }}"></script>
+          {% endif %}
         {% endif %}
 
         {% if batch.assemble_contigs %}

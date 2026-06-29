@@ -18,6 +18,7 @@ from apoe_summary import APOE_SUMMARY_EXPORT_COLUMNS, build_apoe_probe_summary
 from etol_summary import (
     ETOL_PROBE_EXPORT_COLUMNS,
     ETOL_SPECIES_EXPORT_COLUMNS,
+    build_etol_matrix,
     etol_preset_records,
     etol_probe_count_rows,
     etol_species_count_rows,
@@ -219,6 +220,25 @@ def etol_probe_counts_as_delimited(batch_data: dict, delimiter: str) -> str:
     for row in etol_probe_count_rows(batch_data.get("database_results", []), records):
         writer.writerow([row.get(key, "") for key, _ in ETOL_PROBE_EXPORT_COLUMNS])
     return buffer.getvalue()
+
+
+def etol_matrix_payload(batch_data: dict, level: str = "species") -> dict:
+    """Build the plot-ready eToL hit matrix for a saved batch (heatmap source).
+
+    Reshapes the same per-probe/per-species counts the CSV exports use into a
+    dense ``rows x samples`` matrix and tags it with the preset so the client can
+    pick paper-faithful defaults (raw hit counts for the viral panel, log2 reads
+    per host cell for the cellular panels).
+    """
+    records = _etol_records_for_batch(batch_data)
+    matrix = build_etol_matrix(
+        batch_data.get("database_results", []), records, level=level
+    )
+    preset = batch_data.get("etol_preset_key") or "etol_full"
+    matrix["preset"] = preset
+    matrix["preset_label"] = batch_data.get("etol_preset_label") or ""
+    matrix["is_viral"] = preset == "etol_v"
+    return matrix
 
 
 def etol_contigs_as_fasta(batch_data: dict) -> str:

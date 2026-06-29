@@ -57,9 +57,29 @@ now done:
 Prereq: `final_probes.fasta` is NOT in the repo — get it from the student's
 GitHub (github.com/B270917-2024/MSc_Dissertation). Build order: get FASTA ->
 rename headers -> register preset (net/human-filter/dedup/PGK/CAP3/CSV all reused)
--> add nt validation. Heatmap + WGS precision/recall metrics are presentation/
-analysis, NOT pipeline (YAGNI). Part I (t-SNE, NJ trees, probe design scripts) is
+-> add nt validation. Part I (t-SNE, NJ trees, probe design scripts) is
 out of scope for a screening tool. Paper-reported perf: 90% precision, 20% recall.
+
+VISUALIZATION (started 2026-06-29; supersedes the earlier "heatmap = YAGNI"
+note): building viz for BOTH presets as 3 tiers. Both papers' core artifact is
+the SAME rows×samples matrix COBLAST+ already exports (etol_probe_count_rows /
+etol_species_count_rows); presets differ only in params (cellular = log2 reads/
+host cell, cutoff 3-5, Hu/Lathe pheatmap/Morpheus; viral = RAW hit count + a
+"Cell count" annotation row, two-stage raw→validated = Veso Fig 8→10 matplotlib;
+plus Veso's confusion matrix Fig 9 vs eToL WGS ground truth, probe×sample,
+SARS-CoV-2 excluded). TIER 1 DONE: in-app vanilla-JS SVG heatmap (no lib, exe
+stays lean) — new `build_etol_matrix` + `_sample_condition` (etol_summary.py),
+`etol_matrix_payload` (result_store.py), GET `/batch-results/<id>/etol-matrix.json`
+(app.py), `static/etol_heatmap.js` + styles + panel in batch_results.html;
+per-preset defaults, value/stage/cutoff controls, condition column swatches,
+PNG/SVG export; 103 tests pass (+2 new). TIER 2 (confusion matrix, user said
+"wire in now", HAS the WGS ground truth): pending — consume CSV `sample,taxon,
+present` (omit rows = excluded, e.g. SARS-CoV-2), compute TP/FP/FN/TN at
+probe×sample + Acc/Prec/Rec/F1; fidelity target TP=9/FP=1/FN=35/TN=411. TIER 3:
+optional `scripts/plot_etol.py` (matplotlib/seaborn/sklearn over the CSVs), NOT
+bundled in the exe — paper-pixel-faithful clustermap + ConfusionMatrixDisplay.
+User chose "both" (in-app + script). NOTE: user syncs in-repo git-tracked
+.claude/memory over this global store — the Tier-1 code now lives in the repo.
 
 CONFIRMED FROM VESO'S FULL DISSERTATION (2026-06-26):
 - Validated brain virome is THIN: after contig validation only adenovirus-C penton

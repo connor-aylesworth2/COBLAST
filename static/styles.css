@@ -727,3 +727,65 @@ pre {
   }
 
 }
+
+/* eToL / eToL-V result heatmap ------------------------------------------- */
+.etol-heatmap__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.etol-heatmap__controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.82rem;
+  color: var(--ncbi-muted);
+}
+
+.etol-heatmap__controls select,
+.etol-heatmap__controls input {
+  padding: 4px 6px;
+  border: 1px solid var(--ncbi-gray-border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+}
+
+.etol-heatmap__controls input[type="number"] {
+  width: 84px;
+}
+
+.etol-heatmap__spacer {
+  flex: 1 1 auto;
+}
+
+.etol-heatmap__legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.etol-heatmap__legend .swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.etol-heatmap__canvas {
+  overflow: auto;
+  max-height: 640px;
+  border: 1px solid var(--ncbi-gray-border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.etol-heatmap__canvas svg {
+  display: block;
+}
