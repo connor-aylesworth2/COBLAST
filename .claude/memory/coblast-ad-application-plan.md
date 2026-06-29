@@ -15,6 +15,29 @@ Strategy for the dissertation's AD application, refined 2026-06-26 after reading
 
 **Novel stretch (reframed):** the brain virome is THIN (validated = AdC penton + SARS-CoV-2 anomaly; herpes artefactual; recall ~20%, probe-limited not port-limited). So NOT rich tri-kingdom co-occurrence. Instead: "Does adenovirus-C presence mark the high-cellular-burden (bacterial+fungal) AD subset?" — first time both layers run on the SAME local patient DB in one tool; engages Hu 2023's AdC-vs-HHV inverse relationship + "~half of AD microbe-positive / subtype" thread. Optional time-boxed branch: deepen the SARS-CoV-2 pre-pandemic (2017-2019 EBB deaths) anomaly that phylogenetically matches the pandemic clade — high interest, rabbit-hole risk.
 
+**ADVISOR'S RESEARCH-QUESTION MENU (received 2026-06-29, "each could be a paper"):**
+(1) Does Down syndrome brain contain elevated microbes? (2) Does microbial burden
+increase with age? (3) 5xFAD transgenic mice die early — elevated microbes in their
+brain (messed-up antimicrobial defence)? needs MOUSE host-subtraction. (4) How
+frequent is APOE editing in higher primates? 1 probe × ~1000 SRAs (advisor has the
+probes + a sequence-error-rate check). All answerable from public NCBI SRAs.
+
+COMPARISON verdict: advisor's = BREADTH plays (apply same method to a NEW
+cohort/axis/organism, each with a built-in comparator/gradient → de-risked,
+paper-shaped, dodges the "not all AD positive" heterogeneity). My earlier A–D =
+DEPTH plays within the human AD set (co-occurrence/spatial/subset/anomaly) — higher
+novelty but data-hungry + fragile on small n. For the timeline, advisor's instinct
+wins the SPINE. RECOMMENDATION: spine = **burden vs age (#2)** [or **Down syndrome
+(#1)** as case-control], run through BOTH cellular + viral layers on one patient DB
+(does cellular burden AND AdC rise with age?) — this folds in the AdC×high-burden
+question AND exercises eToL-V (advisor's list has NO viral component otherwise).
+Bonuses if time: APOE-in-primates (#4) is nearly free — the exact-match APOE preset
+still exists in COBLAST+, advisor has probes. SHELVE: 5xFAD mouse (#3) needs a mouse
+genome BLAST DB — but note `human_filter.py` is DB-agnostic so it's "build+register a
+mouse DB" (adapt build_etol_v_validation_db.sh), main cost is model caveats; and the
+SARS-CoV-2 anomaly (rabbit hole). Timeline anchor: as of 2026-06-29, ~7 weeks to full
+dissertation (≈ mid-Aug 2026), writing NOT yet started.
+
 **Headline narrative:** COBLAST+ IS the tool Veso explicitly called for — it removes eToL-V's stated #1 limitation (can't BLASTn vs SRA locally) by running locally vs patient-built DBs, and beats ViromeScan (her run: 50h + TB/batch, failed on 34/35 samples).
 
 **eToL-V port = preset + viral headers + ONE new validation DB** (net/human-filter/dedup/PGK-norm/CAP3/CSV all reused):
