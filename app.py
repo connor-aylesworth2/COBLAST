@@ -1557,6 +1557,65 @@ def remove_missing_databases_route():
     )
 
 
+def _parse_selected_database_ids() -> tuple[list[int], list[str]]:
+    """Parse the ``selected_db`` checkboxes into integer ids, collecting errors."""
+    database_ids: list[int] = []
+    errors: list[str] = []
+    for raw_id in request.form.getlist("selected_db"):
+        try:
+            database_ids.append(int(raw_id))
+        except (TypeError, ValueError):
+            errors.append(f"Skipped a selection with an invalid id: {raw_id!r}.")
+    return database_ids, errors
+
+
+@app.post("/databases/verify-selected")
+def verify_selected_databases_route():
+    """Refresh the status of each database selected on the registry page."""
+    database_ids, errors = _parse_selected_database_ids()
+    if not database_ids:
+        return redirect_to_databases(error="Select at least one database to verify.")
+
+    verified = 0
+    for database_id in database_ids:
+        try:
+            verify_database(database_id)
+            verified += 1
+        except Exception as exc:
+            errors.append(f"Database {database_id}: {exc}")
+
+    noun = "database" if verified == 1 else "databases"
+    message = f"Verified {verified} selected {noun}."
+    if errors:
+        return redirect_to_databases(message=message, error="; ".join(errors[:5]))
+    return redirect_to_databases(message=message)
+
+
+@app.post("/databases/remove-selected")
+def remove_selected_databases_route():
+    """Remove each selected database from the registry; BLAST files remain."""
+    database_ids, errors = _parse_selected_database_ids()
+    if not database_ids:
+        return redirect_to_databases(error="Select at least one database to remove.")
+
+    removed = 0
+    for database_id in database_ids:
+        try:
+            remove_database(database_id)
+            removed += 1
+        except Exception as exc:
+            errors.append(f"Database {database_id}: {exc}")
+
+    noun = "database" if removed == 1 else "databases"
+    message = (
+        f"Removed {removed} selected {noun} from the registry. "
+        "BLAST files were not deleted."
+    )
+    if errors:
+        return redirect_to_databases(message=message, error="; ".join(errors[:5]))
+    return redirect_to_databases(message=message)
+
+
 @app.post("/databases/<int:database_id>/remove")
 def remove_database_route(database_id: int):
     """Remove a database from the registry only; BLAST index files remain."""

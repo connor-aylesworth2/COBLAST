@@ -39,93 +39,108 @@
           <h2 class="panel__title">Registered Databases</h2>
         </div>
 
-        {# Verifying checks every registry entry against local BLAST+ files. #}
+        {#
+          One form wraps the whole registry table. The checkboxes carry the
+          selected database ids; each action button uses formaction to post the
+          same selection to a different route, so users can verify or remove
+          one, many, or all selected databases in a single request.
+        #}
         <form
-          class="inline"
+          id="db_bulk_form"
           method="post"
-          action="/databases/verify-all"
+          action="/databases/verify-selected"
           data-wait-title="Verifying databases"
           data-wait-messages="Checking registered database prefixes.|Running local BLAST+ database checks.|Updating database availability."
         >
-          <button type="submit" class="button-secondary">Verify All</button>
-        </form>
-        <form
-          class="inline"
-          method="post"
-          action="/databases/remove-missing"
-          data-remove-missing-count="{{ missing_database_count }}"
-        >
-          <button
-            type="submit"
-            class="button-danger"
-            {% if missing_database_count == 0 %}disabled{% endif %}
-          >Remove All Missing ({{ missing_database_count }})</button>
-        </form>
+          <div class="button-row button-row--compact">
+            <button type="button" class="button-secondary" id="select_all_dbs">Select all</button>
+            <button type="button" class="button-secondary" id="deselect_all_dbs">Deselect all</button>
+            <button
+              type="submit"
+              class="button-secondary"
+              id="verify_selected_btn"
+              formaction="/databases/verify-selected"
+            >Verify Selected</button>
+            <button
+              type="submit"
+              class="button-danger"
+              id="remove_selected_btn"
+              formaction="/databases/remove-selected"
+            >Remove Selected</button>
+            {# Verify All / Remove All Missing reuse this form but ignore the
+               selection on the server, so they stay available as shortcuts. #}
+            <button
+              type="submit"
+              class="button-secondary"
+              id="verify_all_btn"
+              formaction="/databases/verify-all"
+            >Verify All</button>
+            <button
+              type="submit"
+              class="button-danger"
+              id="remove_missing_btn"
+              formaction="/databases/remove-missing"
+              data-remove-missing-count="{{ missing_database_count }}"
+              {% if missing_database_count == 0 %}disabled{% endif %}
+            >Remove All Missing ({{ missing_database_count }})</button>
+            <span class="muted" id="db_selection_count" aria-live="polite">0 selected</span>
+          </div>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Category</th>
-                <th>Status</th>
-                <th>Sequences</th>
-                <th>Last Verified</th>
-                <th>Prefix</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {# database_registry.RegisteredDatabase rows are rendered here. #}
-              {% for database in databases %}
+          <div class="table-wrap">
+            <table>
+              <thead>
                 <tr>
-                  <td>
-                    <strong>{{ database.display_name }}</strong>
-                    {% if database.description %}
-                      <br><span class="muted">{{ database.description }}</span>
-                    {% endif %}
-                  </td>
-                  <td>{{ database.db_type }}</td>
-                  <td>{{ database.category }}</td>
-                  <td class="status-{{ database.status }}">{{ database.status }}</td>
-                  <td>{{ database.sequence_count if database.sequence_count is not none else "" }}</td>
-                  <td>{{ database.last_verified_at }}</td>
-                  <td>{{ database.db_prefix_path }}</td>
-                  <td class="actions">
-                    {# Per-row verify updates status/metadata for one database. #}
-                    <form
-                      class="inline"
-                      method="post"
-                      action="/databases/{{ database.id }}/verify"
-                      data-wait-title="Verifying database"
-                      data-wait-messages="Checking the BLAST database prefix.|Reading database metadata.|Updating database status."
+                  <th scope="col">
+                    <input
+                      type="checkbox"
+                      id="db_select_all_checkbox"
+                      aria-label="Select all databases"
                     >
-                      <button type="submit" class="button-secondary">Verify</button>
-                    </form>
-                    {# Remove deletes the registry row, not the BLAST index files. #}
-                    <form
-                      class="inline"
-                      method="post"
-                      action="/databases/{{ database.id }}/remove"
-                      data-remove-database="{{ database.display_name }}"
-                    >
-                      <button
-                        type="submit"
-                        class="button-danger"
-                        aria-label="Remove {{ database.display_name }} from the registry"
-                      >Remove</button>
-                    </form>
-                  </td>
+                  </th>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Category</th>
+                  <th>Status</th>
+                  <th>Sequences</th>
+                  <th>Last Verified</th>
+                  <th>Prefix</th>
                 </tr>
-              {% else %}
-                <tr>
-                  <td colspan="8">No databases are registered.</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {# database_registry.RegisteredDatabase rows are rendered here. #}
+                {% for database in databases %}
+                  <tr>
+                    <td>
+                      <input
+                        type="checkbox"
+                        class="db-checkbox"
+                        name="selected_db"
+                        value="{{ database.id }}"
+                        aria-label="Select {{ database.display_name }}"
+                      >
+                    </td>
+                    <td>
+                      <strong>{{ database.display_name }}</strong>
+                      {% if database.description %}
+                        <br><span class="muted">{{ database.description }}</span>
+                      {% endif %}
+                    </td>
+                    <td>{{ database.db_type }}</td>
+                    <td>{{ database.category }}</td>
+                    <td class="status-{{ database.status }}">{{ database.status }}</td>
+                    <td>{{ database.sequence_count if database.sequence_count is not none else "" }}</td>
+                    <td>{{ database.last_verified_at }}</td>
+                    <td>{{ database.db_prefix_path }}</td>
+                  </tr>
+                {% else %}
+                  <tr>
+                    <td colspan="8">No databases are registered.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </form>
       </section>
 
       {# Registering records an existing BLAST database prefix in SQLite. #}
@@ -230,31 +245,147 @@
     </main>
     <script src="{{ url_for('static', filename='waiting.js') }}"></script>
     <script>
-      document.querySelectorAll("form[data-remove-database]").forEach((form) => {
-        form.addEventListener("submit", (event) => {
-          const databaseName = form.dataset.removeDatabase;
-          const confirmed = window.confirm(
-            `Remove "${databaseName}" from the COBLAST+ registry? ` +
-            "The FASTA and BLAST database files will remain on disk."
-          );
-          if (!confirmed) {
-            event.preventDefault();
-          }
-        });
-      });
-
-      const removeMissingForm = document.querySelector("form[data-remove-missing-count]");
-      removeMissingForm.addEventListener("submit", (event) => {
-        const missingCount = Number(removeMissingForm.dataset.removeMissingCount);
-        const databaseNoun = missingCount === 1 ? "database" : "databases";
-        const confirmed = window.confirm(
-          `Remove all ${missingCount} ${databaseNoun} marked missing from the COBLAST+ registry? ` +
-          "The FASTA and BLAST database files will remain on disk."
-        );
-        if (!confirmed) {
-          event.preventDefault();
+      (function () {
+        const form = document.getElementById("db_bulk_form");
+        if (!form) {
+          return;
         }
-      });
+
+        const checkboxes = Array.from(form.querySelectorAll(".db-checkbox"));
+        const selectAllButton = document.getElementById("select_all_dbs");
+        const deselectAllButton = document.getElementById("deselect_all_dbs");
+        const headerCheckbox = document.getElementById("db_select_all_checkbox");
+        const countLabel = document.getElementById("db_selection_count");
+
+        function selectedCount() {
+          return checkboxes.filter((checkbox) => checkbox.checked).length;
+        }
+
+        function refreshSelectionState() {
+          const count = selectedCount();
+          if (countLabel) {
+            const noun = count === 1 ? "database" : "databases";
+            countLabel.textContent = `${count} ${noun} selected`;
+          }
+          if (headerCheckbox) {
+            headerCheckbox.checked = count > 0 && count === checkboxes.length;
+            headerCheckbox.indeterminate = count > 0 && count < checkboxes.length;
+          }
+        }
+
+        function setAll(checked) {
+          for (const checkbox of checkboxes) {
+            checkbox.checked = checked;
+          }
+          refreshSelectionState();
+        }
+
+        for (const checkbox of checkboxes) {
+          checkbox.addEventListener("change", refreshSelectionState);
+        }
+        if (selectAllButton) {
+          selectAllButton.addEventListener("click", () => setAll(true));
+        }
+        if (deselectAllButton) {
+          deselectAllButton.addEventListener("click", () => setAll(false));
+        }
+        if (headerCheckbox) {
+          headerCheckbox.addEventListener("change", () => setAll(headerCheckbox.checked));
+        }
+
+        // waiting.js re-submits via HTMLFormElement.prototype.submit(), which
+        // ignores the clicked button's formaction. Copy it onto the form's
+        // action on click so the correct route receives the post.
+        for (const button of form.querySelectorAll("button[type='submit'][formaction]")) {
+          button.addEventListener("click", () => {
+            form.setAttribute("action", button.getAttribute("formaction"));
+          });
+        }
+
+        // Click handlers run before the form's submit event, so they can both
+        // validate the selection and tailor the waiting overlay per action.
+        function requireSelection(event, verb) {
+          if (selectedCount() === 0) {
+            event.preventDefault();
+            window.alert(`Select at least one database to ${verb}.`);
+            return false;
+          }
+          return true;
+        }
+
+        function setWaitText(title, messages) {
+          form.dataset.waitTitle = title;
+          form.dataset.waitMessages = messages;
+        }
+
+        const verifySelectedButton = document.getElementById("verify_selected_btn");
+        if (verifySelectedButton) {
+          verifySelectedButton.addEventListener("click", (event) => {
+            if (!requireSelection(event, "verify")) {
+              return;
+            }
+            setWaitText(
+              "Verifying selected databases",
+              "Checking selected database prefixes.|Running local BLAST+ database checks.|Updating database status."
+            );
+          });
+        }
+
+        const removeSelectedButton = document.getElementById("remove_selected_btn");
+        if (removeSelectedButton) {
+          removeSelectedButton.addEventListener("click", (event) => {
+            if (!requireSelection(event, "remove")) {
+              return;
+            }
+            const count = selectedCount();
+            const noun = count === 1 ? "database" : "databases";
+            const confirmed = window.confirm(
+              `Remove ${count} selected ${noun} from the COBLAST+ registry? ` +
+              "The FASTA and BLAST database files will remain on disk."
+            );
+            if (!confirmed) {
+              event.preventDefault();
+              return;
+            }
+            setWaitText(
+              "Removing selected databases",
+              "Removing registry entries.|BLAST files are left on disk.|Updating the database list."
+            );
+          });
+        }
+
+        const verifyAllButton = document.getElementById("verify_all_btn");
+        if (verifyAllButton) {
+          verifyAllButton.addEventListener("click", () => {
+            setWaitText(
+              "Verifying databases",
+              "Checking registered database prefixes.|Running local BLAST+ database checks.|Updating database availability."
+            );
+          });
+        }
+
+        const removeMissingButton = document.getElementById("remove_missing_btn");
+        if (removeMissingButton) {
+          removeMissingButton.addEventListener("click", (event) => {
+            const missingCount = Number(removeMissingButton.dataset.removeMissingCount);
+            const noun = missingCount === 1 ? "database" : "databases";
+            const confirmed = window.confirm(
+              `Remove all ${missingCount} ${noun} marked missing from the COBLAST+ registry? ` +
+              "The FASTA and BLAST database files will remain on disk."
+            );
+            if (!confirmed) {
+              event.preventDefault();
+              return;
+            }
+            setWaitText(
+              "Removing missing databases",
+              "Removing registry entries marked missing.|BLAST files are left on disk.|Updating the database list."
+            );
+          });
+        }
+
+        refreshSelectionState();
+      })();
     </script>
   </body>
 </html>

@@ -200,6 +200,86 @@ def test_remove_missing_route_handles_empty_selection(monkeypatch):
     assert query["message"] == ["No missing databases were found."]
 
 
+def test_verify_selected_route_verifies_each_id(monkeypatch):
+    verified = []
+    monkeypatch.setattr(
+        app_module,
+        "verify_database",
+        lambda database_id: verified.append(database_id)
+        or SimpleNamespace(display_name=f"DB {database_id}", status="available"),
+    )
+    client = app_module.app.test_client()
+
+    response = client.post(
+        "/databases/verify-selected", data={"selected_db": ["3", "5"]}
+    )
+
+    assert response.status_code == 302
+    assert verified == [3, 5]
+    query = parse_qs(urlparse(response.headers["Location"]).query)
+    assert query["message"] == ["Verified 2 selected databases."]
+
+
+def test_verify_selected_route_requires_a_selection():
+    client = app_module.app.test_client()
+
+    response = client.post("/databases/verify-selected", data={})
+
+    query = parse_qs(urlparse(response.headers["Location"]).query)
+    assert query["error"] == ["Select at least one database to verify."]
+
+
+def test_remove_selected_route_removes_each_id(monkeypatch):
+    removed = []
+    monkeypatch.setattr(
+        app_module,
+        "remove_database",
+        lambda database_id: removed.append(database_id)
+        or SimpleNamespace(display_name=f"DB {database_id}"),
+    )
+    client = app_module.app.test_client()
+
+    response = client.post(
+        "/databases/remove-selected", data={"selected_db": ["7"]}
+    )
+
+    assert response.status_code == 302
+    assert removed == [7]
+    query = parse_qs(urlparse(response.headers["Location"]).query)
+    assert query["message"] == [
+        "Removed 1 selected database from the registry. BLAST files were not deleted."
+    ]
+
+
+def test_remove_selected_route_requires_a_selection():
+    client = app_module.app.test_client()
+
+    response = client.post("/databases/remove-selected", data={})
+
+    query = parse_qs(urlparse(response.headers["Location"]).query)
+    assert query["error"] == ["Select at least one database to remove."]
+
+
+def test_remove_selected_route_reports_per_database_errors(monkeypatch):
+    def fake_remove(database_id):
+        if database_id == 2:
+            raise ValueError("not found")
+        return SimpleNamespace(display_name=f"DB {database_id}")
+
+    monkeypatch.setattr(app_module, "remove_database", fake_remove)
+    client = app_module.app.test_client()
+
+    response = client.post(
+        "/databases/remove-selected", data={"selected_db": ["1", "2"]}
+    )
+
+    query = parse_qs(urlparse(response.headers["Location"]).query)
+    assert query["message"] == [
+        "Removed 1 selected database from the registry. BLAST files were not deleted."
+    ]
+    assert query["error"] == ["Database 2: not found"]
+
+
 def test_database_page_includes_remove_confirmation(monkeypatch):
     database = SimpleNamespace(
         id=7,
@@ -219,7 +299,12 @@ def test_database_page_includes_remove_confirmation(monkeypatch):
     response = client.get("/databases")
 
     assert response.status_code == 200
-    assert b'data-remove-database="Clinical DB"' in response.data
+    # Each row exposes a checkbox carrying the database id for bulk selection.
+    assert b'name="selected_db"' in response.data
+    assert b'value="7"' in response.data
+    # Bulk verify/remove buttons replace the old per-row actions.
+    assert b"Verify Selected" in response.data
+    assert b"Remove Selected" in response.data
     assert b'data-remove-missing-count="1"' in response.data
     assert b"Remove All Missing (1)" in response.data
     assert b"The FASTA and BLAST database files will remain on disk." in response.data
