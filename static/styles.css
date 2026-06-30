@@ -765,8 +765,17 @@ pre {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px 12px;
   margin: 4px 0 8px;
+}
+
+/* Keep each swatch and its label together as one unit when the legend wraps,
+   so an arbitrary number of conditions reads cleanly across lines. */
+.etol-heatmap__legend .etol-condition {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .etol-heatmap__legend .swatch {
@@ -774,7 +783,6 @@ pre {
   width: 12px;
   height: 12px;
   border-radius: 2px;
-  margin-left: 8px;
   vertical-align: middle;
 }
 

@@ -72,34 +72,38 @@
     );
   }
 
-  // Fixed colours for the disease tags both eToL papers use, so the familiar
-  // AD/control palette is preserved. Any other label (e.g. from an uploaded
-  // design matrix) gets a stable colour assigned from CONDITION_PALETTE, the
-  // same first-seen scheme groupColor() uses for the row-group strip.
+  // Stable fixed colours for the diagnosis tags both eToL papers use, so the
+  // familiar scheme is preserved and figures stay consistent across runs. Keyed
+  // by an upper-cased label so "AD/VaD", "ad/vad", "CONTROL" all resolve. Every
+  // distinct label gets its OWN colour -- combined tags (AD/LBD, AD/VaD) are no
+  // longer collapsed into the AD colour. Any label without a fixed entry (e.g. an
+  // arbitrary design-matrix label) is assigned a distinct colour from
+  // CONDITION_PALETTE, first-seen, the same scheme groupColor() uses.
   var CONDITION_DEFAULTS = {
-    AD: "#c0392b", CTRL: "#2e7d32", CONTROL: "#2e7d32",
-    LBD: "#6a1b9a", VaD: "#e65100",
+    "AD": "#c0392b",       // Alzheimer's — red
+    "CONTROL": "#2e7d32",  // control — green
+    "CTRL": "#2e7d32",
+    "LBD": "#6a1b9a",      // Lewy body — purple
+    "VAD": "#e65100",      // vascular — orange
+    "AD/LBD": "#8e24aa",   // mixed AD + Lewy body — magenta
+    "AD/VAD": "#00838f",   // mixed AD + vascular — teal
   };
   var CONDITION_PALETTE = [
-    "#00897b", "#3949ab", "#c2185b", "#f9a825", "#5d4037",
-    "#546e7a", "#ad1457", "#00838f", "#6d4c41", "#283593",
+    "#3949ab", "#c2185b", "#f9a825", "#5d4037", "#546e7a",
+    "#ad1457", "#00695c", "#6d4c41", "#283593", "#9e9d24",
+    "#ef6c00", "#4527a0", "#00838f", "#827717", "#bf360c",
   ];
   var conditionColors = {};
 
   function conditionColor(cond) {
     if (!cond) return "#cfd8dc";
-    if (cond in CONDITION_DEFAULTS) return CONDITION_DEFAULTS[cond];
-    // Prefix match so combined tags like "AD/LBD" still read as AD red, matching
-    // the original sample-name behaviour.
-    var keys = Object.keys(CONDITION_DEFAULTS);
-    for (var i = 0; i < keys.length; i += 1) {
-      if (cond.indexOf(keys[i]) === 0) return CONDITION_DEFAULTS[keys[i]];
-    }
-    if (!(cond in conditionColors)) {
-      conditionColors[cond] =
+    var key = String(cond).toUpperCase();
+    if (key in CONDITION_DEFAULTS) return CONDITION_DEFAULTS[key];
+    if (!(key in conditionColors)) {
+      conditionColors[key] =
         CONDITION_PALETTE[Object.keys(conditionColors).length % CONDITION_PALETTE.length];
     }
-    return conditionColors[cond];
+    return conditionColors[key];
   }
 
   function groupColor(group) {
@@ -313,11 +317,13 @@
       return;
     }
     el.style.display = "";
-    var parts = ["Condition: "];
+    var parts = ['<span class="etol-heatmap__legend-title">Condition:</span>'];
     labels.forEach(function (label) {
       parts.push(
-        '<span class="swatch" style="background:' + conditionColor(label) + '"></span>' +
-          esc(label) + " "
+        '<span class="etol-condition">' +
+          '<span class="swatch" style="background:' + conditionColor(label) + '"></span>' +
+          esc(label) +
+          "</span>"
       );
     });
     el.innerHTML = parts.join("");
