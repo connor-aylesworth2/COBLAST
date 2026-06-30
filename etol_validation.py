@@ -159,9 +159,10 @@ def compute_confusion(
     crosswalk = load_crosswalk() if crosswalk is None else crosswalk
     taxa_for = universe_taxa(universe)
 
-    counts = matrix.get("confirmed") if stage == "validated" else matrix.get("hits")
-    if counts is None:  # no validated layer available -> fall back to raw net hits
-        counts = matrix.get("hits")
+    raw_counts = matrix.get("hits")
+    val_counts = matrix.get("confirmed") if stage == "validated" else matrix.get("hits")
+    if val_counts is None:  # no validated layer available -> fall back to raw net hits
+        val_counts = matrix.get("hits")
         stage = "raw"
 
     row_index = {row["key"]: i for i, row in enumerate(matrix.get("rows", []))}
@@ -176,40 +177,51 @@ def compute_confusion(
         else:
             unmatched.append(col["sample"])
 
-    def predicted(taxa: frozenset[str], col: int) -> bool:
-        return any(
-            (counts[row_index[t]][col] or 0) > 0
-            for t in taxa if t in row_index
-        )
+    def _sum(counts: list[list[int]] | None, taxa: frozenset[str], col: int) -> int:
+        if not counts:
+            return 0
+        return sum((counts[row_index[t]][col] or 0) for t in taxa if t in row_index)
 
     m = _empty_metrics()
     m["stage"] = stage
     m["scored_samples"] = len(scored_cols)
     m["unmatched_samples"] = unmatched
+    cells: list[dict[str, Any]] = []
 
-    # In-universe cells: 13 viruses x scored samples.
+    def _record(result, virus, col, srx, wgs, actual, raw, conf):
+        m[result.lower()] += 1
+        cells.append({
+            "result": result, "virus": virus,
+            "sample": matrix["cols"][col]["sample"], "srx": srx,
+            "wgs_count": wgs, "actual": actual, "predicted": conf > 0,
+            "raw_hits": raw, "confirmed_hits": conf,
+        })
+
+    # In-universe cells: the 13 universe viruses x scored samples. ``raw_hits`` is
+    # the net count (before validation) and ``confirmed_hits`` the validated count,
+    # so a false negative reveals where it was lost (raw 0 = net; raw>0, conf 0 =
+    # contig assembly/identification).
     for virus, taxa in taxa_for.items():
         for col, srx in scored_cols:
-            actual = truth.get((srx, virus), 0) > 0
-            pred = predicted(taxa, col)
-            if actual and pred:
-                m["tp"] += 1
-            elif actual and not pred:
-                m["fn"] += 1
-            elif pred and not actual:
-                m["fp"] += 1
-            else:
-                m["tn"] += 1
+            wgs = truth.get((srx, virus), 0)
+            actual = wgs > 0
+            conf = _sum(val_counts, taxa, col)
+            raw = _sum(raw_counts, taxa, col)
+            pred = conf > 0
+            result = "TP" if actual and pred else "FN" if actual else "FP" if pred else "TN"
+            _record(result, virus, col, srx, wgs, actual, raw, conf)
 
     # Out-of-universe validated predictions (e.g. HPV45) are extra FP cells, one
-    # per (virus token, sample); SARS tokens are dropped entirely.
+    # per (virus token, sample); SARS tokens are dropped entirely (no WGS data).
     universe_tokens = {tok for tok in universe.values() if tok}
     by_token = _taxa_by_virus_token()
     for token, taxa in by_token.items():
         if token in universe_tokens or token in EXCLUDED_VIRUS_TOKENS:
             continue
-        for col, _srx in scored_cols:
-            if predicted(taxa, col):
-                m["fp"] += 1
+        for col, srx in scored_cols:
+            conf = _sum(val_counts, taxa, col)
+            if conf > 0:
+                _record("FP", token, col, srx, 0, False, _sum(raw_counts, taxa, col), conf)
 
+    m["cells"] = cells
     return _finalize(m)

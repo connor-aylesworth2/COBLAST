@@ -340,3 +340,78 @@ def test_count_control_reads_dedups_to_best_control_probe():
     assert count_control_reads(hits, control_ids) == {"PGK1_2": 0, "PGK1_3": 1, "hNSE_2": 1}
 
 
+# --- Batch summary export --------------------------------------------------
+
+def _delimited_to_dict(text, delimiter):
+    """Parse a two-column Statistic/Value export back into a dict."""
+    import csv
+    import io
+
+    rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
+    assert rows[0] == ["Statistic", "Value"]
+    return {label: value for label, value in rows[1:]}
+
+
+def test_batch_summary_export_mirrors_panel():
+    from result_store import batch_summary_rows_as_delimited
+
+    batch = {
+        "program": "blastn",
+        "database_results": [{"display_name": "SRR1"}, {"display_name": "SRR2"}],
+        "total_runtime_seconds": 1032.318,
+        "wall_clock_seconds": 5037.698,
+        "batch_workers": 30,
+        "query_count": 1021,
+        "query_total_length": 65344,
+        "total_hits": 23822,
+        "etol_probe_preset": True,
+        "etol_preset_label": "eToL Full",
+        "hit_filter": "default megablast net, E-value < 0.01",
+        "etol_dedup_removed": 253909,
+        "etol_normalized": True,
+        "assemble_contigs": True,
+        "contig_count": 3041,
+        "identify_contigs": True,
+        "contigs_identified": 3019,
+        "species_id_db": "ToL_rRNA",
+        "human_filter_enabled": True,
+        "human_filter_hits_removed": 166339,
+        "human_filter_db": "nt_human_9606",
+    }
+    parsed = _delimited_to_dict(batch_summary_rows_as_delimited(batch, delimiter=","), ",")
+    assert parsed["Program"] == "blastn"
+    assert parsed["Databases"] == "2"
+    # The two timers stay distinct and both accurate in the export.
+    assert parsed["Total runtime (BLAST search, summed across databases, seconds)"] == "1032.318"
+    assert parsed["Wall-clock elapsed time (seconds)"] == "5037.698"
+    assert parsed["Concurrency (databases at a time)"] == "30"
+    assert parsed["Total hits"] == "23822"
+    assert parsed["Probe preset"] == "eToL Full"
+    assert parsed["Contigs assembled (CAP3)"] == "3041"
+    assert parsed["Human filter hits removed"] == "166339"
+    # TSV round-trips identically with a tab delimiter.
+    parsed_tsv = _delimited_to_dict(batch_summary_rows_as_delimited(batch, delimiter="\t"), "\t")
+    assert parsed_tsv["Wall-clock elapsed time (seconds)"] == "5037.698"
+
+
+def test_batch_summary_export_omits_absent_rows():
+    from result_store import batch_summary_rows_as_delimited
+
+    # A plain (non-preset) batch with no wall clock or concurrency recorded:
+    # those rows are dropped, mirroring the panel's conditionals.
+    batch = {
+        "program": "blastn",
+        "database_results": [{"display_name": "db1"}],
+        "total_runtime_seconds": 4.0,
+        "query_count": 1,
+        "query_total_length": 300,
+        "total_hits": 5,
+    }
+    parsed = _delimited_to_dict(batch_summary_rows_as_delimited(batch, delimiter=","), ",")
+    assert "Wall-clock elapsed time (seconds)" not in parsed
+    assert "Concurrency (databases at a time)" not in parsed
+    assert "Probe preset" not in parsed
+    assert "Human filter hits removed" not in parsed
+    assert parsed["Total hits"] == "5"
+
+

@@ -64,6 +64,8 @@ from database_registry import (
 from result_store import (
     apoe_summary_rows_as_delimited,
     batch_rows_as_delimited,
+    batch_summary_rows_as_delimited,
+    etol_confusion_rows_as_delimited,
     etol_contigs_as_fasta,
     etol_matrix_payload,
     etol_probe_counts_as_delimited,
@@ -427,6 +429,28 @@ def download_batch_results(batch_id: str, file_format: str):
     )
 
 
+@app.get("/batch-results/<batch_id>/summary.<file_format>")
+def download_batch_summary(batch_id: str, file_format: str):
+    """Download the Batch Summary panel statistics as CSV or TSV."""
+    if file_format not in {"csv", "tsv"}:
+        abort(404)
+
+    try:
+        batch_data = load_batch_result(batch_id)
+    except FileNotFoundError:
+        abort(404)
+
+    delimiter = "," if file_format == "csv" else "\t"
+    body = batch_summary_rows_as_delimited(batch_data, delimiter=delimiter)
+    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
+    filename = f"batch_summary_{batch_id}.{file_format}"
+    return Response(
+        body,
+        mimetype=mimetype,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 @app.get("/batch-results/<batch_id>/apoe-summary.<file_format>")
 def download_apoe_summary(batch_id: str, file_format: str):
     """Download APOE probe count summaries as CSV or TSV."""
@@ -495,6 +519,31 @@ def download_etol_probe_counts(batch_id: str, file_format: str):
     body = etol_probe_counts_as_delimited(batch_data, delimiter=delimiter)
     mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
     filename = f"etol_probe_counts_{batch_id}.{file_format}"
+    return Response(
+        body,
+        mimetype=mimetype,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.get("/batch-results/<batch_id>/etol-confusion.<file_format>")
+def download_etol_confusion(batch_id: str, file_format: str):
+    """Download the eToL-V confusion matrix (per-cell) as CSV or TSV."""
+    if file_format not in {"csv", "tsv"}:
+        abort(404)
+
+    try:
+        batch_data = load_batch_result(batch_id)
+    except FileNotFoundError:
+        abort(404)
+
+    if batch_data.get("etol_preset_key") != "etol_v":
+        abort(404)
+
+    delimiter = "," if file_format == "csv" else "\t"
+    body = etol_confusion_rows_as_delimited(batch_data, delimiter=delimiter)
+    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
+    filename = f"etol_v_confusion_{batch_id}.{file_format}"
     return Response(
         body,
         mimetype=mimetype,

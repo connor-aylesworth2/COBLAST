@@ -89,6 +89,18 @@ def test_reproduces_veso_confusion_matrix():
     assert round(m["recall"], 4) == 0.2045
     assert round(m["f1"], 2) == 0.33
 
+    # Per-cell breakdown: one cell per scored pair, totals matching the matrix.
+    assert len(m["cells"]) == 456
+    by_result: dict[str, int] = {}
+    for cell in m["cells"]:
+        by_result[cell["result"]] = by_result.get(cell["result"], 0) + 1
+    assert by_result == {"TP": 9, "FP": 1, "FN": 35, "TN": 411}
+    # Every true positive is an adenovirus-C cell with a validated hit.
+    assert all(
+        cell["virus"] == "Adenovirus C" and cell["confirmed_hits"] > 0
+        for cell in m["cells"] if cell["result"] == "TP"
+    )
+
 
 def test_no_ground_truth_overlap_is_graceful():
     # A batch whose samples are not in the crosswalk scores nothing (no crash,
@@ -104,6 +116,26 @@ def test_no_ground_truth_overlap_is_graceful():
     assert (m["tp"], m["fp"], m["fn"], m["tn"]) == (0, 0, 0, 0)
     assert m["accuracy"] is None
     assert set(m["unmatched_samples"]) == {"SRR00000001", "SRR00000002"}
+
+
+def test_confusion_csv_export_roundtrip():
+    from result_store import etol_confusion_rows_as_delimited
+
+    cross = load_crosswalk()
+    srrs = [k for k in cross if k.startswith("SRR")]
+    batch = {
+        "etol_preset_key": "etol_v",
+        "database_results": [{"display_name": srr, "hits": []} for srr in srrs],
+    }
+    csv_text = etol_confusion_rows_as_delimited(batch, delimiter=",")
+    lines = csv_text.strip().splitlines()
+    assert lines[0].startswith("Result,Virus (WGS),Sample,SRX")
+    # 13 universe viruses x 35 samples = 455 cells; with no predictions every
+    # WGS-positive cell is a false negative (44) and the rest true negatives (411).
+    results = [ln.split(",")[0] for ln in lines[1:]]
+    assert len(results) == 455
+    assert results.count("FN") == 44
+    assert results.count("TN") == 411
 
 
 def test_sars_predictions_are_excluded():

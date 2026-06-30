@@ -23,6 +23,7 @@ from etol_summary import (
     etol_probe_count_rows,
     etol_species_count_rows,
 )
+from etol_validation import compute_confusion
 from blast_runner import BlastResult, wrap_sequence
 from config import runtime_data_dir
 
@@ -180,6 +181,72 @@ def batch_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
     return buffer.getvalue()
 
 
+def batch_summary_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
+    """Render the top-of-page Batch Summary panel as a two-column CSV/TSV.
+
+    One ``Statistic, Value`` row per metric shown in the results-page summary
+    panel, including the same rows the panel only renders conditionally (probe
+    preset, host normalization, contig assembly, human filter, etc.). This is the
+    "export what's on screen" companion to the richer per-hit / per-probe
+    downloads, so the headline numbers can be pasted into a methods table.
+    """
+    rows: list[tuple[str, object]] = [
+        ("Program", batch_data.get("program", "")),
+        ("Databases", len(batch_data.get("database_results", []))),
+        (
+            "Total runtime (BLAST search, summed across databases, seconds)",
+            f"{batch_data.get('total_runtime_seconds', 0.0):.3f}",
+        ),
+    ]
+    if batch_data.get("wall_clock_seconds") is not None:
+        rows.append(
+            (
+                "Wall-clock elapsed time (seconds)",
+                f"{batch_data.get('wall_clock_seconds', 0.0):.3f}",
+            )
+        )
+    if batch_data.get("batch_workers") is not None:
+        rows.append(("Concurrency (databases at a time)", batch_data.get("batch_workers")))
+    rows.append(("Query records", batch_data.get("query_count", 0)))
+    rows.append(("Query total bases/residues", batch_data.get("query_total_length", 0)))
+    rows.append(("Total hits", batch_data.get("total_hits", 0)))
+
+    if batch_data.get("apoe_probe_preset"):
+        rows.append(("Probe preset", "APOE exact-match probes"))
+        rows.append(("Hit filter", batch_data.get("hit_filter", "")))
+    elif batch_data.get("etol_probe_preset"):
+        rows.append(
+            ("Probe preset", batch_data.get("etol_preset_label") or "eToL net probes")
+        )
+        rows.append(("Hit filter", batch_data.get("hit_filter", "")))
+        if batch_data.get("etol_dedup_removed"):
+            rows.append(
+                ("Reads de-duplicated (reallocated to best probe)", batch_data["etol_dedup_removed"])
+            )
+        if batch_data.get("etol_normalized"):
+            rows.append(("Host normalization", "reads per host cell (PGK1/hNSE control probes)"))
+        if batch_data.get("assemble_contigs"):
+            rows.append(("Contigs assembled (CAP3)", batch_data.get("contig_count", 0)))
+        if batch_data.get("reprobe_contigs"):
+            rows.append(("Re-probing extra reads recovered", batch_data.get("reprobe_new_reads", 0)))
+        if batch_data.get("identify_contigs"):
+            rows.append(("Contigs identified", batch_data.get("contigs_identified", 0)))
+            rows.append(("Contig species-ID database", batch_data.get("species_id_db", "")))
+        if batch_data.get("contig_assembly_unavailable"):
+            rows.append(("Contig assembly", "CAP3 not found - assembly skipped"))
+
+    if batch_data.get("human_filter_enabled"):
+        rows.append(("Human filter hits removed", batch_data.get("human_filter_hits_removed", 0)))
+        rows.append(("Human filter database", batch_data.get("human_filter_db", "")))
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
+    writer.writerow(["Statistic", "Value"])
+    for label, value in rows:
+        writer.writerow([label, value])
+    return buffer.getvalue()
+
+
 def apoe_summary_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
     """Render APOE per-sample probe summaries as CSV or TSV text."""
     buffer = io.StringIO()
@@ -219,6 +286,58 @@ def etol_probe_counts_as_delimited(batch_data: dict, delimiter: str) -> str:
     records = _etol_records_for_batch(batch_data)
     for row in etol_probe_count_rows(batch_data.get("database_results", []), records):
         writer.writerow([row.get(key, "") for key, _ in ETOL_PROBE_EXPORT_COLUMNS])
+    return buffer.getvalue()
+
+
+ETOL_CONFUSION_COLUMNS = [
+    ("result", "Result"),
+    ("virus", "Virus (WGS)"),
+    ("sample", "Sample"),
+    ("srx", "SRX"),
+    ("wgs_count", "WGS count"),
+    ("actual", "WGS present"),
+    ("predicted", "eToL-V predicted"),
+    ("raw_hits", "Raw net hits"),
+    ("confirmed_hits", "Validated hits"),
+]
+# Group the per-cell rows so true/false positives and negatives read in order.
+_CONFUSION_RESULT_ORDER = {"TP": 0, "FN": 1, "FP": 2, "TN": 3}
+
+
+def etol_confusion_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
+    """Render the eToL-V confusion matrix as a per-cell CSV/TSV.
+
+    One row per scored (virus, sample) cell, carrying both the raw net hit count
+    and the validated (contig-confirmed) count so a false negative shows where it
+    was lost (raw 0 = the net E-value gate; raw > 0 but validated 0 = contig
+    assembly/identification). The 2x2 totals and metrics are derivable by pivoting
+    on the Result column.
+    """
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
+    writer.writerow([label for _, label in ETOL_CONFUSION_COLUMNS])
+
+    records = _etol_records_for_batch(batch_data)
+    matrix = build_etol_matrix(batch_data.get("database_results", []), records)
+    confusion = compute_confusion(matrix)
+    cells = sorted(
+        confusion.get("cells", []),
+        key=lambda c: (_CONFUSION_RESULT_ORDER.get(c["result"], 9), c["virus"], c["sample"]),
+    )
+    for cell in cells:
+        writer.writerow(
+            [
+                cell["result"],
+                cell["virus"],
+                cell["sample"],
+                cell["srx"],
+                cell["wgs_count"],
+                "yes" if cell["actual"] else "no",
+                "yes" if cell["predicted"] else "no",
+                cell["raw_hits"],
+                cell["confirmed_hits"],
+            ]
+        )
     return buffer.getvalue()
 
 

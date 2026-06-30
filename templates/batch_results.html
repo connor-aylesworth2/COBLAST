@@ -42,13 +42,15 @@
               {{ batch.database_results | length }}
             </div>
             <div class="summary-item">
-              <span>Total Runtime</span>
+              <span>BLAST search time</span>
               {{ "%.3f"|format(batch.total_runtime_seconds) }} seconds
+              <span class="muted">summed across databases (search only)</span>
             </div>
             {% if batch.wall_clock_seconds is defined %}
               <div class="summary-item">
-                <span>Wall Clock</span>
+                <span>Total elapsed time</span>
                 {{ "%.3f"|format(batch.wall_clock_seconds) }} seconds
+                <span class="muted">wall clock, incl. post-BLAST processing</span>
               </div>
             {% endif %}
             {% if batch.batch_workers is defined %}
@@ -133,6 +135,8 @@
 
           {% if batch.batch_id %}
             <div class="button-row">
+              <a class="button button-secondary" href="{{ url_for('download_batch_summary', batch_id=batch.batch_id, file_format='csv') }}">Download Summary Stats CSV</a>
+              <a class="button button-secondary" href="{{ url_for('download_batch_summary', batch_id=batch.batch_id, file_format='tsv') }}">Download Summary Stats TSV</a>
               {% if batch.apoe_probe_preset %}
                 <a class="button button-secondary" href="{{ url_for('download_apoe_summary', batch_id=batch.batch_id, file_format='csv') }}">Download APOE Summary CSV</a>
                 <a class="button button-secondary" href="{{ url_for('download_apoe_summary', batch_id=batch.batch_id, file_format='tsv') }}">Download APOE Summary TSV</a>
@@ -144,6 +148,9 @@
                 <a class="button button-secondary" href="{{ url_for('download_etol_probe_counts', batch_id=batch.batch_id, file_format='tsv') }}">Download eToL Probe Counts TSV</a>
                 {% if batch.assemble_contigs and batch.contig_count %}
                   <a class="button button-secondary" href="{{ url_for('download_etol_contigs', batch_id=batch.batch_id) }}">Download eToL Contigs FASTA</a>
+                {% endif %}
+                {% if batch.etol_preset_key == 'etol_v' and batch.etol_confusion %}
+                  <a class="button button-secondary" href="{{ url_for('download_etol_confusion', batch_id=batch.batch_id, file_format='csv') }}">Download Confusion Matrix CSV</a>
                 {% endif %}
               {% endif %}
               <a class="button button-secondary" href="{{ url_for('download_batch_results', batch_id=batch.batch_id, file_format='csv') }}">Download Raw Hits CSV</a>
@@ -384,6 +391,10 @@
                     and were excluded from scoring.
                   </p>
                 {% endif %}
+                <div class="button-row">
+                  <a class="button button-secondary" href="{{ url_for('download_etol_confusion', batch_id=batch.batch_id, file_format='csv') }}">Download Confusion Matrix CSV</a>
+                  <a class="button button-secondary" href="{{ url_for('download_etol_confusion', batch_id=batch.batch_id, file_format='tsv') }}">Download Confusion Matrix TSV</a>
+                </div>
               {% endif %}
             </section>
           {% endif %}

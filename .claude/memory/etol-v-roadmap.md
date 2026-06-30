@@ -130,7 +130,22 @@ viruses × 35 samples, COUNT data). CONSTRUCTION FULLY REVERSE-ENGINEERED + VERI
  So eToL/eToL-V data-vis is COMPLETE: in-app heatmap (Tier 1) + in-app confusion-matrix
    panel (Tier 2) + publication script (Tier 3). Only runtime step left for the user: run
    the eToL-V preset on the 35 SRP398685/EBB SRR samples (with contig id on) to populate
-   real figures; the SRR labels join the SRX-keyed truth via data/etol_v_sra_crosswalk.csv. TIER 3:
+   real figures; the SRR labels join the SRX-keyed truth via data/etol_v_sra_crosswalk.csv.
+ CONFUSION CSV EXPORT DONE (2026-06-29): compute_confusion now emits per-cell `cells`
+   (result, virus, sample, srx, wgs_count, actual, predicted, RAW_HITS, CONFIRMED_HITS);
+   `etol_confusion_rows_as_delimited` (result_store) + GET /batch-results/<id>/etol-
+   confusion.{csv,tsv} (app.py) + buttons in batch_results.html. 111 tests pass.
+ FIRST REAL RUN (2026-06-29, user, 35 EBB samples, contig assembly on): TP2/FP0/FN42/
+   TN411 (N=455) vs Veso TP9/FP1/FN35/TN411 (N=456). DIAGNOSIS: all 35 joined (N=455=
+   13×35), TN identical. FP0 = HPV45 error not reproduced (user aware, the −1 cell). The
+   7 extra FN are ALL adenovirus-C-penton (Veso validated AdC in 9 samples, user in 2).
+   Lost at one of two stages, told apart by the new CSV's RAW vs VALIDATED columns:
+   raw 0 = NET (COBLAST gates E<0.01 in filter_net_probe_hits; Veso web BLASTn had NO
+   gate = default E≤10, so kept weak AdC reads COBLAST drops; max_target_seqs=5e6 so NOT
+   truncation); raw>0 & validated 0 = contig stage (CAP3 MIN_READS=2 singleton floor +
+   DEFAULT_CONFIRM_IDENTITY_PCT=99). Likely fix if raw=0 dominates: relax the eToL-V net
+   E-gate toward Veso's permissiveness. NB even Veso only validated 9/30 AdC (recall ~20%)
+   — contig validation is inherently lossy at low abundance. TIER 3:
 optional `scripts/plot_etol.py` (matplotlib/seaborn/sklearn over the CSVs), NOT
 bundled in the exe — paper-pixel-faithful clustermap + ConfusionMatrixDisplay.
 User chose "both" (in-app + script). NOTE: user syncs in-repo git-tracked
