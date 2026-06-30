@@ -165,3 +165,64 @@ makeblastdb -in GCF_000001405.40_GRCh38.p14_genomic.fna -dbtype nucl ^
 
 The filter is offered only for the microbial presets; the APOE panel is human by
 design, so human-read filtering does not apply to it.
+
+## Contig re-probing (optional second pass)
+
+Re-probing (Hu, Haas & Lathe 2022, Box 3) takes each taxon's most-abundant
+assembled contig, BLASTs it back against the *same* patient database as a fresh
+probe, pulls any reads the original 64-mer net missed, human-filters those new
+reads, and re-assembles the taxon from its original + new reads. Because a contig
+is built from the sample's own reads, it is a more sensitive, sample-specific
+probe than the fixed reference panel — it can reach reads from a divergent strain
+or from gene regions that fall between the net's probes.
+
+Requires **contig assembly** to be enabled, and applies only to the microbial
+eToL presets.
+
+### When to leave it OFF (the default)
+
+For routine microbiome profiling, **don't enable re-probing.** The net already
+runs at a permissive E-value (< 0.01); on most libraries it has already captured
+everything a contig would, so re-probing recovers **0 new reads** and changes
+nothing while still costing a full-library BLAST per taxon. It is also off by
+default for cohort work: re-probing rewrites species names and confirmed
+abundance in place, so on/off results are not directly comparable — pick one
+setting and apply it uniformly across every sample in a study.
+
+### Characterise it once per data type, not once per sample
+
+Whether re-probing finds anything is a property of the *data regime* — the probe
+panel against a library's read length, rRNA-depletion protocol, and how far its
+organisms diverge from the reference panel — not an independent roll per sample.
+Validate it at that granularity: on a new kind of data, run a representative
+subset **both** ways (net-only and net+re-probe) and compare. If
+`reprobe_new_reads` is 0 across the subset, the two results are identical and you
+can leave re-probing off for the rest of that regime, re-checking only when the
+data type changes (new tissue, protocol, or read length). Running both and seeing
+them agree is what reassures you; turning re-probing on "to be sure" assumes the
+answer instead of demonstrating it — and is not automatically more accurate (see
+below).
+
+### When a run does recover reads
+
+Read the **`reprobe_new_reads`** count in the results:
+
+- **0** — the net had already saturated capture for that sample. Re-probing
+  confirmed there was nothing to add; trust the first-pass result.
+- **> 0** — re-probing extended one or more contigs. Inspect these: a longer,
+  more conserved contig can also over-recruit reads from a *closely related*
+  taxon, so confirm the recovered reads reflect a genuinely missed strain rather
+  than a neighbour bleeding into the call.
+
+A free gut-check needs no extra run: re-probing can only gain reads where a contig
+extends *beyond* the probe footprint, so if a sample's contigs are barely longer
+than the 64-mer probes that seeded them, re-probing has no territory to work in
+and will be 0 by construction.
+
+### Caveats
+
+- Re-probing is a sensitivity check, not a substitute for the net, and it is
+  lightly validated — treat a non-zero result as a prompt to investigate, not a
+  finished answer.
+- Enabling it currently re-runs the whole pipeline (net search included), not
+  just the re-probe step.

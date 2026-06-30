@@ -524,6 +524,12 @@ selected nucleotide databases using BLAST's permissive default-megablast *net*
 with CSV/TSV exports. The microbial panels offer an optional secondary human
 filter that removes host-derived reads. Only one preset can be active at a time.
 
+The microbial presets can also assemble matched reads into contigs, identify
+them, and optionally **re-probe** (a second pass that uses contigs as probes to
+recover reads the net missed) — leave re-probing off for routine and cohort runs
+and characterise it once per data type before relying on it; see
+**[docs/eToL.md](docs/eToL.md)** for when to use it.
+
 These presets are an optional analysis layered on the general batch workflow
 above, not a required part of using COBLAST+. For the full details — the net, the
 two-pass megablast/blastn-short split, cross-probe de-duplication, host-cell
