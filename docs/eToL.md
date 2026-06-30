@@ -91,6 +91,41 @@ eToL panel contains far more than the previous 100-record limit, the maximum
 number of FASTA query records per run is 1,500 (`MAX_FASTA_RECORDS` in
 `blast_runner.py`), which accommodates the full panel with headroom.
 
+## Heatmap condition labels (design matrix)
+
+The eToL Result Heatmap annotates each sample column with a coloured **condition**
+swatch (AD vs control, etc.). By default the label is inferred from the database
+name, which is unreliable — auto-generated SRA database names (`SRA <acc> reads`)
+have no diagnosis in them, and substring matching mislabels samples.
+
+To set the labels explicitly, upload a **design matrix** in the batch form
+(*Design matrix (condition labels)*; eToL presets only). When provided it is
+authoritative and the name-based guess is not used.
+
+Format (strict): CSV or TSV, UTF-8 (a leading BOM is tolerated), with a header
+row containing two columns, case-insensitive and in any order:
+
+- `sample` — an SRA accession (SRR/SRX/ERR/…) **or** a database display name.
+- `condition` — the free-text label to show (e.g. `AD`, `CONTROL`, `AD/LBD`).
+
+```
+sample,condition
+SRR21676099,AD
+SRR21676105,CONTROL
+SRR21676101,AD/LBD
+SRR21676126,AD/VaD
+```
+
+Matching is flexible: a row binds to a column by SRA accession first, then by the
+exact database display name. One row per sample (a duplicate `sample` is an error).
+Extra columns are ignored (room for a future multi-factor mode). A malformed file
+(missing header/column, duplicate sample, no data rows) is rejected on the form
+*before* the BLAST run. Samples with no matching row render as a neutral
+"unlabeled" swatch and are listed in a warning under the heatmap; a blank
+`condition` is allowed and also renders unlabeled. A starter file is downloadable
+from the form (`/design-matrix-template.csv`). Parsing lives in `design_matrix.py`;
+`etol_summary.build_etol_matrix(..., condition_index=...)` applies it.
+
 ## Secondary human filter
 
 The microbial eToL presets (eToL Full and eToL Quick) offer an optional

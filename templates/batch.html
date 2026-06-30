@@ -73,6 +73,12 @@
           {% endfor %}
         </div>
 
+        <div class="field" id="design_matrix_field">
+          <label for="design_matrix_file">Design matrix (condition labels)</label>
+          <span class="muted">Optional, eToL presets only. Upload a CSV/TSV with a header row and two columns &mdash; <code>sample</code> (an SRA accession or a database display name) and <code>condition</code> (the label to show) &mdash; to set the heatmap's per-sample condition swatches explicitly instead of guessing them from the database name. <a href="/design-matrix-template.csv">Download template</a>.</span>
+          <input class="file-input" id="design_matrix_file" name="design_matrix_file" type="file" accept=".csv,.tsv,.tab,.txt">
+        </div>
+
         <div class="field" id="human_filter_field">
           <span class="field-label">Secondary human filter</span>
           <label class="checkbox-row checkbox-row--wide">

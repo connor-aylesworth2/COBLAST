@@ -72,13 +72,34 @@
     );
   }
 
+  // Fixed colours for the disease tags both eToL papers use, so the familiar
+  // AD/control palette is preserved. Any other label (e.g. from an uploaded
+  // design matrix) gets a stable colour assigned from CONDITION_PALETTE, the
+  // same first-seen scheme groupColor() uses for the row-group strip.
+  var CONDITION_DEFAULTS = {
+    AD: "#c0392b", CTRL: "#2e7d32", CONTROL: "#2e7d32",
+    LBD: "#6a1b9a", VaD: "#e65100",
+  };
+  var CONDITION_PALETTE = [
+    "#00897b", "#3949ab", "#c2185b", "#f9a825", "#5d4037",
+    "#546e7a", "#ad1457", "#00838f", "#6d4c41", "#283593",
+  ];
+  var conditionColors = {};
+
   function conditionColor(cond) {
     if (!cond) return "#cfd8dc";
-    if (cond.indexOf("AD") === 0) return "#c0392b";
-    if (cond.indexOf("CTRL") === 0) return "#2e7d32";
-    if (cond.indexOf("LBD") === 0) return "#6a1b9a";
-    if (cond.indexOf("VaD") === 0) return "#e65100";
-    return "#cfd8dc";
+    if (cond in CONDITION_DEFAULTS) return CONDITION_DEFAULTS[cond];
+    // Prefix match so combined tags like "AD/LBD" still read as AD red, matching
+    // the original sample-name behaviour.
+    var keys = Object.keys(CONDITION_DEFAULTS);
+    for (var i = 0; i < keys.length; i += 1) {
+      if (cond.indexOf(keys[i]) === 0) return CONDITION_DEFAULTS[keys[i]];
+    }
+    if (!(cond in conditionColors)) {
+      conditionColors[cond] =
+        CONDITION_PALETTE[Object.keys(conditionColors).length % CONDITION_PALETTE.length];
+    }
+    return conditionColors[cond];
   }
 
   function groupColor(group) {
@@ -272,6 +293,61 @@
     root.querySelector("[data-role=status]").textContent = message || "";
   }
 
+  // Rebuild the condition legend from the labels actually present, so an uploaded
+  // design matrix with arbitrary labels gets matching swatches (the static
+  // AD/Control/LBD/VaD list is just the default before any matrix is applied).
+  function renderConditionLegend(matrix) {
+    var el = root.querySelector("[data-role=condition-legend]");
+    if (!el) return;
+    var seen = {};
+    var labels = [];
+    matrix.cols.forEach(function (col) {
+      var c = col.condition;
+      if (c && !(c in seen)) {
+        seen[c] = true;
+        labels.push(c);
+      }
+    });
+    if (!labels.length) {
+      el.style.display = "none";
+      return;
+    }
+    el.style.display = "";
+    var parts = ["Condition: "];
+    labels.forEach(function (label) {
+      parts.push(
+        '<span class="swatch" style="background:' + conditionColor(label) + '"></span>' +
+          esc(label) + " "
+      );
+    });
+    el.innerHTML = parts.join("");
+  }
+
+  // Note which design matrix (if any) drove the labels, and flag samples it did
+  // not cover so the gap is visible rather than silently mislabeled.
+  function renderDesignNote(matrix) {
+    var el = root.querySelector("[data-role=design-note]");
+    if (!el) return;
+    var design = matrix.design_matrix;
+    if (!design) {
+      el.textContent = "";
+      el.style.display = "none";
+      return;
+    }
+    el.style.display = "";
+    var msg =
+      "Condition labels from design matrix “" + design.source + "” (" +
+      design.row_count + " sample" + (design.row_count === 1 ? "" : "s") + ").";
+    var unmatched = design.unmatched_samples || [];
+    if (unmatched.length) {
+      msg +=
+        " " + unmatched.length + " selected sample" +
+        (unmatched.length === 1 ? "" : "s") + " had no matrix row and render unlabeled: " +
+        unmatched.join(", ") + ".";
+    }
+    el.textContent = msg;
+  }
+
   function render() {
     var matrix = cache[state.level];
     if (!matrix) return;
@@ -289,6 +365,8 @@
       return;
     }
     root.querySelector("[data-role=canvas]").innerHTML = buildSvg(matrix);
+    renderConditionLegend(matrix);
+    renderDesignNote(matrix);
     setStatus(
       matrix.rows.length + " rows × " + matrix.cols.length + " samples" +
         (hasValidated ? "" : "  —  no validated layer (run contig identification for the raw→validated toggle)")

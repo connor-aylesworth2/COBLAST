@@ -350,13 +350,27 @@ def etol_matrix_payload(batch_data: dict, level: str = "species") -> dict:
     per host cell for the cellular panels).
     """
     records = _etol_records_for_batch(batch_data)
+    design = batch_data.get("design_matrix") or None
     matrix = build_etol_matrix(
-        batch_data.get("database_results", []), records, level=level
+        batch_data.get("database_results", []),
+        records,
+        level=level,
+        condition_index=design,
     )
     preset = batch_data.get("etol_preset_key") or "etol_full"
     matrix["preset"] = preset
     matrix["preset_label"] = batch_data.get("etol_preset_label") or ""
     matrix["is_viral"] = preset == "etol_v"
+    # Surface the applied design matrix (source, label set, and any samples it
+    # did not cover) so the heatmap can show a banner + a label-driven legend.
+    if design:
+        matrix["design_matrix"] = {
+            "source": design.get("source", ""),
+            "conditions": design.get("conditions", []),
+            "row_count": design.get("row_count", 0),
+            "unmatched_samples": matrix.get("unmatched_samples") or [],
+            "warnings": design.get("warnings", []),
+        }
     return matrix
 
 

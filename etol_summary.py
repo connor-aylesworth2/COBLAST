@@ -445,6 +445,35 @@ def _sample_condition(database_result: dict[str, Any]) -> str:
     return match.group(1).upper().replace("CONTROL", "CTRL")
 
 
+def _condition_from_index(
+    database_result: dict[str, Any], index: dict[str, Any]
+) -> tuple[str, bool]:
+    """Resolve a sample's condition from an uploaded design-matrix index.
+
+    Returns ``(label, matched)``. Matching is flexible (the format the
+    :mod:`design_matrix` parser produces): the sample's SRA accession is tried
+    first, then the database display name (case-insensitive). Unlike
+    :func:`_sample_condition` this never guesses from arbitrary path text -- an
+    unmatched sample is reported as such so the heatmap can flag it rather than
+    silently mislabel it.
+    """
+    by_accession = index.get("by_accession") or {}
+    by_name = index.get("by_name") or {}
+    search_text = " ".join(
+        str(database_result.get(key, ""))
+        for key in ("display_name", "db_prefix_path")
+    )
+    accession_match = ETOL_ACCESSION_PATTERN.search(search_text)
+    if accession_match:
+        accession = accession_match.group(0).upper()
+        if accession in by_accession:
+            return by_accession[accession], True
+    name = str(database_result.get("display_name", "") or "").strip().lower()
+    if name and name in by_name:
+        return by_name[name], True
+    return "", False
+
+
 def _taxa_from(records: tuple[dict[str, str], ...]) -> list[dict[str, Any]]:
     """Collapse probe records into ordered, de-duplicated species/taxon rows."""
     taxa: "OrderedDict[str, dict[str, Any]]" = OrderedDict()
@@ -656,6 +685,7 @@ def build_etol_matrix(
     records: tuple[dict[str, str], ...],
     *,
     level: str = "species",
+    condition_index: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Reshape eToL counts into a ``rows x samples`` matrix for heatmap rendering.
 
@@ -671,6 +701,12 @@ def build_etol_matrix(
     ``confirmed`` is per taxon (the granularity contig identification produces),
     so at ``level="probe"`` every probe of a taxon shares that taxon's confirmed
     count; it is ``None`` when the run produced no contig identification.
+
+    When ``condition_index`` (an uploaded design matrix, see :mod:`design_matrix`)
+    is supplied it is authoritative for the per-column ``condition`` labels: each
+    column is looked up by accession/display name and the name-guessing regex is
+    not used. Samples with no matching row are left unlabeled and collected in the
+    returned ``unmatched_samples`` so the page can warn about them.
     """
     query_ids = frozenset(record["probe"] for record in records)
 
@@ -708,15 +744,23 @@ def build_etol_matrix(
     hits = [[0 for _ in database_results] for _ in row_meta]
     confirmed = [[None for _ in database_results] for _ in row_meta]
     any_confirmed = False
+    unmatched_samples: list[str] = []
 
     for col_index, database_result in enumerate(database_results):
         counts = _probe_counts(database_result, query_ids)
         host_cells = compute_host_cells(database_result.get("etol_control_counts") or {})
         contig_identification = database_result.get("contig_identification") or {}
+        sample_label = _sample_label(database_result)
+        if condition_index:
+            condition, matched = _condition_from_index(database_result, condition_index)
+            if not matched:
+                unmatched_samples.append(sample_label)
+        else:
+            condition = _sample_condition(database_result)
         cols.append(
             {
-                "sample": _sample_label(database_result),
-                "condition": _sample_condition(database_result),
+                "sample": sample_label,
+                "condition": condition,
                 "host_cells": round(host_cells, 4) if host_cells > 0 else 0.0,
             }
         )
@@ -736,4 +780,5 @@ def build_etol_matrix(
         "hits": hits,
         "confirmed": confirmed if any_confirmed else None,
         "host_transcripts_per_cell": HOST_TRANSCRIPTS_PER_CELL,
+        "unmatched_samples": unmatched_samples,
     }

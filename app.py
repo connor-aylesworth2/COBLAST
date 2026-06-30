@@ -41,6 +41,7 @@ from etol_summary import (
     group_read_ids_by_taxon,
 )
 from etol_validation import compute_confusion
+from design_matrix import DesignMatrixError, parse_design_matrix
 from human_filter import extract_reads, filter_human_hits
 from blast_runner import (
     BLAST_PROGRAMS,
@@ -609,6 +610,25 @@ def batch_blast_page():
     )
 
 
+@app.get("/design-matrix-template.csv")
+def design_matrix_template():
+    """Download a starter design-matrix CSV in the strict ``sample,condition`` format."""
+    body = (
+        "sample,condition\n"
+        "SRR21676099,AD\n"
+        "SRR21676105,CONTROL\n"
+        "SRR21676101,AD/LBD\n"
+        "SRR21676126,AD/VaD\n"
+    )
+    return Response(
+        body,
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=design_matrix_template.csv"
+        },
+    )
+
+
 @app.post("/batch-blast")
 def run_batch_blast_route():
     """Run one query against multiple registered local databases concurrently."""
@@ -632,6 +652,32 @@ def run_batch_blast_route():
     if etol_preset_key:
         apoe_probe_preset = False
     exact_probe_preset = apoe_probe_preset or etol_preset_key is not None
+
+    # Optional design matrix: an uploaded CSV/TSV that explicitly maps each
+    # sample to a condition label for the eToL heatmap, overriding the unreliable
+    # name-guessing regex. Parsed and validated up front so a malformed file is
+    # rejected before the long BLAST run rather than after it. Only meaningful for
+    # the eToL presets (the panels that render the heatmap).
+    design_matrix_index: dict | None = None
+    design_matrix_upload = request.files.get("design_matrix_file")
+    if etol_preset_key and design_matrix_upload and design_matrix_upload.filename:
+        try:
+            design_matrix_index = parse_design_matrix(
+                design_matrix_upload.read().decode("utf-8-sig"),
+                filename=design_matrix_upload.filename,
+            )
+        except DesignMatrixError as exc:
+            return (
+                render_template(
+                    "batch.html",
+                    blast_programs=BLAST_PROGRAMS,
+                    database_options=database_options(),
+                    etol_preset_options=etol_preset_options(),
+                    error=f"Design matrix error: {exc}",
+                    message="",
+                ),
+                400,
+            )
 
     # probe_query_ids is the full set of query ids searched (used to restrict
     # hits to the panel). For the microbial eToL presets the search also includes
@@ -1207,6 +1253,10 @@ def run_batch_blast_route():
         ),
         "database_results": database_results,
     }
+    # Persist the uploaded design matrix (if any) so the heatmap JSON endpoint --
+    # which reloads the saved batch from disk -- can apply it for condition labels.
+    if design_matrix_index:
+        payload["design_matrix"] = design_matrix_index
     if apoe_probe_preset:
         payload["apoe_probe_summary"] = build_apoe_probe_summary(database_results)
     if etol_preset_key:
@@ -1219,7 +1269,9 @@ def run_batch_blast_route():
     if etol_preset_key == "etol_v":
         try:
             matrix = build_etol_matrix(
-                database_results, etol_preset_records("etol_v")
+                database_results,
+                etol_preset_records("etol_v"),
+                condition_index=design_matrix_index,
             )
             payload["etol_confusion"] = compute_confusion(matrix)
         except Exception as exc:  # pragma: no cover - defensive

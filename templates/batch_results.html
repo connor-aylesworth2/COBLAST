@@ -295,7 +295,8 @@
                 visualisation. The viral panel defaults to raw matched-read counts
                 (Veso, eToL-V); the cellular panels default to log2 reads per host
                 cell with a 3 reads/cell cutoff (Hu/Lathe). Columns are annotated
-                by diagnosis where the sample name carries one.
+                by condition &mdash; from an uploaded design matrix when one was
+                provided, otherwise inferred from the sample name.
               </p>
               <div
                 id="etol-heatmap"
@@ -329,12 +330,13 @@
                   <button type="button" class="button button-secondary" data-role="png">Export PNG</button>
                   <button type="button" class="button button-secondary" data-role="svg">Export SVG</button>
                 </div>
-                <p class="muted etol-heatmap__legend">
+                <p class="muted etol-heatmap__legend" data-role="condition-legend">
                   Condition: <span class="swatch" style="background:#c0392b"></span>AD
                   <span class="swatch" style="background:#2e7d32"></span>Control
                   <span class="swatch" style="background:#6a1b9a"></span>LBD
                   <span class="swatch" style="background:#e65100"></span>VaD
                 </p>
+                <p class="muted" data-role="design-note"></p>
                 <p class="muted" data-role="status"></p>
                 <div class="etol-heatmap__canvas" data-role="canvas"></div>
               </div>

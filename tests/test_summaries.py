@@ -6,7 +6,9 @@ panels under data/, so run pytest from the repository root.
 """
 
 from apoe_summary import build_apoe_probe_summary
+from design_matrix import parse_design_matrix
 from etol_summary import (
+    _sample_condition,
     build_etol_matrix,
     build_etol_probe_summary,
     compute_host_cells,
@@ -230,6 +232,45 @@ def test_build_etol_matrix_probe_level_and_confirmed_layer():
     # Contig identification populates the validated (confirmed) layer per taxon.
     assert probe_matrix["confirmed"] is not None
     assert probe_matrix["confirmed"][0][0] == 4
+
+
+def test_build_etol_matrix_condition_index_overrides_regex():
+    # An uploaded design matrix is authoritative for the condition strip, fixing
+    # the name-guessing regex's failure on auto-generated "SRA <acc> reads" names
+    # (every one of which the regex mislabels "AD" via the "ad" in "reads").
+    records = etol_preset_records("etol_quick")
+    results = [
+        {
+            "display_name": "SRA SRR21676105 reads",
+            "db_prefix_path": r"C:\Users\x\Downloads\db\srr21676105",
+            "hits": [],
+        },
+        {"display_name": "SRA SRR21676101 reads", "hits": []},
+        {"display_name": "SRA SRR99999999 reads", "hits": []},  # absent from matrix
+    ]
+    index = parse_design_matrix(
+        "sample,condition\nSRR21676105,CONTROL\nSRR21676101,AD/LBD\n",
+        filename="design.csv",
+    )
+    matrix = build_etol_matrix(results, records, condition_index=index)
+    assert [c["condition"] for c in matrix["cols"]] == ["CONTROL", "AD/LBD", ""]
+    # The regex path would have mislabeled the control as "AD"; the matrix doesn't.
+    assert _sample_condition(results[0]) == "AD"
+    # Unmatched columns are reported (by their resolved accession label) not guessed.
+    assert matrix["unmatched_samples"] == ["SRR99999999"]
+
+
+def test_build_etol_matrix_condition_index_matches_by_display_name():
+    # Custom (non-SRA) databases have no accession, so the matrix matches on the
+    # database display name instead.
+    records = etol_preset_records("etol_quick")
+    results = [{"display_name": "Patient cortex pool", "hits": []}]
+    index = parse_design_matrix(
+        "sample,condition\nPatient cortex pool,AD\n", filename="design.csv"
+    )
+    matrix = build_etol_matrix(results, records, condition_index=index)
+    assert matrix["cols"][0]["condition"] == "AD"
+    assert matrix["unmatched_samples"] == []
 
 
 # --- host-cell normalization ----------------------------------------------
