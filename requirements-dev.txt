@@ -2,3 +2,5 @@
 # Install with: python -m pip install -r requirements-dev.txt
 -r requirements.txt
 pytest>=8,<9
+# Standalone .exe packaging (build_standalone_exe.py).
+pyinstaller>=6,<7

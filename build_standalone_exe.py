@@ -51,6 +51,37 @@ def default_blast_bin() -> Path:
     return (project_root().parent / "ncbi-blast-2.17.0+" / "bin").resolve()
 
 
+def cap3_filename() -> str:
+    """Return the CAP3 executable filename for this OS."""
+    return "cap3.exe" if os.name == "nt" else "cap3"
+
+
+def default_cap3_bin() -> Path | None:
+    """Choose the default CAP3 bin folder, if one is configured.
+
+    Unlike BLAST+, CAP3 has no conventional install path, so this only honours
+    the ``CAP3_BIN`` environment variable and otherwise returns None (build
+    without CAP3).
+    """
+    env_cap3_bin = os.environ.get("CAP3_BIN")
+    if env_cap3_bin:
+        return Path(env_cap3_bin).expanduser().resolve()
+    return None
+
+
+def cap3_binary_files(cap3_bin: Path) -> list[Path]:
+    """Return the CAP3 executable and any sibling DLLs it needs, if present.
+
+    The Windows CAP3 build ships alongside runtime DLLs (e.g. cygwin1.dll), so
+    every ``.dll`` next to the executable is bundled too. Returns an empty list
+    when no CAP3 executable is found under ``cap3_bin``.
+    """
+    exe = cap3_bin / cap3_filename()
+    if not exe.exists():
+        return []
+    return [exe, *sorted(cap3_bin.glob("*.dll"))]
+
+
 def check_file(path: Path) -> None:
     """Fail early when a required source or binary file is missing."""
     if not path.exists():
@@ -67,7 +98,7 @@ def add_data_arg(source: Path, destination: str) -> str:
     return f"{source}{pyinstaller_separator()}{destination}"
 
 
-def build_command(blast_bin: Path, name: str) -> list[str]:
+def build_command(blast_bin: Path, cap3_bin: Path | None, name: str) -> list[str]:
     """Assemble the PyInstaller command for the standalone executable."""
     root = project_root()
     workpath = Path(tempfile.gettempdir()) / f"coblast_pyinstaller_{os.getpid()}"
@@ -82,6 +113,12 @@ def build_command(blast_bin: Path, name: str) -> list[str]:
         root / "human_filter.py",
         root / "sra_workflow.py",
         root / "smoke_test.py",
+        root / "apoe_summary.py",
+        root / "assembler.py",
+        root / "contig_id.py",
+        root / "design_matrix.py",
+        root / "etol_summary.py",
+        root / "etol_validation.py",
         root / "templates",
         root / "static",
         root / "sample_data",
@@ -129,6 +166,18 @@ def build_command(blast_bin: Path, name: str) -> list[str]:
         "human_filter",
         "--hidden-import",
         "sra_workflow",
+        "--hidden-import",
+        "apoe_summary",
+        "--hidden-import",
+        "assembler",
+        "--hidden-import",
+        "contig_id",
+        "--hidden-import",
+        "design_matrix",
+        "--hidden-import",
+        "etol_summary",
+        "--hidden-import",
+        "etol_validation",
         "--add-data",
         add_data_arg(root / "templates", "templates"),
         "--add-data",
@@ -146,6 +195,24 @@ def build_command(blast_bin: Path, name: str) -> list[str]:
         if path.exists():
             command.extend(["--add-binary", add_data_arg(path, "blast/bin")])
 
+    # CAP3 is optional: bundle it under cap3/bin when a directory is supplied so
+    # config.cap3_bin_dir() finds it in the frozen app. Without it the exe still
+    # runs but skips contig assembly/re-probing (the callers gate on it).
+    if cap3_bin is not None:
+        cap3_files = cap3_binary_files(cap3_bin)
+        if not cap3_files:
+            print(
+                f"Warning: no CAP3 executable found in {cap3_bin}; building "
+                "without CAP3 (contig assembly/re-probing will be skipped)."
+            )
+        for path in cap3_files:
+            command.extend(["--add-binary", add_data_arg(path, "cap3/bin")])
+    else:
+        print(
+            "No --cap3-bin/CAP3_BIN supplied; building without CAP3 (contig "
+            "assembly/re-probing will be skipped in the packaged app)."
+        )
+
     command.append(str(root / "run_COBLAST.py"))
     return command
 
@@ -159,6 +226,14 @@ def parse_args() -> argparse.Namespace:
         "--blast-bin",
         default=str(default_blast_bin()),
         help="Path to the NCBI BLAST+ bin directory to bundle.",
+    )
+    default_cap3 = default_cap3_bin()
+    parser.add_argument(
+        "--cap3-bin",
+        default=str(default_cap3) if default_cap3 else None,
+        help="Path to a directory containing the CAP3 executable to bundle. "
+        "Optional (defaults to CAP3_BIN); without it the app runs but skips "
+        "contig assembly/re-probing.",
     )
     parser.add_argument(
         "--name",
@@ -174,10 +249,14 @@ def main() -> int:
     blast_bin = Path(args.blast_bin).expanduser().resolve()
     print(f"Bundling BLAST+ from: {blast_bin}")
 
+    cap3_bin = Path(args.cap3_bin).expanduser().resolve() if args.cap3_bin else None
+    if cap3_bin is not None:
+        print(f"Bundling CAP3 from: {cap3_bin}")
+
     if shutil.which("pyinstaller") is None:
         print("PyInstaller is not on PATH; using python -m PyInstaller.")
 
-    command = build_command(blast_bin, args.name)
+    command = build_command(blast_bin, cap3_bin, args.name)
     print("Running:")
     print(" ".join(command))
     completed = subprocess.run(command, cwd=project_root(), check=False)
