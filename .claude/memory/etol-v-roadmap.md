@@ -72,7 +72,12 @@ stays lean) — new `build_etol_matrix` + `_sample_condition` (etol_summary.py),
 `etol_matrix_payload` (result_store.py), GET `/batch-results/<id>/etol-matrix.json`
 (app.py), `static/etol_heatmap.js` + styles + panel in batch_results.html;
 per-preset defaults, value/stage/cutoff controls, condition column swatches,
-PNG/SVG export; 103 tests pass (+2 new). TIER 2 (confusion matrix): user supplied
+PNG/SVG export; 103 tests pass (+2 new). CONDITION LABELS (added 2026-06-30):
+an uploaded design matrix (`design_matrix.py`, batch-page upload, sample->condition
+CSV/TSV) is now the AUTHORITATIVE swatch source consumed by `build_etol_matrix`;
+the regex `_sample_condition` is only the fallback (it silently mislabelled the
+auto-generated "SRA <acc> reads" name as `AD` via "re**ad**s"). Suite now at
+**136 tests** as of 2026-07-01 (incl. design-matrix + spike-in control). TIER 2 (confusion matrix): user supplied
 Veso's actual WGS ground truth = `WHOLE GENOME SCAN OF EBB.xls` (Sheet1, 20
 viruses × 35 samples, COUNT data). CONSTRUCTION FULLY REVERSE-ENGINEERED + VERIFIED
 (2026-06-29) — reproduces her TP=9/FP=1/FN=35/TN=411, N=456 exactly:

@@ -104,7 +104,7 @@ Remaining to match the paper (largest first):
   (Bonferroni concern with >1000 probes); semi-manual in the paper, no hook yet.
 - **Read-length-adaptive human cutoff** (paper varied >150/>160/>126/>100 by mean
   read size; COBLAST fixes 150 for brain).
-- **Heatmap visualization** (paper uses Morpheus/pheatmap; COBLAST exports CSV).
+- **Heatmap visualization** DONE (in-app SVG heatmap + confusion panel + `scripts/plot_etol.py`); see [[etol-v-roadmap]] VISUALIZATION.
 - Viral "stripping" method is a separate paper method, not implemented (out of
   current scope).
 
