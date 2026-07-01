@@ -17,6 +17,17 @@ exports are stored in a stable per-user data folder at `%LOCALAPPDATA%\COBLAST_d
 
 This executable is unsigned and intended for agreed prototype testing only.
 
+## Optional: Contig Assembly (eToL re-probing)
+
+The microbial eToL presets can assemble matched reads into contigs and re-probe
+with them. Those steps use the **CAP3** assembler, which is not shipped with
+COBLAST for licensing reasons. To enable them, install
+[Unipro UGENE](https://ugene.net/download-all.html) in its default location:
+UGENE bundles CAP3, and COBLAST auto-detects it — no extra configuration. Install
+UGENE first, then run `COBLAST.exe`. Everything else (BLAST searches, per-species
+counts, exports) works without CAP3; a run that requests assembly without it
+simply reports that contigs were skipped.
+
 ## Updating from an Older Test Version
 
 COBLAST does not use a formal installer. The test installation is the folder

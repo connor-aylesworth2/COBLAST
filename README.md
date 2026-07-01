@@ -530,6 +530,16 @@ recover reads the net missed) — leave re-probing off for routine and cohort ru
 and characterise it once per data type before relying on it; see
 **[docs/eToL.md](docs/eToL.md)** for when to use it.
 
+Contig assembly, identification, and re-probing use the **CAP3** assembler. For
+licensing reasons CAP3 is **not** distributed with COBLAST+; instead install
+[Unipro UGENE](https://ugene.net/download-all.html) in its default location —
+UGENE bundles CAP3, and COBLAST+ auto-detects it under
+`…\Unipro UGENE\tools\cap3` with no further setup. So the full workflow is just:
+install UGENE, then run COBLAST+. CAP3 is optional — the BLAST net, per-probe and
+per-species counts, and all exports work without it, and a run that requests
+assembly with no CAP3 present continues and reports that contigs were skipped. If
+CAP3 lives somewhere non-standard, point COBLAST+ at its folder with `CAP3_BIN`.
+
 These presets are an optional analysis layered on the general batch workflow
 above, not a required part of using COBLAST+. For the full details — the net, the
 two-pass megablast/blastn-short split, cross-probe de-duplication, host-cell

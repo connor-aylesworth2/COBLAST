@@ -179,6 +179,13 @@ or from gene regions that fall between the net's probes.
 Requires **contig assembly** to be enabled, and applies only to the microbial
 eToL presets.
 
+Contig assembly (and therefore re-probing) uses the **CAP3** assembler, which
+COBLAST+ does not ship for licensing reasons. Install
+[Unipro UGENE](https://ugene.net/download-all.html) in its default location — it
+bundles CAP3 and COBLAST+ auto-detects it (`…\Unipro UGENE\tools\cap3`) — or set
+`CAP3_BIN` to a folder holding a CAP3 binary. Without CAP3, assembly-dependent
+steps are skipped and the run reports it.
+
 ### When to leave it OFF (the default)
 
 For routine microbiome profiling, **don't enable re-probing.** The net already

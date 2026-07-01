@@ -109,7 +109,7 @@
               <strong>Assemble matched reads into contigs per species</strong>
               <details class="preset-info">
                 <summary>&#9432; Details</summary>
-                <span class="muted">Microbial eToL presets (Full, Quick) only. After the net (and any secondary human filter), the reads each species' probes recovered are assembled with CAP3 into longer contigs for species-level identification and re-probing (Hu, Haas &amp; Lathe 2022). Requires a CAP3 binary (via <code>CAP3_BIN</code>, a bundled <code>cap3/bin</code>, or PATH); if none is found the run continues without contigs and reports it.</span>
+                <span class="muted">Microbial eToL presets (Full, Quick) only. After the net (and any secondary human filter), the reads each species' probes recovered are assembled with CAP3 into longer contigs for species-level identification and re-probing (Hu, Haas &amp; Lathe 2022). Requires the CAP3 assembler, which COBLAST+ does not bundle: install <a href="https://ugene.net/download-all.html" target="_blank" rel="noopener">Unipro UGENE</a> (it includes CAP3 and is auto-detected in its default location), or set <code>CAP3_BIN</code>. If CAP3 is not found the run continues without contigs and reports it.</span>
               </details>
             </span>
           </label>

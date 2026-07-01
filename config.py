@@ -95,11 +95,39 @@ def blast_exe(name: str) -> Path:
 # PATH, so the same packaging story works from source and from the frozen .exe.
 # Unlike BLAST+, CAP3 is optional: callers gate on availability and skip the
 # assembly step when no binary is present rather than failing the whole run.
+def _ugene_cap3_candidates() -> list[Path]:
+    """Return the ``tools/cap3`` folders of a default UGENE install.
+
+    UGENE ships the CAP3 assembler under ``<install>/tools/cap3`` but does not
+    add it to PATH, so probing the standard Program Files locations lets a
+    stock UGENE install be found with no ``CAP3_BIN`` setup on the user's part.
+    CAP3 is not redistributed with COBLAST+ for licensing reasons; users install
+    UGENE (which provides CAP3) instead.
+    """
+    bases: list[Path] = []
+    for env_var in ("ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"):
+        value = os.environ.get(env_var)
+        if value:
+            bases.append(Path(value))
+    # Fall back to the conventional install roots if those env vars are unset.
+    bases += [Path(r"C:\Program Files"), Path(r"C:\Program Files (x86)")]
+
+    seen: set[Path] = set()
+    candidates: list[Path] = []
+    for base in bases:
+        cap3_dir = base / "Unipro UGENE" / "tools" / "cap3"
+        if cap3_dir not in seen:
+            seen.add(cap3_dir)
+            candidates.append(cap3_dir)
+    return candidates
+
+
 def cap3_bin_dir() -> Path | None:
     """Locate a directory containing the CAP3 binary, or None to fall back to PATH.
 
     Precedence: the ``CAP3_BIN`` environment variable (a directory, like
-    ``BLAST_BIN``), then a bundled ``cap3/bin`` folder inside the resource root.
+    ``BLAST_BIN``), then a bundled ``cap3/bin`` folder inside the resource root,
+    then a default Unipro UGENE install (which ships CAP3 under ``tools/cap3``).
     """
     env_cap3_bin = os.environ.get("CAP3_BIN")
     if env_cap3_bin:
@@ -108,6 +136,12 @@ def cap3_bin_dir() -> Path | None:
     bundled_cap3_bin = resource_path("cap3", "bin")
     if bundled_cap3_bin.exists():
         return bundled_cap3_bin
+
+    # A default UGENE install ships CAP3 but does not put it on PATH; probe its
+    # standard tools/cap3 location so users only have to install UGENE.
+    for candidate in _ugene_cap3_candidates():
+        if (candidate / tool_name("cap3")).exists():
+            return candidate
 
     return None
 
