@@ -169,9 +169,13 @@ CONFIRMED FROM VESO'S FULL DISSERTATION (2026-06-26):
 - Net: Veso used web BLASTn, max_target_seqs 5000, counted all hits then validated
   via contigs (no explicit E gate). COBLAST nets at E<0.01 — keep it, but verify
   it doesn't drop the 9 TPs (AdC/SARS hits are strong, so safe).
-- Probe set: advisors confirm it's been EXTENDED since Veso to adequate breadth;
-  probe-generation automation NOT needed. Still pull the latest final_probes.fasta
-  from the student GitHub.
+- Probe set (CORRECTED 2026-07-01, supersedes earlier "breadth now adequate"): the
+  repo still carries Veso's ORIGINAL 115 viral probes (data/etol_v_probes.fasta:
+  HHV 77, HCoV 21, HPV 10, HAdV 7). Extending the panel to what Dr. Lathe would
+  require is a HIGHER bar than "adequate for a screening tool" and remains
+  RELATIVELY UNTOUCHED — treated as scoped, incomplete FUTURE WORK given the ~6-week
+  build+write window, NOT a results chapter. So eToL-V = built preset + full path
+  (DONE) but probe extension = future work.
 - SARS-CoV-2 anomaly: pre-pandemic EBB samples (deaths 2017-2019) carry sequences
   that phylogenetically cluster with the pandemic SARS-CoV-2 clade — unresolved
   (contamination vs real). Optional high-interest, rabbit-hole-risk thread.

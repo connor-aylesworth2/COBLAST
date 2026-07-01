@@ -44,7 +44,7 @@ dissertation (≈ mid-Aug 2026), writing NOT yet started.
 1. Register `etol_v` preset; use the preset's own 2 PGK controls (not PGK1+hNSE). Norm = mean(PGK)/50 (identical to HOST_TRANSCRIPTS_PER_CELL=50; Veso ×10 for per-10-cell presentation).
 2. Viral header parsing into Class_Taxon_Subunit_Index (e.g. `V-HHV_HSV1_gB_3`, `V-HAdV_AdC_penton_1`, `V-HCoV_SARSCoV2_S_1`); extend ETOL_DOMAIN_BY_LETTER with viral class codes.
 3. **Contig validation DB must be virus-appropriate** (core_nt OR local RefSeq-viral + human-genome + human-mito) — NOT the rRNA ToL_rRNA DB (viruses have no rRNA; the mito artefact won't match SILVA and would slip through). Reuse contig_id.py Homo-sapiens/mito flagging — this is the fidelity-critical step.
-Prereq: pull EXTENDED `final_probes.fasta` from github.com/B270917-2024/MSc_Dissertation (advisors confirm breadth now adequate; probe automation NOT needed). Fidelity decision: keep net E<0.01 gate but verify it doesn't drop Veso's 9 TPs.
+Probe set (CORRECTED 2026-07-01): repo still has Veso's ORIGINAL 115 viral probes; extending the panel to what Dr. Lathe would require is a higher bar than "adequate breadth" and is now scoped as incomplete FUTURE WORK (eToL-V beyond the existing implementation is a contingent deliverable, not a results chapter — see [[etol-v-roadmap]]). Fidelity decision: keep net E<0.01 gate but verify it doesn't drop Veso's 9 TPs.
 
 **Why:** problem-choice framework — fix the floor (zero miracles; satisfies proposal's correctness criterion) before novel biology on a heterogeneous phenotype.
 
