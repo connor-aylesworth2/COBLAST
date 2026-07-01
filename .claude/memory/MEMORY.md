@@ -1,3 +1,4 @@
 - [eToL ↔ Lathe et al. alignment](etol-lathe-alignment.md) — what's done/remaining to match COBLAST+'s eToL preset to the 2022 paper
 - [eToL-V roadmap](etol-v-roadmap.md) — folding the inherited viral-detection dissertation into COBLAST+ (it's a preset, not a new pipeline)
 - [COBLAST+ AD application plan](coblast-ad-application-plan.md) — staged validation+novel-stretch plan; eToL-V porting checklist + two-target floor (reproduce Veso's confusion matrix)
+- [COBLAST+ verification anchor](coblast-verification-anchor.md) — spike-in positive control (tests/test_spike_in_control.py) = verification; result reproduction = validation; don't conflate
