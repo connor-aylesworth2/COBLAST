@@ -21,12 +21,33 @@ This executable is unsigned and intended for agreed prototype testing only.
 
 The microbial eToL presets can assemble matched reads into contigs and re-probe
 with them. Those steps use the **CAP3** assembler, which is not shipped with
-COBLAST for licensing reasons. To enable them, install
-[Unipro UGENE](https://ugene.net/download-all.html) in its default location:
-UGENE bundles CAP3, and COBLAST auto-detects it — no extra configuration. Install
-UGENE first, then run `COBLAST.exe`. Everything else (BLAST searches, per-species
-counts, exports) works without CAP3; a run that requests assembly without it
-simply reports that contigs were skipped.
+COBLAST for licensing reasons — you get it by installing Unipro UGENE, which
+bundles CAP3. Everything else (BLAST searches, per-species counts, exports) works
+without CAP3; a run that requests assembly without it simply reports that contigs
+were skipped, so UGENE is only needed if you want contig assembly or re-probing.
+
+To enable it:
+
+1. Download the Windows **installer** (not the portable ZIP) from
+   <https://ugene.net/download-all.html> and run it. Accept the default install
+   location. COBLAST only auto-detects UGENE under `C:\Program Files`, so a
+   portable ZIP extracted elsewhere (Downloads, Desktop) will not be found.
+2. Confirm CAP3 landed at
+   `C:\Program Files\Unipro UGENE\tools\cap3\cap3.exe` (both 64-bit and 32-bit
+   `Program Files` are checked).
+3. Start `COBLAST.exe` — no configuration needed; COBLAST finds CAP3 there
+   automatically.
+4. To verify detection, run a microbial eToL preset with assembly enabled. The
+   results page shows a `Contigs assembled (CAP3)` row when CAP3 was found, or
+   `Contig assembly: CAP3 not found - assembly skipped` when it was not.
+
+If you installed UGENE somewhere non-standard, or use the portable ZIP, point
+COBLAST at the folder that holds `cap3.exe` before launching:
+
+```powershell
+$env:CAP3_BIN = 'C:\path\to\Unipro UGENE\tools\cap3'
+.\COBLAST.exe
+```
 
 ## Updating from an Older Test Version
 
