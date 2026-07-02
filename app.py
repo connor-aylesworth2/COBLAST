@@ -262,6 +262,25 @@ def count_control_reads(
     return counts
 
 
+def summarize_human_filter_warnings(database_results: list[dict]) -> str:
+    """Roll per-database human-filter degradations into one batch-level warning.
+
+    The human filter conservatively KEEPS any hit it cannot actually check --
+    unrecoverable reads (no id-indexed DB and no readable source FASTA) or a
+    failed human-genome BLAST -- and records why in each result's ``note``. Those
+    notes only render in the per-database detail table, so a run that silently
+    filtered nothing looks identical to a clean "0 removed" in the summary card
+    (exactly how a mis-bundled build hides a broken filter). Surfacing the notes
+    at batch level makes "couldn't run" impossible to mistake for "found none".
+    """
+    notes: list[str] = []
+    for row in database_results:
+        note = ((row.get("human_filter") or {}).get("note") or "").strip()
+        if note and note not in notes:
+            notes.append(note)
+    return " ".join(notes)
+
+
 def redirect_to_databases(message: str = "", error: str = ""):
     """Send users back to the database page with optional status text."""
     params = {}
@@ -1232,6 +1251,7 @@ def run_batch_blast_route():
             (result_row.get("human_filter") or {}).get("hits_removed", 0)
             for result_row in database_results
         ),
+        "human_filter_warning": summarize_human_filter_warnings(database_results),
         "etol_normalized": etol_preset_key is not None
         and etol_preset_is_microbial(etol_preset_key),
         "etol_dedup_removed": sum(

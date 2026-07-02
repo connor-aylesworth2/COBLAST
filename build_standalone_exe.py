@@ -113,6 +113,7 @@ def build_command(blast_bin: Path, cap3_bin: Path | None, name: str) -> list[str
         root / "human_filter.py",
         root / "sra_workflow.py",
         root / "smoke_test.py",
+        root / "frozen_self_check.py",
         root / "apoe_summary.py",
         root / "assembler.py",
         root / "contig_id.py",
@@ -154,6 +155,8 @@ def build_command(blast_bin: Path, cap3_bin: Path | None, name: str) -> list[str
         "app",
         "--hidden-import",
         "smoke_test",
+        "--hidden-import",
+        "frozen_self_check",
         "--hidden-import",
         "blast_runner",
         "--hidden-import",
@@ -240,6 +243,13 @@ def parse_args() -> argparse.Namespace:
         default="COBLAST",
         help="Executable name to create under dist/. Default: COBLAST.",
     )
+    parser.add_argument(
+        "--skip-self-check",
+        action="store_true",
+        help="Do not run the packaged self-check after building. The self-check "
+        "runs the freshly built .exe against a synthetic sample to prove read "
+        "recovery, human filtering, and CAP3 assembly survived bundling.",
+    )
     return parser.parse_args()
 
 
@@ -268,6 +278,25 @@ def main() -> int:
         size_mb = exe_path.stat().st_size / (1024 * 1024)
         print(f"Built: {exe_path}")
         print(f"Size:  {size_mb:.1f} MB")
+
+    # Post-build gate: drive the freshly built .exe through the packaged
+    # self-check. This is the only step that runs the *frozen* binary against a
+    # known-answer sample, so a bundling regression (broken read recovery, a
+    # missing/broken CAP3) fails the build here instead of a user's analysis.
+    if not args.skip_self_check:
+        if not exe_path.exists():
+            print("Cannot run self-check: built executable not found.", file=sys.stderr)
+            return 1
+        print(f"\nRunning packaged self-check: {exe_path} --self-check")
+        check = subprocess.run([str(exe_path), "--self-check"], cwd=project_root(), check=False)
+        if check.returncode != 0:
+            print(
+                "\nPackaged self-check FAILED; the build is not trustworthy. "
+                "Re-run with --skip-self-check only if you understand why.",
+                file=sys.stderr,
+            )
+            return check.returncode
+        print("Packaged self-check passed.")
     return 0
 
 

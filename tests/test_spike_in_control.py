@@ -57,6 +57,7 @@ skips; the standalone run prints a setup hint and exits non-zero.
 
 from __future__ import annotations
 
+import platform
 import random
 import re
 import subprocess
@@ -68,7 +69,7 @@ from pathlib import Path
 # pytest (which puts the root on the path via pytest.ini).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config import blast_exe  # noqa: E402
+from config import blast_exe, default_thread_count  # noqa: E402
 from blast_runner import run_blast_probe_panel  # noqa: E402
 from etol_summary import (  # noqa: E402
     build_etol_probe_summary,
@@ -327,6 +328,59 @@ def test_spike_in_recovers_abundance_and_rejects_absent():
     check(run_spike_in())
 
 
+# --- run provenance (so the artifact self-documents its conditions) ---------
+
+def _tool_version(name: str) -> str:
+    """First line of ``<tool> -version`` (e.g. 'blastn: 2.17.0+')."""
+    out = subprocess.run(
+        [str(blast_exe(name)), "-version"], capture_output=True, text=True, check=True
+    )
+    return out.stdout.strip().splitlines()[0]
+
+
+def _git_provenance() -> str:
+    """Commit hash + clean/dirty flag, or a note when this isn't a git checkout.
+
+    A positive control verifies *committed* code; a dirty tree means the table
+    describes code that lives nowhere, so the flag is worth surfacing.
+    """
+    here = Path(__file__).resolve().parent
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=here,
+            capture_output=True, text=True, check=True).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=here,
+            capture_output=True, text=True, check=True).stdout.strip()
+        return f"{head}{' (DIRTY - uncommitted changes)' if dirty else ' (clean)'}"
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "unknown (not a git checkout)"
+
+
+def provenance() -> str:
+    """Record the exact conditions this control ran under, above the table.
+
+    The result is only citable if a reader can reproduce the setup: the
+    committed code, the BLAST+ build (megablast tie-breaking shifts across
+    releases), which binary resolved, the thread count (feeds tie-breaking into
+    de-duplication), and the interpreter/OS. The seed is fixed, so the synthetic
+    input is byte-identical across machines.
+    """
+    return "\n".join([
+        "run provenance",
+        "--------------",
+        f"  git commit   : {_git_provenance()}",
+        f"  blastn       : {_tool_version('blastn')}",
+        f"  makeblastdb  : {_tool_version('makeblastdb')}",
+        f"  blast binary : {blast_exe('blastn')}",
+        f"  num_threads  : {default_thread_count()}",
+        f"  python       : {platform.python_version()}",
+        f"  platform     : {platform.platform()}",
+        f"  rng seed     : {RNG_SEED}",
+        "",
+    ])
+
+
 # --- standalone dissertation artifact ---------------------------------------
 
 def main() -> int:
@@ -338,6 +392,7 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
+    print(provenance())
     outcome = run_spike_in()
     print(format_table(outcome))
     try:

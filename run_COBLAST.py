@@ -15,6 +15,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
@@ -560,6 +561,27 @@ def start_standalone_app(
     flask_app.run(host=FLASK_HOST, port=flask_port(), debug=False)
 
 
+def run_self_check() -> int:
+    """Run the packaged end-to-end self-check and exit (build gate + diagnostic).
+
+    Exercises the read-recovery, human-filter, and CAP3 stages that the toy smoke
+    test skips, so a frozen build that silently drops them fails here instead of
+    in front of a user. Runs in both source and frozen mode; when frozen it uses
+    the bundled BLAST+/CAP3 exactly as a normal launch would, and a throwaway
+    data dir so it never touches the user's registry.
+    """
+    step("Running packaged self-check (read recovery + human filter + CAP3)")
+    if is_frozen():
+        os.environ.setdefault("BLAST_BIN", str(bundled_blast_bin()))
+    os.environ.setdefault(
+        "COBLAST_DATA_DIR",
+        str(Path(tempfile.gettempdir()) / "coblast_self_check_data"),
+    )
+    from frozen_self_check import run as run_check
+
+    return run_check()
+
+
 def run_standalone(args: argparse.Namespace) -> int:
     """Set up environment variables and run the bundled app path."""
     data_dir = standalone_data_dir()
@@ -631,6 +653,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Verify BLAST+, create/update the venv, and run the smoke test without starting Flask.",
     )
+    parser.add_argument(
+        "--self-check",
+        action="store_true",
+        help="Run the packaged end-to-end self-check (read recovery + human filter "
+        "+ CAP3) and exit. Used as a post-build gate against the frozen .exe.",
+    )
     return parser.parse_args()
 
 
@@ -642,6 +670,8 @@ def main() -> int:
             raise LauncherError("Port must be between 1 and 65535.")
 
         require_supported_python()
+        if args.self_check:
+            return run_self_check()
         if is_frozen() and has_bundled_app():
             return run_standalone(args)
 

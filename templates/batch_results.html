@@ -129,6 +129,9 @@
                 <span>Human filter</span>
                 {{ batch.human_filter_hits_removed }} hit(s) removed
                 <span class="muted">vs {{ batch.human_filter_db }} (&gt;150 bits)</span>
+                {% if batch.human_filter_warning %}
+                  <span class="status-invalid">{{ batch.human_filter_warning }}</span>
+                {% endif %}
               </div>
             {% endif %}
           </div>
