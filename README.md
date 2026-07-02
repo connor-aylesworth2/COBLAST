@@ -67,9 +67,10 @@ For SRA-style batch exploration, COBLAST can also run one query across multiple
 registered local databases. Two optional presets build on this batch path: an
 APOE exact-match preset that searches four stored APOE probes and summarizes
 per-sample probe counts in a visual table plus CSV/TSV exports, and eToL presets
-that search the electronic Tree of Life probe panel (full 1,017-probe microbial
-set, a human-control set, or a one-probe-per-species quick set) and summarize the
-species detected per sample with per-probe and per-species count exports.
+that search an electronic Tree of Life probe panel — the full 1,017-probe
+microbial set, a one-probe-per-species quick set, or the viral eToL-V panel — and
+summarize the species/viruses detected per sample with per-probe and per-species
+count exports.
 
 The Windows release executable bundles the required BLAST+ executables. When
 running from source, COBLAST expects compatible NCBI BLAST+ command-line tools
@@ -312,9 +313,6 @@ Remote BLAST is disabled. The backend does not expose NCBI BLAST+'s `-remote`
 option and rejects any generated BLAST command that contains it, keeping query
 sequences and databases local by default.
 
-For tester-facing installation and validation steps, see `TESTING.md`. For
-privacy, security, and clinical-use boundaries, see `PRIVACY_SECURITY.md`.
-
 ## Troubleshooting Python Setup
 
 If `python run_COBLAST.py` fails with a Python version error, check your current
@@ -520,7 +518,10 @@ http://127.0.0.1:5000/batch-blast
 ```
 
 Batch BLAST runs one query against multiple selected registered databases
-sequentially. This is the prototype path for testing the "100 patients" problem:
+concurrently — the databases are searched in parallel, auto-sized to the
+machine's cores, with the number searched at once overridable via the Advanced
+"Max databases at once" field. This is the prototype path for testing the
+"100 patients" problem:
 prepare or register each patient as a local nucleotide BLAST database, select
 the compatible databases, and run the batch. The batch page includes compatible
 database filtering and select-all/deselect-all controls. Completed batch runs
@@ -549,12 +550,15 @@ troubleshooting.
 The batch page also includes optional **eToL probe presets** for the electronic
 Tree of Life microbiome workflow of Hu, Haas & Lathe (*BMC Microbiology*
 2022;22:317). Each preset BLASTNs a stored probe panel — the full 1,017-probe
-microbial set (**eToL Full**), the human housekeeping control set (**eToL
-Control**), or a one-probe-per-species quick set (**eToL Quick**) — against the
-selected nucleotide databases using BLAST's permissive default-megablast *net*
-(E-value < 0.01, no identity or coverage filter), then counts matched reads per probe and species
-with CSV/TSV exports. The microbial panels offer an optional secondary human
-filter that removes host-derived reads. Only one preset can be active at a time.
+microbial set (**eToL Full**), a one-probe-per-species quick set (**eToL Quick**),
+or the viral structural-protein panel (**eToL-V**) — against the selected
+nucleotide databases using BLAST's permissive default-megablast *net* (E-value <
+0.01, no identity or coverage filter), then counts matched reads per probe and
+species with CSV/TSV exports. Each panel is searched together with its
+housekeeping control probes for host-cell normalization; the controls are
+appended automatically and are not a separately selectable preset. The presets
+offer an optional secondary human filter that removes host-derived reads. Only
+one preset can be active at a time.
 
 The microbial presets can also assemble matched reads into contigs, identify
 them, and optionally **re-probe** (a second pass that uses contigs as probes to
@@ -788,5 +792,5 @@ $env:BLAST_BIN = 'C:\Tools\ncbi-blast-2.17.0+\bin'
 
 ## License
 
-This repository currently includes a placeholder license notice in `LICENSE`.
-Choose a formal license before wider distribution.
+No license has been chosen yet, so this repository reserves all rights by
+default. Add a `LICENSE` file with a formal license before wider distribution.

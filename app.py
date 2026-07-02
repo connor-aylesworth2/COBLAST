@@ -349,7 +349,6 @@ def run_blast_route():
     # Form fields arrive as strings; blast_runner owns numeric validation.
     program = request.form.get("program", "blastn")
     database_id = request.form.get("database_id", "")
-    output_format = request.form.get("output_format", "tabular")
 
     try:
         if program not in BLAST_PROGRAMS:
@@ -377,7 +376,6 @@ def run_blast_route():
             sequence=sequence,
             database=database.db_prefix_path,
             program=program,
-            output_format=output_format,
             task=request.form.get("task") or None,
             evalue=request.form.get("evalue") or None,
             max_target_seqs=request.form.get("max_target_seqs") or None,
@@ -405,169 +403,129 @@ def run_blast_route():
     )
 
 
+def _delimited_download(load, to_rows, filename_stem, file_format, guard=None):
+    """Shared CSV/TSV download: validate format, load, optional guard, then stream.
+
+    ``load`` is a zero-arg callable returning the saved payload (deferred so a bad
+    extension 404s before any disk read); ``guard(payload)`` returns falsy to 404
+    (e.g. the batch is not the expected preset); ``to_rows`` renders the payload
+    as ``to_rows(payload, delimiter=...)``.
+    """
+    if file_format not in {"csv", "tsv"}:
+        abort(404)
+    try:
+        payload = load()
+    except FileNotFoundError:
+        abort(404)
+    if guard is not None and not guard(payload):
+        abort(404)
+    delimiter = "," if file_format == "csv" else "\t"
+    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
+    return Response(
+        to_rows(payload, delimiter=delimiter),
+        mimetype=mimetype,
+        headers={
+            "Content-Disposition": f"attachment; filename={filename_stem}.{file_format}"
+        },
+    )
+
+
+def _error_result_row(display_name, error, database_id=""):
+    """Placeholder batch row for a database that failed before producing hits."""
+    return {
+        "database_id": database_id,
+        "display_name": display_name,
+        "db_prefix_path": "",
+        "database_total_bytes": 0,
+        "database_size_label": "unknown",
+        "returncode": "",
+        "runtime_seconds": "",
+        "hit_count": 0,
+        "hits": [],
+        "run_id": "",
+        "human_filter": None,
+        "error": error,
+    }
+
+
 @app.get("/results/<run_id>.<file_format>")
 def download_results(run_id: str, file_format: str):
     """Download a saved result table as CSV or TSV."""
-    if file_format not in {"csv", "tsv"}:
-        abort(404)
-
-    try:
-        result_data = load_result(run_id)
-    except FileNotFoundError:
-        abort(404)
-
-    delimiter = "," if file_format == "csv" else "\t"
-    body = result_rows_as_delimited(result_data, delimiter=delimiter)
-    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
-    filename = f"blast_results_{run_id}.{file_format}"
-    return Response(
-        body,
-        mimetype=mimetype,
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    return _delimited_download(
+        lambda: load_result(run_id),
+        result_rows_as_delimited,
+        f"blast_results_{run_id}",
+        file_format,
     )
 
 
 @app.get("/batch-results/<batch_id>.<file_format>")
 def download_batch_results(batch_id: str, file_format: str):
     """Download saved batch results as CSV or TSV."""
-    if file_format not in {"csv", "tsv"}:
-        abort(404)
-
-    try:
-        batch_data = load_batch_result(batch_id)
-    except FileNotFoundError:
-        abort(404)
-
-    delimiter = "," if file_format == "csv" else "\t"
-    body = batch_rows_as_delimited(batch_data, delimiter=delimiter)
-    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
-    filename = f"batch_blast_results_{batch_id}.{file_format}"
-    return Response(
-        body,
-        mimetype=mimetype,
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    return _delimited_download(
+        lambda: load_batch_result(batch_id),
+        batch_rows_as_delimited,
+        f"batch_blast_results_{batch_id}",
+        file_format,
     )
 
 
 @app.get("/batch-results/<batch_id>/summary.<file_format>")
 def download_batch_summary(batch_id: str, file_format: str):
     """Download the Batch Summary panel statistics as CSV or TSV."""
-    if file_format not in {"csv", "tsv"}:
-        abort(404)
-
-    try:
-        batch_data = load_batch_result(batch_id)
-    except FileNotFoundError:
-        abort(404)
-
-    delimiter = "," if file_format == "csv" else "\t"
-    body = batch_summary_rows_as_delimited(batch_data, delimiter=delimiter)
-    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
-    filename = f"batch_summary_{batch_id}.{file_format}"
-    return Response(
-        body,
-        mimetype=mimetype,
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    return _delimited_download(
+        lambda: load_batch_result(batch_id),
+        batch_summary_rows_as_delimited,
+        f"batch_summary_{batch_id}",
+        file_format,
     )
 
 
 @app.get("/batch-results/<batch_id>/apoe-summary.<file_format>")
 def download_apoe_summary(batch_id: str, file_format: str):
     """Download APOE probe count summaries as CSV or TSV."""
-    if file_format not in {"csv", "tsv"}:
-        abort(404)
-
-    try:
-        batch_data = load_batch_result(batch_id)
-    except FileNotFoundError:
-        abort(404)
-
-    if not batch_data.get("apoe_probe_preset"):
-        abort(404)
-
-    delimiter = "," if file_format == "csv" else "\t"
-    body = apoe_summary_rows_as_delimited(batch_data, delimiter=delimiter)
-    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
-    filename = f"apoe_probe_summary_{batch_id}.{file_format}"
-    return Response(
-        body,
-        mimetype=mimetype,
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    return _delimited_download(
+        lambda: load_batch_result(batch_id),
+        apoe_summary_rows_as_delimited,
+        f"apoe_probe_summary_{batch_id}",
+        file_format,
+        guard=lambda data: data.get("apoe_probe_preset"),
     )
 
 
 @app.get("/batch-results/<batch_id>/etol-summary.<file_format>")
 def download_etol_summary(batch_id: str, file_format: str):
     """Download eToL per-species exact-hit count summaries as CSV or TSV."""
-    if file_format not in {"csv", "tsv"}:
-        abort(404)
-
-    try:
-        batch_data = load_batch_result(batch_id)
-    except FileNotFoundError:
-        abort(404)
-
-    if not batch_data.get("etol_probe_preset"):
-        abort(404)
-
-    delimiter = "," if file_format == "csv" else "\t"
-    body = etol_summary_rows_as_delimited(batch_data, delimiter=delimiter)
-    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
-    filename = f"etol_species_summary_{batch_id}.{file_format}"
-    return Response(
-        body,
-        mimetype=mimetype,
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    return _delimited_download(
+        lambda: load_batch_result(batch_id),
+        etol_summary_rows_as_delimited,
+        f"etol_species_summary_{batch_id}",
+        file_format,
+        guard=lambda data: data.get("etol_probe_preset"),
     )
 
 
 @app.get("/batch-results/<batch_id>/etol-probe-counts.<file_format>")
 def download_etol_probe_counts(batch_id: str, file_format: str):
     """Download full per-probe exact-hit count data (every probe) as CSV or TSV."""
-    if file_format not in {"csv", "tsv"}:
-        abort(404)
-
-    try:
-        batch_data = load_batch_result(batch_id)
-    except FileNotFoundError:
-        abort(404)
-
-    if not batch_data.get("etol_probe_preset"):
-        abort(404)
-
-    delimiter = "," if file_format == "csv" else "\t"
-    body = etol_probe_counts_as_delimited(batch_data, delimiter=delimiter)
-    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
-    filename = f"etol_probe_counts_{batch_id}.{file_format}"
-    return Response(
-        body,
-        mimetype=mimetype,
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    return _delimited_download(
+        lambda: load_batch_result(batch_id),
+        etol_probe_counts_as_delimited,
+        f"etol_probe_counts_{batch_id}",
+        file_format,
+        guard=lambda data: data.get("etol_probe_preset"),
     )
 
 
 @app.get("/batch-results/<batch_id>/etol-confusion.<file_format>")
 def download_etol_confusion(batch_id: str, file_format: str):
     """Download the eToL-V confusion matrix (per-cell) as CSV or TSV."""
-    if file_format not in {"csv", "tsv"}:
-        abort(404)
-
-    try:
-        batch_data = load_batch_result(batch_id)
-    except FileNotFoundError:
-        abort(404)
-
-    if batch_data.get("etol_preset_key") != "etol_v":
-        abort(404)
-
-    delimiter = "," if file_format == "csv" else "\t"
-    body = etol_confusion_rows_as_delimited(batch_data, delimiter=delimiter)
-    mimetype = "text/csv" if file_format == "csv" else "text/tab-separated-values"
-    filename = f"etol_v_confusion_{batch_id}.{file_format}"
-    return Response(
-        body,
-        mimetype=mimetype,
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    return _delimited_download(
+        lambda: load_batch_result(batch_id),
+        etol_confusion_rows_as_delimited,
+        f"etol_v_confusion_{batch_id}",
+        file_format,
+        guard=lambda data: data.get("etol_preset_key") == "etol_v",
     )
 
 
@@ -658,7 +616,6 @@ def run_batch_blast_route():
 
     program = request.form.get("program", "blastn")
     database_ids = request.form.getlist("database_ids")
-    output_format = request.form.get("output_format", "tabular")
     apoe_probe_preset = request.form.get("apoe_probe_preset") == "1"
     # Exactly one exact-match probe preset can run at a time. The UI enforces
     # this, but the server resolves it deterministically too: pick the first
@@ -713,10 +670,9 @@ def run_batch_blast_route():
         if etol_preset_is_microbial(etol_preset_key):
             control_query_ids = etol_control_query_ids(etol_preset_key)
     if exact_probe_preset:
-        # Exact-match/net probe presets always run BLASTN with tabular parsing so
-        # the preset hit filters below can be applied consistently.
+        # Exact-match/net probe presets always run BLASTN so the preset hit
+        # filters below can be applied consistently.
         program = "blastn"
-        output_format = "tabular"
 
     # Secondary human filter: drop matched patient reads that also hit the human
     # genome. Only meaningful for the microbial eToL presets (the APOE/eToL
@@ -861,7 +817,6 @@ def run_batch_blast_route():
                 result = run_blast_probe_panel(
                     panel_fasta=sequence,
                     database=database.db_prefix_path,
-                    output_format=output_format,
                     timeout_seconds=timeout_value,
                     num_threads=threads_per_job,
                 )
@@ -870,7 +825,6 @@ def run_batch_blast_route():
                     sequence=sequence,
                     database=database.db_prefix_path,
                     program=program,
-                    output_format=output_format,
                     # APOE exact-match and regular batch runs: run_blast applies
                     # the exact-match overrides (blastn-short, 100% identity and
                     # coverage, uncapped targets) when exact_match_probe is set.
@@ -1139,21 +1093,13 @@ def run_batch_blast_route():
                 display_name = get_database(int(raw_database_id)).display_name
             except Exception:
                 pass
-            row = {
-                "database_id": raw_database_id,
-                "display_name": display_name,
-                "db_prefix_path": "",
-                "database_total_bytes": 0,
-                "database_size_label": "unknown",
-                "returncode": "",
-                "runtime_seconds": "",
-                "hit_count": 0,
-                "hits": [],
-                "run_id": "",
-                "human_filter": None,
-                "error": str(exc),
+            return {
+                "row": _error_result_row(display_name, str(exc), database_id=raw_database_id),
+                "runtime": 0.0,
+                "hits": 0,
+                "query_count": 0,
+                "query_total_length": 0,
             }
-            return {"row": row, "runtime": 0.0, "hits": 0, "query_count": 0, "query_total_length": 0}
         finally:
             # One database finished (success or error); advance the live counter
             # the waiting page polls.
@@ -1201,22 +1147,7 @@ def run_batch_blast_route():
         if isinstance(outcome, Exception):
             # Defensive: run_single_database catches its own errors, but never
             # let a leaked exception drop a database from the results table.
-            database_results.append(
-                {
-                    "database_id": "",
-                    "display_name": "Unknown database",
-                    "db_prefix_path": "",
-                    "database_total_bytes": 0,
-                    "database_size_label": "unknown",
-                    "returncode": "",
-                    "runtime_seconds": "",
-                    "hit_count": 0,
-                    "hits": [],
-                    "run_id": "",
-                    "human_filter": None,
-                    "error": str(outcome),
-                }
-            )
+            database_results.append(_error_result_row("Unknown database", str(outcome)))
             continue
         database_results.append(outcome["row"])
         total_runtime_seconds += outcome["runtime"]
@@ -1233,7 +1164,6 @@ def run_batch_blast_route():
 
     payload = {
         "program": program,
-        "output_format": output_format,
         "query_count": query_count,
         "query_total_length": query_total_length,
         "total_runtime_seconds": total_runtime_seconds,

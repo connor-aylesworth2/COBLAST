@@ -38,7 +38,7 @@
         action="/batch-blast"
         enctype="multipart/form-data"
         data-wait-title="Running batch BLAST"
-        data-wait-messages="Preparing the shared query FASTA.|Running selected databases one at a time.|Saving per-database results.|Aggregating hits for export.|Large SRA-derived databases can take a long time."
+        data-wait-messages="Preparing the shared query FASTA.|Searching the selected databases in parallel.|Saving per-database results.|Aggregating hits for export.|Large SRA-derived databases can take a long time."
         data-wait-poll="/batch-progress/"
       >
         <input type="hidden" name="job_id" id="batch_job_id">

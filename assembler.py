@@ -6,11 +6,10 @@ related species rather than a unique one, the paper pins the exact species by
 assembling a probe/species' matched reads into longer contigs (it used CAP3 and
 EGassembler), then re-identifying and re-probing with those contigs.
 
-This module provides that assembly step behind a small interface so the eToL
-batch route depends on the abstraction "reads -> contigs" rather than on any one
-assembler. :class:`Cap3Assembler` is the default backend (the tool the paper
-used); the :class:`Assembler` protocol lets another engine -- or a no-op in
-tests -- be substituted without touching the pipeline.
+This module provides that assembly step. :class:`Cap3Assembler` is the default
+backend (the tool the paper used); callers depend only on its ``is_available``/
+``assemble`` methods, so another engine -- or a no-op in tests -- can be
+substituted by duck typing without touching the pipeline.
 
 CAP3 is filename-driven: it reads one input FASTA and writes its results to
 sibling files (``<input>.cap.contigs``, ``.cap.singlets``, ``.cap.ace`` ...), so
@@ -23,11 +22,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, runtime_checkable
 import re
 import subprocess
 import tempfile
 
+from blast_runner import reads_to_fasta
 from config import cap3_exe
 
 
@@ -56,32 +55,6 @@ class Contig:
             "num_reads": self.num_reads,
             "length": self.length,
         }
-
-
-@runtime_checkable
-class Assembler(Protocol):
-    """Turns a set of reads into assembled contigs.
-
-    Implementations must be safe to call from worker threads and must not raise
-    for the ordinary "nothing assembled" outcome -- they return an empty list
-    instead. A genuine backend failure (e.g. the assembler process erroring) may
-    raise, so the caller can record a note and keep the rest of the run alive.
-    """
-
-    name: str
-
-    def is_available(self) -> bool:
-        """Return True when the backend can actually run (e.g. binary present)."""
-        ...
-
-    def assemble(self, reads: dict[str, str]) -> list[Contig]:
-        """Assemble ``{read_id: sequence}`` into contigs (possibly empty)."""
-        ...
-
-
-def _reads_to_fasta(reads: dict[str, str]) -> str:
-    """Render ``{read_id: sequence}`` as FASTA text for the assembler input."""
-    return "".join(f">{read_id}\n{sequence}\n" for read_id, sequence in reads.items())
 
 
 # CAP3's ACE ``CO`` (contig) lines look like ``CO <name> <nbases> <nreads> ...``;
@@ -168,7 +141,7 @@ class Cap3Assembler:
         exe = cap3_exe()  # FileNotFoundError here is a caller bug; gate on is_available().
         with tempfile.TemporaryDirectory(prefix="cap3_") as tmpdir:
             reads_path = Path(tmpdir) / "reads.fasta"
-            reads_path.write_text(_reads_to_fasta(usable), encoding="utf-8")
+            reads_path.write_text(reads_to_fasta(usable), encoding="utf-8")
 
             # CAP3 writes outputs next to (and named after) the input file, so we
             # run with cwd=tmpdir and reference the input by name.
@@ -208,6 +181,6 @@ class Cap3Assembler:
             )
 
 
-def default_assembler() -> Assembler:
+def default_assembler() -> "Cap3Assembler":
     """Return the default contig-assembly backend (CAP3, CAP3 defaults)."""
     return Cap3Assembler()

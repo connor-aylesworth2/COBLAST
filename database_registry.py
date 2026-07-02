@@ -250,16 +250,6 @@ def list_databases() -> list[RegisteredDatabase]:
     return [row_to_database(row) for row in rows]
 
 
-def list_compatible_databases(required_db_type: str) -> list[RegisteredDatabase]:
-    """Return available databases that match a BLAST program's db type."""
-    required_db_type = validate_db_type(required_db_type)
-    return [
-        database
-        for database in list_databases()
-        if database.db_type == required_db_type and database.status == "available"
-    ]
-
-
 def get_database_by_prefix(db_prefix_path: str | Path) -> RegisteredDatabase | None:
     """Find a database row by its normalized BLAST prefix path."""
     init_registry()

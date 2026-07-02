@@ -22,6 +22,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from blast_runner import reads_to_fasta
 from config import blast_exe
 from database_registry import blast_safe_path
 
@@ -165,10 +166,7 @@ def find_human_read_ids(
         return set()
     with tempfile.TemporaryDirectory(prefix="human_filter_q_") as tmpdir:
         query_path = Path(tmpdir) / "reads.fasta"
-        query_path.write_text(
-            "".join(f">{read_id}\n{sequence}\n" for read_id, sequence in reads.items()),
-            encoding="utf-8",
-        )
+        query_path.write_text(reads_to_fasta(reads), encoding="utf-8")
         # -max_target_seqs 1 keeps the single best subject, whose top HSP carries
         # the read's maximum bitscore -- exactly the value the threshold gates on.
         command = [

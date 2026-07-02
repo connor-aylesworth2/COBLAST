@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from etol_summary import sample_label_for
+
 
 APOE_PROBE_DEFINITIONS = [
     {
@@ -63,18 +65,8 @@ def _percentage(numerator: int, denominator: int) -> str:
 
 
 def _sample_label(database_result: dict[str, Any]) -> str:
-    search_text = " ".join(
-        str(database_result.get(key, ""))
-        for key in ("display_name", "db_prefix_path")
-    )
-    accession_match = APOE_ACCESSION_PATTERN.search(search_text)
-    if accession_match:
-        return accession_match.group(0).upper()
-    return (
-        str(database_result.get("display_name") or "").strip()
-        or f"Database {database_result.get('database_id', '')}".strip()
-        or "Unknown sample"
-    )
+    """APOE sample label (experiment-accession grammar; shared body in etol_summary)."""
+    return sample_label_for(database_result, APOE_ACCESSION_PATTERN)
 
 
 def build_apoe_probe_summary(database_results: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -20,7 +20,6 @@ from typing import Any
 
 from config import (
     DISALLOWED_BLAST_OPTIONS,
-    REMOTE_BLAST_ENABLED,
     blast_exe,
     default_thread_count,
 )
@@ -86,10 +85,9 @@ BLAST_PROGRAMS = {
         "allowed_tasks": set(),
     },
 }
-BLAST_OUTPUT_FORMATS = {
-    # Format 6 is tabular; naming the columns keeps parsing predictable.
-    "tabular": "6 " + " ".join(OUTFMT6_FIELDS),
-}
+# Format 6 is tabular; naming the columns keeps parsing predictable. The
+# interface only ever produces/parses this one format.
+BLAST_OUTFMT = "6 " + " ".join(OUTFMT6_FIELDS)
 # Default wall-clock cap for a single search. BLAST+ itself has no timeout; this
 # is COBLAST's safety net, and the advanced "timeout" field can override it.
 DEFAULT_TIMEOUT_SECONDS = 3_600
@@ -174,7 +172,6 @@ class BlastResult:
     command: list[str]
     database_path: str
     database_total_bytes: int
-    output_format: str
     program: str
     runtime_seconds: float
     query_type: str
@@ -378,18 +375,8 @@ def parse_blast_tabular(stdout: str) -> list[dict[str, str]]:
     return hits
 
 
-def parse_blast_output(stdout: str, output_format: str = "tabular") -> list[dict[str, str]]:
-    """Parse BLAST stdout into result rows (tabular format-6 only)."""
-    if output_format != "tabular":
-        raise ValueError(f"Unsupported BLAST output format: {output_format}")
-    return parse_blast_tabular(stdout)
-
-
 def enforce_local_blast_only(command: list[str]) -> None:
     """Prevent accidental remote BLAST usage from this local-only prototype."""
-    if REMOTE_BLAST_ENABLED:
-        raise RuntimeError("Remote BLAST cannot be enabled for this local interface.")
-
     command_options = {part.lower() for part in command}
     blocked_options = {option.lower() for option in DISALLOWED_BLAST_OPTIONS}
     used_blocked_options = sorted(command_options & blocked_options)
@@ -452,20 +439,6 @@ def parse_percent_identity(program: str, value: str | None) -> str | None:
     return cleaned
 
 
-def parse_query_coverage(value: str | None) -> str | None:
-    """Validate an optional minimum query-coverage-per-HSP percentage (0-100)."""
-    cleaned = optional_text(value)
-    if cleaned is None:
-        return None
-    try:
-        number = float(cleaned)
-    except ValueError as exc:
-        raise ValueError("Minimum query coverage must be a number.") from exc
-    if number < 0 or number > 100:
-        raise ValueError("Minimum query coverage must be between 0 and 100.")
-    return cleaned
-
-
 def parse_mt_mode(value: str | None) -> str | None:
     """Validate the BLAST multi-thread mode (0 auto, 1 by query, 2 by db)."""
     cleaned = optional_text(value)
@@ -498,7 +471,6 @@ def build_blast_parameters(
     max_target_seqs: str | None,
     word_size: str | None,
     perc_identity: str | None,
-    qcov_hsp_perc: str | None = None,
     num_threads: int | str | None = None,
     mt_mode: str | None = None,
     exact_match_probe: bool = False,
@@ -530,7 +502,6 @@ def build_blast_parameters(
         1_000,
     )
     parsed_perc_identity = parse_percent_identity(program, perc_identity)
-    parsed_qcov_hsp_perc = parse_query_coverage(qcov_hsp_perc)
 
     if parsed_evalue is not None:
         parameters["evalue"] = parsed_evalue
@@ -540,8 +511,6 @@ def build_blast_parameters(
         parameters["word_size"] = parsed_word_size
     if parsed_perc_identity is not None:
         parameters["perc_identity"] = parsed_perc_identity
-    if parsed_qcov_hsp_perc is not None:
-        parameters["qcov_hsp_perc"] = parsed_qcov_hsp_perc
 
     if exact_match_probe:
         # Exact-match probe counting overrides the preset so deep patient
@@ -558,7 +527,6 @@ def build_blast_parameters(
         # dropped. Only max_target_seqs is lifted, so a probe matching many reads
         # in a deep patient database is counted in full rather than truncated.
         parameters.pop("perc_identity", None)
-        parameters.pop("qcov_hsp_perc", None)
         parameters["max_target_seqs"] = EXACT_MATCH_MAX_TARGET_SEQS
 
     num_threads_text = None if num_threads is None else str(num_threads)
@@ -582,12 +550,10 @@ def run_blast(
     program: str = "blastn",
     timeout_seconds: int | str | None = None,
     task: str | None = None,
-    output_format: str = "tabular",
     evalue: str | None = None,
     max_target_seqs: str | None = None,
     word_size: str | None = None,
     perc_identity: str | None = None,
-    qcov_hsp_perc: str | None = None,
     num_threads: int | str | None = None,
     mt_mode: str | None = None,
     exact_match_probe: bool = False,
@@ -598,8 +564,6 @@ def run_blast(
     if program not in BLAST_PROGRAMS:
         allowed = ", ".join(BLAST_PROGRAMS)
         raise ValueError(f"Unsupported BLAST program: {program}. Choose one of: {allowed}.")
-    if output_format not in BLAST_OUTPUT_FORMATS:
-        raise ValueError(f"Unsupported BLAST output format: {output_format}")
     timeout_value = str(timeout_seconds) if timeout_seconds is not None else None
     if optional_text(timeout_value) is None:
         timeout_value = str(DEFAULT_TIMEOUT_SECONDS)
@@ -631,7 +595,6 @@ def run_blast(
         max_target_seqs=max_target_seqs,
         word_size=word_size,
         perc_identity=perc_identity,
-        qcov_hsp_perc=qcov_hsp_perc,
         num_threads=effective_num_threads,
         mt_mode=mt_mode,
         exact_match_probe=exact_match_probe,
@@ -661,7 +624,7 @@ def run_blast(
             "-db",
             db_path,
             "-outfmt",
-            BLAST_OUTPUT_FORMATS[output_format],
+            BLAST_OUTFMT,
         ]
         if selected_task is not None:
             cmd.extend(["-task", selected_task])
@@ -683,7 +646,7 @@ def run_blast(
 
     return BlastResult(
         returncode=completed.returncode,
-        hits=parse_blast_output(completed.stdout, output_format)
+        hits=parse_blast_tabular(completed.stdout)
         if completed.returncode == 0
         else [],
         stdout=completed.stdout,
@@ -691,7 +654,6 @@ def run_blast(
         command=cmd,
         database_path=db_path,
         database_total_bytes=database_total_bytes,
-        output_format=output_format,
         program=program,
         runtime_seconds=runtime_seconds,
         query_type=query.sequence_type,
@@ -724,11 +686,15 @@ def _pairs_to_fasta(pairs: Iterable[tuple[str, str]]) -> str:
     return "".join(f">{header}\n{sequence}\n" for header, sequence in pairs)
 
 
+def reads_to_fasta(records: dict[str, str]) -> str:
+    """Render ``{id: sequence}`` as FASTA text (shared by the read/contig helpers)."""
+    return "".join(f">{rec_id}\n{sequence}\n" for rec_id, sequence in records.items())
+
+
 def run_blast_probe_panel(
     panel_fasta: str,
     database: str | Path,
     *,
-    output_format: str = "tabular",
     timeout_seconds: int | str | None = None,
     num_threads: int | str | None = None,
 ) -> BlastResult:
@@ -745,7 +711,6 @@ def run_blast_probe_panel(
         database=database,
         program="blastn",
         task=MEGABLAST_TASK,
-        output_format=output_format,
         timeout_seconds=timeout_seconds,
         num_threads=num_threads,
         etol_net_probe=True,

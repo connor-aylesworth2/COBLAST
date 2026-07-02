@@ -10,7 +10,6 @@ import sys
 DEFAULT_BLAST_BIN = Path(r"C:\Program Files\NCBI\blast-2.17.0+\bin")
 FLASK_HOST = "127.0.0.1"
 DEFAULT_FLASK_PORT = 5000
-REMOTE_BLAST_ENABLED = False
 DISALLOWED_BLAST_OPTIONS = {"-remote"}
 
 

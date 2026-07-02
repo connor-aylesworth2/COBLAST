@@ -27,6 +27,7 @@ import subprocess
 import tempfile
 from typing import Any
 
+from blast_runner import reads_to_fasta
 from config import blast_exe
 from database_registry import blast_safe_path
 from human_filter import (
@@ -60,11 +61,6 @@ REPROBE_EVALUE = 0.01
 # silently truncated. ponytail: 100k covers ordinary SRAs; raise only if a single
 # contig legitimately matches more reads than this in one library.
 REPROBE_MAX_TARGET_SEQS = "100000"
-
-
-def _to_fasta(records: dict[str, str]) -> str:
-    """Render ``{id: sequence}`` as FASTA text."""
-    return "".join(f">{rec_id}\n{sequence}\n" for rec_id, sequence in records.items())
 
 
 # Reference hit titles look like ``ACC.start.end Domain;Phylum;...;Species``; the
@@ -166,7 +162,7 @@ def name_contigs(
         return {}
     with tempfile.TemporaryDirectory(prefix="contig_name_") as tmpdir:
         query_path = Path(tmpdir) / "contigs.fasta"
-        query_path.write_text(_to_fasta(named_contigs), encoding="utf-8")
+        query_path.write_text(reads_to_fasta(named_contigs), encoding="utf-8")
         command = [
             str(blast_exe("blastn")),
             "-task",
@@ -221,8 +217,8 @@ def confirm_contig_reads(
     with tempfile.TemporaryDirectory(prefix="contig_confirm_") as tmpdir:
         reads_path = Path(tmpdir) / "reads.fasta"
         contigs_path = Path(tmpdir) / "contigs.fasta"
-        reads_path.write_text(_to_fasta(reads), encoding="utf-8")
-        contigs_path.write_text(_to_fasta(subjects), encoding="utf-8")
+        reads_path.write_text(reads_to_fasta(reads), encoding="utf-8")
+        contigs_path.write_text(reads_to_fasta(subjects), encoding="utf-8")
         # ponytail: -subject runs single-threaded (BLAST ignores -num_threads
         # with a subject file). Fine for a few contigs x a few thousand reads;
         # build a real DB per taxon only if a taxon's read count makes this slow.
@@ -375,7 +371,7 @@ def _reprobe_hits(
         return {}
     with tempfile.TemporaryDirectory(prefix="contig_reprobe_") as tmpdir:
         query_path = Path(tmpdir) / "key_contigs.fasta"
-        query_path.write_text(_to_fasta(named_contigs), encoding="utf-8")
+        query_path.write_text(reads_to_fasta(named_contigs), encoding="utf-8")
         command = [
             str(blast_exe("blastn")),
             "-task",

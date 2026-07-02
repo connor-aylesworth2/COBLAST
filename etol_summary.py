@@ -412,13 +412,19 @@ def etol_preset_options() -> list[dict[str, Any]]:
     return options
 
 
-def _sample_label(database_result: dict[str, Any]) -> str:
-    """Pick a human-friendly sample label, preferring an SRA accession."""
+def sample_label_for(
+    database_result: dict[str, Any], accession_pattern: "re.Pattern[str]"
+) -> str:
+    """Sample label preferring an accession match, else display name / id fallback.
+
+    ``accession_pattern`` is the grammar tried first, so a caller with a narrower
+    accession set (e.g. the APOE summary) reuses this body instead of copying it.
+    """
     search_text = " ".join(
         str(database_result.get(key, ""))
         for key in ("display_name", "db_prefix_path")
     )
-    accession_match = ETOL_ACCESSION_PATTERN.search(search_text)
+    accession_match = accession_pattern.search(search_text)
     if accession_match:
         return accession_match.group(0).upper()
     return (
@@ -426,6 +432,11 @@ def _sample_label(database_result: dict[str, Any]) -> str:
         or f"Database {database_result.get('database_id', '')}".strip()
         or "Unknown sample"
     )
+
+
+def _sample_label(database_result: dict[str, Any]) -> str:
+    """eToL sample label (uses the eToL SRR/SRX accession grammar)."""
+    return sample_label_for(database_result, ETOL_ACCESSION_PATTERN)
 
 
 def _sample_condition(database_result: dict[str, Any]) -> str:

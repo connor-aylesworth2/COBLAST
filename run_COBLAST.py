@@ -20,6 +20,8 @@ import threading
 import time
 import webbrowser
 
+from config import is_frozen, resource_root as bundle_root, tool_name
+
 
 APP_NAME = "COBLAST"
 MIN_PYTHON = (3, 11)
@@ -37,18 +39,6 @@ class LauncherError(RuntimeError):
     """Expected setup/startup failures that should be shown cleanly to users."""
 
     pass
-
-
-def is_frozen() -> bool:
-    """Return True when this launcher is running from a PyInstaller executable."""
-    return bool(getattr(sys, "frozen", False))
-
-
-def bundle_root() -> Path:
-    """Locate read-only files packaged beside or inside the launcher."""
-    if is_frozen():
-        return Path(getattr(sys, "_MEIPASS")).resolve()
-    return Path(__file__).resolve().parent
 
 
 @lru_cache(maxsize=1)
@@ -106,11 +96,6 @@ def standalone_data_dir() -> Path:
 def step(message: str) -> None:
     """Print a visible progress heading in the terminal."""
     print(f"\n[{APP_NAME}] {message}", flush=True)
-
-
-def tool_name(name: str) -> str:
-    """Add .exe suffix on Windows when checking BLAST+ tools."""
-    return f"{name}.exe" if os.name == "nt" else name
 
 
 def display_command(command: list[str]) -> str:

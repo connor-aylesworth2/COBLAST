@@ -171,13 +171,11 @@ def test_parameters_apply_overrides():
         max_target_seqs="50",
         word_size="11",
         perc_identity="95",
-        qcov_hsp_perc="90",
     )
     assert params["evalue"] == "1e-5"
     assert params["max_target_seqs"] == "50"
     assert params["word_size"] == "11"
     assert params["perc_identity"] == "95"
-    assert params["qcov_hsp_perc"] == "90"
 
 
 def test_exact_match_probe_lifts_target_cap_and_enforces_full_coverage():
@@ -226,16 +224,15 @@ def test_etol_net_probe_uses_default_scoring_with_lifted_cap():
     assert params["max_target_seqs"] == EXACT_MATCH_MAX_TARGET_SEQS
 
 
-def test_etol_net_probe_drops_user_supplied_identity_and_coverage():
-    # Identity/coverage values must not leak through the net path; they would
-    # defeat the purpose of keeping partial and imperfect matches.
+def test_etol_net_probe_drops_user_supplied_identity():
+    # A user identity value must not leak through the net path; it would defeat
+    # the purpose of keeping partial and imperfect matches.
     params = build_blast_parameters(
         program="blastn",
         evalue=None,
         max_target_seqs=None,
         word_size=None,
         perc_identity="95",
-        qcov_hsp_perc="80",
         etol_net_probe=True,
     )
     assert "perc_identity" not in params
@@ -250,18 +247,6 @@ def test_perc_identity_rejected_for_non_blastn():
             max_target_seqs=None,
             word_size=None,
             perc_identity="90",
-        )
-
-
-def test_invalid_qcov_hsp_perc_rejected():
-    with pytest.raises(ValueError):
-        build_blast_parameters(
-            program="blastn",
-            evalue=None,
-            max_target_seqs=None,
-            word_size=None,
-            perc_identity=None,
-            qcov_hsp_perc="150",
         )
 
 

@@ -178,7 +178,6 @@ def main() -> None:
             sequence=sequence,
             database=database,
             program=program,
-            output_format="tabular",
         )
         print(f"program={program}")
         print(f"returncode={result.returncode}")
