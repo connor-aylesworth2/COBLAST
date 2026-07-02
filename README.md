@@ -445,7 +445,9 @@ The workbench scans local SRA project folders from:
 
 - `COBLAST_SRA_DIR`, if set
 - `SRA_DATA_DIR`, if set
-- `COBLAST_data\sra` in standalone/runtime-data mode
+- the `sra` subfolder of the per-user data directory in standalone/runtime-data
+  mode — for the `.exe` that is `%LOCALAPPDATA%\COBLAST_data\sra` (for example
+  `C:\Users\<you>\AppData\Local\COBLAST_data\sra`)
 - a sibling `SRA_data` folder beside the source checkout, when present
 
 For a clinician-supplied SRA, the current local-first prototype assumes the SRA
@@ -465,12 +467,42 @@ The SRA workbench can:
   `.sra` file into a pilot FASTA, when `SRA_TOOLKIT_BIN` is set or a sibling
   `sratoolkit` folder is present
 
+### Getting SRA data onto your machine
+
+The workbench only *scans* local folders — it never downloads from NCBI. Get
+the data onto disk first, using one of two paths, then drop it in a per-project
+subfolder of the scanned `sra` folder (one folder per accession/patient, e.g.
+`%LOCALAPPDATA%\COBLAST_data\sra\SRRxxxxxxxx\`).
+
+**Path 1 — browser only (small pilot runs, no toolkit).** In the NCBI SRA Run
+Browser (`https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRRxxxxxxxx`),
+open the **Reads** tab, filter to a manageable read count, and download a
+**FASTA** subset. Save it as `...\sra\SRRxxxxxxxx\SRRxxxxxxxx.fasta`. The project
+shows as `fasta-ready`; use **Create Pilot DB**. (This export is capped/slow — it
+is a sample, not a whole run.) You can also download the raw `.sra` object from
+the Run Browser's **Data access** tab, but converting it still needs Path 2.
+
+**Path 2 — SRA Toolkit (full runs, and `.sra` conversion).** Browser FASTA
+export does not scale to a whole run. Install the NCBI SRA Toolkit, then:
+
+```powershell
+prefetch SRRxxxxxxxx
+fasterq-dump SRRxxxxxxxx --fasta --outdir "$env:LOCALAPPDATA\COBLAST_data\sra\SRRxxxxxxxx"
+```
+
+For a *full* eToL run build the database from the Databases page
+(`/databases` → Create from FASTA, type `nucl`) rather than the pilot sampler,
+which only takes the first N reads. To let the workbench's **Create Pilot FASTA**
+button run `fastq-dump` on a local `.sra` for you, point COBLAST at the toolkit:
+set `SRA_TOOLKIT_BIN` to its `bin` folder, or drop the unzipped
+`sratoolkit.<ver>` folder next to the `.exe`.
+
 The intended first simulation is deliberately small:
 
 1. Put one SRA project under a scanned folder such as:
 
    ```text
-   C:\COBLAST_data\sra\patient_001\patient_001.sra
+   %LOCALAPPDATA%\COBLAST_data\sra\patient_001\patient_001.sra
    ```
 
 2. If a full FASTA already exists, use `Create Pilot DB` with a small record
