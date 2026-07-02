@@ -38,6 +38,36 @@ mouse DB" (adapt build_etol_v_validation_db.sh), main cost is model caveats; and
 SARS-CoV-2 anomaly (rabbit hole). Timeline anchor: as of 2026-06-29, ~7 weeks to full
 dissertation (≈ mid-Aug 2026), writing NOT yet started.
 
+**ADVISOR VERDICT (2026-06-29, Doug + Rich replied, both enthusiastic):**
+- 2 more dev days APPROVED.
+- Re-probing: make it OFF by default, keep as an easy switch (needed only for future
+  less-specific probe sets). Doug wants a MANUAL check that 0-novel-reads isn't a
+  coding bug: BLAST a key contig back at the patient DB (megablast, E<0.01,
+  max_target_seqs 100000, outfmt "6 sseqid"), `comm -23` vs that taxon's net reads;
+  empty = correct (contig is built FROM those reads), non-empty while COBLAST says 0
+  = bug. Reuse scripts/run_manual_blast.sh.
+- Human false-positive strategy (Rich's "any ideas?"): COBLAST+ ALREADY automates
+  his manual confirm (read filter → contig-level BLAST-back-vs-human → drop "Homo
+  sapiens" contigs), and does it at contig level over the whole batch (stronger than
+  his 100-read spot check). Proposed additions: (a) make the human component of the
+  validation DB comprehensive (genome + mito + human rRNA/transcriptome — can only
+  reject what's in the DB); (b) emit a per-call provenance/audit line + COUNT the
+  human contigs dropped per taxon instead of dropping silently (the reviewer/clinician
+  audit trail); high-confidence tier = passes contig (+ LSU for headline) validation.
+- LSU (26S/28S): Rich says no easy automation but easy to pull a probe bunch. POSITION:
+  targeted confirmation of HEADLINE taxa only, not blanket; cheap to add as a 2nd
+  preset IF he supplies probes (eToL-V proved the machinery reuses); else skip. YAGNI.
+- **NOVEL STRETCH RESHAPED** (Rich: "point the telescope at several stars"): NOT one
+  question — combine **microbes-vs-age + Down syndrome + 5xFAD mouse** into ONE
+  "resolution-of-the-telescope" multi-cohort paper. 5xFAD is back ON (human_filter.py
+  is DB-agnostic → mouse just needs a mouse-genome BLAST DB via the validation-DB
+  script; no pipeline change). Pragmatic confirmation: spot-check high-abundance reads
+  only, do NOT back-check every read — this is what makes 3 cohorts fit the timeline.
+  Rich has age SRAs to resend. AdC×cellular-burden rides along as the cross-layer angle.
+- Publish: BioRxiv preprint (after validation floor) + GitHub (already live). Rich
+  wants tool access ("my hands on your telescope") — offer a build/walkthrough after the
+  2-day push. NCBI intro: ask Rich. Edinburgh Innovation (commercialisation): after data.
+
 **Headline narrative:** COBLAST+ IS the tool Veso explicitly called for — it removes eToL-V's stated #1 limitation (can't BLASTn vs SRA locally) by running locally vs patient-built DBs, and beats ViromeScan (her run: 50h + TB/batch, failed on 34/35 samples).
 
 **eToL-V port = preset + viral headers + ONE new validation DB** (net/human-filter/dedup/PGK-norm/CAP3/CSV all reused):

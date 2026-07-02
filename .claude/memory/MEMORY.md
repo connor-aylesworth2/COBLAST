@@ -3,3 +3,4 @@
 - [COBLAST+ AD application plan](coblast-ad-application-plan.md) — staged validation+novel-stretch plan; eToL-V porting checklist + two-target floor (reproduce Veso's confusion matrix)
 - [COBLAST+ verification anchor](coblast-verification-anchor.md) — spike-in positive control (tests/test_spike_in_control.py) = verification; result reproduction = validation; don't conflate
 - [PyInstaller build needs biopython](pyinstaller-build-needs-biopython.md) — build interpreter must have requirements.txt installed or the exe ships without Bio and crashes on launch
+- [Frozen stages silently no-op](coblast-frozen-stages-silent-noop.md) — frozen exe's data dir ≠ source's, so human filter/CAP3/contig-ID can return zeros; guarded now by --self-check build gate
