@@ -108,14 +108,19 @@ def load_batch_result(batch_id: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def result_rows_as_delimited(result_data: dict, delimiter: str) -> str:
-    """Render saved hits as CSV or TSV text."""
+def _columns_delimited(columns, rows, delimiter: str) -> str:
+    """Render ``rows`` as CSV/TSV using ``(key, header)`` column pairs."""
     buffer = io.StringIO()
     writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
-    writer.writerow([label for _, label in RESULT_COLUMNS])
-    for hit in result_data.get("hits", []):
-        writer.writerow([hit.get(key, "") for key, _ in RESULT_COLUMNS])
+    writer.writerow([label for _, label in columns])
+    for row in rows:
+        writer.writerow([row.get(key, "") for key, _ in columns])
     return buffer.getvalue()
+
+
+def result_rows_as_delimited(result_data: dict, delimiter: str) -> str:
+    """Render saved hits as CSV or TSV text."""
+    return _columns_delimited(RESULT_COLUMNS, result_data.get("hits", []), delimiter)
 
 
 def batch_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
@@ -249,17 +254,10 @@ def batch_summary_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
 
 def apoe_summary_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
     """Render APOE per-sample probe summaries as CSV or TSV text."""
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
-    writer.writerow([label for _, label in APOE_SUMMARY_EXPORT_COLUMNS])
-
     summary_rows = batch_data.get("apoe_probe_summary")
     if summary_rows is None:
         summary_rows = build_apoe_probe_summary(batch_data.get("database_results", []))
-
-    for row in summary_rows:
-        writer.writerow([apoe_summary_export_value(row, key) for key, _ in APOE_SUMMARY_EXPORT_COLUMNS])
-    return buffer.getvalue()
+    return _columns_delimited(APOE_SUMMARY_EXPORT_COLUMNS, summary_rows, delimiter)
 
 
 def _etol_records_for_batch(batch_data: dict) -> tuple:
@@ -269,24 +267,16 @@ def _etol_records_for_batch(batch_data: dict) -> tuple:
 
 def etol_summary_rows_as_delimited(batch_data: dict, delimiter: str) -> str:
     """Render eToL per-species exact-hit counts (every taxon) as CSV or TSV text."""
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
-    writer.writerow([label for _, label in ETOL_SPECIES_EXPORT_COLUMNS])
     records = _etol_records_for_batch(batch_data)
-    for row in etol_species_count_rows(batch_data.get("database_results", []), records):
-        writer.writerow([row.get(key, "") for key, _ in ETOL_SPECIES_EXPORT_COLUMNS])
-    return buffer.getvalue()
+    rows = etol_species_count_rows(batch_data.get("database_results", []), records)
+    return _columns_delimited(ETOL_SPECIES_EXPORT_COLUMNS, rows, delimiter)
 
 
 def etol_probe_counts_as_delimited(batch_data: dict, delimiter: str) -> str:
     """Render full eToL per-probe exact-hit counts (every probe) as CSV or TSV text."""
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
-    writer.writerow([label for _, label in ETOL_PROBE_EXPORT_COLUMNS])
     records = _etol_records_for_batch(batch_data)
-    for row in etol_probe_count_rows(batch_data.get("database_results", []), records):
-        writer.writerow([row.get(key, "") for key, _ in ETOL_PROBE_EXPORT_COLUMNS])
-    return buffer.getvalue()
+    rows = etol_probe_count_rows(batch_data.get("database_results", []), records)
+    return _columns_delimited(ETOL_PROBE_EXPORT_COLUMNS, rows, delimiter)
 
 
 ETOL_CONFUSION_COLUMNS = [
@@ -403,26 +393,3 @@ def etol_contigs_as_fasta(batch_data: dict) -> str:
                     )
                 blocks.append(f">{header}\n{wrap_sequence(sequence)}")
     return ("\n".join(blocks) + "\n") if blocks else ""
-
-
-def apoe_summary_export_value(row: dict, key: str) -> object:
-    """Return APOE export values with compatibility for older saved summaries."""
-    if key == "sample_database":
-        return (
-            row.get("sample_database")
-            or row.get("database_sample")
-            or row.get("sample")
-            or row.get("database")
-            or ""
-        )
-    if key == "c_to_t_percent" and row.get(key, "") == "":
-        try:
-            ae4_t_hits = int(row.get("ae4_t_hits", 0))
-            ae2_t_hits = int(row.get("ae2_t_hits", 0))
-            total_hits = int(row.get("total_exact_probe_hits", 0))
-        except (TypeError, ValueError):
-            return ""
-        if total_hits <= 0:
-            return ""
-        return f"{((ae4_t_hits + ae2_t_hits) / total_hits) * 100:.2f}"
-    return row.get(key, "")

@@ -61,7 +61,7 @@
           </label>
           {% for option in etol_preset_options %}
             <label class="checkbox-row checkbox-row--wide">
-              <input class="probe-preset" id="{{ option.form_field }}" name="{{ option.form_field }}" type="checkbox" value="1" data-preset-panel="{{ option.panel_label }}" data-microbial="{{ 'true' if option.microbial else 'false' }}">
+              <input class="probe-preset" id="{{ option.form_field }}" name="{{ option.form_field }}" type="checkbox" value="1" data-preset-panel="{{ option.panel_label }}" data-microbial="true">
               <span>
                 <strong>{{ option.label }}</strong>
                 <details class="preset-info">

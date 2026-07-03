@@ -54,15 +54,17 @@ Microbial counts are then reported both raw and as **reads per host cell**
 represents, as in the paper. When no control reads are found, normalization is
 reported as `n/a`.
 
-There are two eToL presets, plus the APOE preset; **only one preset can be
-active at a time** (selecting one clears the others). Both eToL presets append
-the PGK1/hNSE control probes to their search for host-cell normalization:
+There are three eToL presets, plus the APOE preset; **only one preset can be
+active at a time** (selecting one clears the others). Every eToL preset appends
+the PGK1/hNSE control probes to its search for host-cell normalization:
 
 - **eToL Full** — the full microbial panel, `data/eToL_probes.fasta` (1,017
   64-mer probes, 120 species across Archaea, Bacteria, Chloroplastida,
   Amoebozoa, basal Eukaryota, Fungi, and Holozoa/Metazoa).
 - **eToL Quick** — one probe per species (the first probe of each of the 120
   species), a slim 120-probe panel for fast test runs.
+- **eToL-V** — the viral panel of structural-protein probes across four human
+  viral classes (herpesviruses, adenoviruses, papillomaviruses, polyomaviruses).
 
 This is intended for the patient-sample use case: register a patient's brain (or
 other tissue) RNA-seq reads as a local nucleotide database, select it (or several
@@ -128,7 +130,7 @@ from the form (`/design-matrix-template.csv`). Parsing lives in `design_matrix.p
 
 ## Secondary human filter
 
-The microbial eToL presets (eToL Full and eToL Quick) offer an optional
+The eToL presets (eToL Full, eToL Quick, and eToL-V) offer an optional
 **secondary human filter** that removes matched patient reads that are actually
 human-derived — the second-round host filtering required by Hu, Haas & Lathe
 2022 because sequence similarity is non-transitive (a read can be human yet still
@@ -163,7 +165,7 @@ makeblastdb -in GCF_000001405.40_GRCh38.p14_genomic.fna -dbtype nucl ^
   -title "Human GRCh38.p14" -out human_GRCh38
 ```
 
-The filter is offered only for the microbial presets; the APOE panel is human by
+The filter is offered for every eToL preset; the APOE panel is human by
 design, so human-read filtering does not apply to it.
 
 ## Contig re-probing (optional second pass)
@@ -176,8 +178,7 @@ is built from the sample's own reads, it is a more sensitive, sample-specific
 probe than the fixed reference panel — it can reach reads from a divergent strain
 or from gene regions that fall between the net's probes.
 
-Requires **contig assembly** to be enabled, and applies only to the microbial
-eToL presets.
+Requires **contig assembly** to be enabled, and applies to any eToL preset.
 
 Contig assembly (and therefore re-probing) uses the **CAP3** assembler, which
 COBLAST+ does not ship for licensing reasons. Install

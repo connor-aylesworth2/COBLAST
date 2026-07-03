@@ -179,8 +179,3 @@ class Cap3Assembler:
                 contigs_path.read_text(encoding="utf-8", errors="replace"),
                 read_counts,
             )
-
-
-def default_assembler() -> "Cap3Assembler":
-    """Return the default contig-assembly backend (CAP3, CAP3 defaults)."""
-    return Cap3Assembler()

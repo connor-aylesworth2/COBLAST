@@ -32,6 +32,7 @@ from __future__ import annotations
 import csv
 from collections import OrderedDict
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from config import resource_path
@@ -92,8 +93,7 @@ def universe_taxa(universe: "OrderedDict[str, str | None]" = VESO_UNIVERSE) -> d
 def load_wgs_truth(path: Any = WGS_TRUTH_PATH) -> dict[tuple[str, str], int]:
     """Load ``(srx, virus) -> count`` from the bundled WGS ground-truth CSV."""
     truth: dict[tuple[str, str], int] = {}
-    text = (path.read_text(encoding="utf-8") if hasattr(path, "read_text")
-            else open(path, encoding="utf-8").read())
+    text = Path(path).read_text(encoding="utf-8")
     for row in csv.DictReader(text.splitlines()):
         try:
             count = int(float(row.get("count", "0") or 0))
@@ -105,8 +105,7 @@ def load_wgs_truth(path: Any = WGS_TRUTH_PATH) -> dict[tuple[str, str], int]:
 
 def load_crosswalk(path: Any = SRA_CROSSWALK_PATH) -> dict[str, str]:
     """Load a sample-id -> SRX map (both SRR and SRX keys resolve to the SRX)."""
-    text = (path.read_text(encoding="utf-8") if hasattr(path, "read_text")
-            else open(path, encoding="utf-8").read())
+    text = Path(path).read_text(encoding="utf-8")
     alias: dict[str, str] = {}
     for row in csv.DictReader(text.splitlines()):
         srx = row["srx"].strip()

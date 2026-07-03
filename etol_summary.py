@@ -198,7 +198,6 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
                 "label": "eToL Full probe batch",
                 "short_label": "eToL Full",
                 "panel_label": "eToL Full",
-                "microbial": True,
                 "description": (
                     "Microbial electronic Tree of Life panel across Archaea, "
                     "Bacteria, Chloroplastida, Amoebozoa, basal Eukaryota, Fungi, "
@@ -218,7 +217,6 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
                 "label": "eToL Quick probe batch",
                 "short_label": "eToL Quick (one probe per species)",
                 "panel_label": "eToL Quick",
-                "microbial": True,
                 "description": (
                     "Same as the eToL Full preset, but uses only the first probe "
                     "of each species (one probe per species) for fast test runs."
@@ -234,7 +232,6 @@ ETOL_PRESETS: "OrderedDict[str, dict[str, Any]]" = OrderedDict(
                 "label": "eToL-V viral probe batch",
                 "short_label": "eToL-V (viruses)",
                 "panel_label": "eToL-V",
-                "microbial": True,
                 "description": (
                     "Viral electronic Tree of Life (eToL-V) panel of structural-"
                     "protein probes across four human viral classes -- "
@@ -269,11 +266,6 @@ def etol_preset_form_field(key: str) -> str:
 def etol_preset_label(key: str) -> str:
     """Return the short label shown on the results page."""
     return ETOL_PRESETS[key]["short_label"]
-
-
-def etol_preset_is_microbial(key: str) -> bool:
-    """Return True for microbial panels (eligible for human-read filtering)."""
-    return bool(ETOL_PRESETS[key]["microbial"])
 
 
 def etol_preset_fasta(key: str) -> str:
@@ -332,15 +324,11 @@ def etol_control_query_ids(key: str | None = None) -> frozenset[str]:
 def etol_search_pairs(key: str) -> tuple[tuple[str, str], ...]:
     """Return the (header, sequence) probes actually BLASTed for a preset.
 
-    Microbial presets append the housekeeping control probes so a single search
-    yields both the microbial net and the host-normalization counts (the control
-    counts are the host-cell normalization denominator). The standalone control
-    preset is searched as-is.
+    Every panel appends its housekeeping control probes so a single search yields
+    both the net and the host-normalization counts (the control counts are the
+    host-cell normalization denominator).
     """
-    pairs = tuple(ETOL_PRESETS[key]["pairs"]())
-    if etol_preset_is_microbial(key):
-        pairs = pairs + _control_pairs_for(key)
-    return pairs
+    return tuple(ETOL_PRESETS[key]["pairs"]()) + _control_pairs_for(key)
 
 
 def etol_search_fasta(key: str) -> str:
@@ -405,7 +393,6 @@ def etol_preset_options() -> list[dict[str, Any]]:
                 "short_label": preset["short_label"],
                 "panel_label": preset["panel_label"],
                 "description": preset["description"],
-                "microbial": preset["microbial"],
                 "probe_count": etol_preset_probe_count(key),
             }
         )

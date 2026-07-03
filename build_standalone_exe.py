@@ -37,6 +37,29 @@ OPTIONAL_BLAST_FILES = [
     "nghttp2.dll",
 ]
 
+# Local modules bundled as hidden imports. PyInstaller's import graph misses
+# modules imported lazily inside functions (e.g. run_COBLAST's late imports), so
+# name them explicitly. One list feeds both the existence check and the
+# --hidden-import flags so the two cannot drift. run_COBLAST (the entry script)
+# and config (imported normally, so PyInstaller finds it) are handled separately.
+MODULES = [
+    "app",
+    "blast_runner",
+    "database_registry",
+    "result_store",
+    "database_size",
+    "human_filter",
+    "sra_workflow",
+    "smoke_test",
+    "frozen_self_check",
+    "apoe_summary",
+    "assembler",
+    "contig_id",
+    "design_matrix",
+    "etol_summary",
+    "etol_validation",
+]
+
 
 def project_root() -> Path:
     """Return the repository root that contains this build script."""
@@ -104,22 +127,8 @@ def build_command(blast_bin: Path, cap3_bin: Path | None, name: str) -> list[str
     workpath = Path(tempfile.gettempdir()) / f"coblast_pyinstaller_{os.getpid()}"
     required_paths = [
         root / "run_COBLAST.py",
-        root / "app.py",
-        root / "blast_runner.py",
         root / "config.py",
-        root / "database_registry.py",
-        root / "result_store.py",
-        root / "database_size.py",
-        root / "human_filter.py",
-        root / "sra_workflow.py",
-        root / "smoke_test.py",
-        root / "frozen_self_check.py",
-        root / "apoe_summary.py",
-        root / "assembler.py",
-        root / "contig_id.py",
-        root / "design_matrix.py",
-        root / "etol_summary.py",
-        root / "etol_validation.py",
+        *[root / f"{module}.py" for module in MODULES],
         root / "templates",
         root / "static",
         root / "sample_data",
@@ -151,36 +160,6 @@ def build_command(blast_bin: Path, cap3_bin: Path | None, name: str) -> list[str
         "tkinter",
         "--exclude-module",
         "_tkinter",
-        "--hidden-import",
-        "app",
-        "--hidden-import",
-        "smoke_test",
-        "--hidden-import",
-        "frozen_self_check",
-        "--hidden-import",
-        "blast_runner",
-        "--hidden-import",
-        "database_registry",
-        "--hidden-import",
-        "result_store",
-        "--hidden-import",
-        "database_size",
-        "--hidden-import",
-        "human_filter",
-        "--hidden-import",
-        "sra_workflow",
-        "--hidden-import",
-        "apoe_summary",
-        "--hidden-import",
-        "assembler",
-        "--hidden-import",
-        "contig_id",
-        "--hidden-import",
-        "design_matrix",
-        "--hidden-import",
-        "etol_summary",
-        "--hidden-import",
-        "etol_validation",
         "--add-data",
         add_data_arg(root / "templates", "templates"),
         "--add-data",
@@ -192,6 +171,9 @@ def build_command(blast_bin: Path, cap3_bin: Path | None, name: str) -> list[str
         "--add-data",
         add_data_arg(root / "requirements.txt", "."),
     ]
+
+    for module in MODULES:
+        command += ["--hidden-import", module]
 
     for filename in REQUIRED_BLAST_FILES + OPTIONAL_BLAST_FILES:
         path = blast_bin / filename

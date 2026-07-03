@@ -19,7 +19,7 @@ This executable is unsigned and intended for agreed prototype testing only.
 
 ## Optional: Contig Assembly (eToL re-probing)
 
-The microbial eToL presets can assemble matched reads into contigs and re-probe
+The eToL presets can assemble matched reads into contigs and re-probe
 with them. Those steps use the **CAP3** assembler, which is not shipped with
 COBLAST for licensing reasons — you get it by installing Unipro UGENE, which
 bundles CAP3. Everything else (BLAST searches, per-species counts, exports) works

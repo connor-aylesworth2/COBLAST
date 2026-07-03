@@ -23,7 +23,7 @@ from flask import (
 )
 
 from apoe_summary import apoe_probe_query_ids, build_apoe_probe_summary
-from assembler import default_assembler
+from assembler import Cap3Assembler
 from contig_id import identify_contigs, reprobe_and_reassemble
 from etol_summary import (
     ETOL_NET_FILTER,
@@ -31,7 +31,6 @@ from etol_summary import (
     build_etol_probe_summary,
     etol_control_query_ids,
     etol_preset_form_field,
-    etol_preset_is_microbial,
     etol_preset_keys,
     etol_preset_label,
     etol_preset_options,
@@ -315,6 +314,18 @@ def database_options():
             }
         )
     return options
+
+
+def _batch_form_error(error: str):
+    """Re-render the batch form with an error message and a 400 status."""
+    return render_template(
+        "batch.html",
+        blast_programs=BLAST_PROGRAMS,
+        database_options=database_options(),
+        etol_preset_options=etol_preset_options(),
+        error=error,
+        message="",
+    ), 400
 
 
 @app.get("/")
@@ -644,17 +655,7 @@ def run_batch_blast_route():
                 filename=design_matrix_upload.filename,
             )
         except DesignMatrixError as exc:
-            return (
-                render_template(
-                    "batch.html",
-                    blast_programs=BLAST_PROGRAMS,
-                    database_options=database_options(),
-                    etol_preset_options=etol_preset_options(),
-                    error=f"Design matrix error: {exc}",
-                    message="",
-                ),
-                400,
-            )
+            return _batch_form_error(f"Design matrix error: {exc}")
 
     # probe_query_ids is the full set of query ids searched (used to restrict
     # hits to the panel). For the microbial eToL presets the search also includes
@@ -668,8 +669,7 @@ def run_batch_blast_route():
     elif etol_preset_key:
         sequence = etol_search_fasta(etol_preset_key)
         probe_query_ids = set(etol_search_query_ids(etol_preset_key))
-        if etol_preset_is_microbial(etol_preset_key):
-            control_query_ids = etol_control_query_ids(etol_preset_key)
+        control_query_ids = etol_control_query_ids(etol_preset_key)
     if exact_probe_preset:
         # Exact-match/net probe presets always run BLASTN so the preset hit
         # filters below can be applied consistently.
@@ -679,11 +679,7 @@ def run_batch_blast_route():
     # genome. Only meaningful for the microbial eToL presets (the APOE/eToL
     # Control panels are human by design, so filtering human reads is nonsensical).
     human_filter_requested = request.form.get("human_filter") == "1"
-    human_filter_active = (
-        human_filter_requested
-        and etol_preset_key is not None
-        and etol_preset_is_microbial(etol_preset_key)
-    )
+    human_filter_active = human_filter_requested and etol_preset_key is not None
     human_db = None
     if human_filter_active:
         try:
@@ -691,14 +687,9 @@ def run_batch_blast_route():
         except Exception:
             human_db = None
         if human_db is None or human_db.db_type != "nucl" or human_db.status != "available":
-            return render_template(
-                "batch.html",
-                blast_programs=BLAST_PROGRAMS,
-                database_options=database_options(),
-                etol_preset_options=etol_preset_options(),
-                error="Select an available nucleotide human-genome database for the secondary human filter.",
-                message="",
-            ), 400
+            return _batch_form_error(
+                "Select an available nucleotide human-genome database for the secondary human filter."
+            )
 
     # Contig assembly (eToL re-probing input): assemble the reads each species'
     # probes recovered into longer contigs for species-level identification, as
@@ -707,11 +698,9 @@ def run_batch_blast_route():
     # assembler degrades to a clear note rather than failing the run.
     assemble_contigs_requested = request.form.get("assemble_contigs") == "1"
     assemble_contigs_active = (
-        assemble_contigs_requested
-        and etol_preset_key is not None
-        and etol_preset_is_microbial(etol_preset_key)
+        assemble_contigs_requested and etol_preset_key is not None
     )
-    assembler = default_assembler()
+    assembler = Cap3Assembler()
     contig_assembly_available = assemble_contigs_active and assembler.is_available()
     contig_assembly_unavailable = assemble_contigs_active and not contig_assembly_available
 
@@ -731,14 +720,9 @@ def run_batch_blast_route():
         except Exception:
             reference_db = None
         if reference_db is None or reference_db.db_type != "nucl" or reference_db.status != "available":
-            return render_template(
-                "batch.html",
-                blast_programs=BLAST_PROGRAMS,
-                database_options=database_options(),
-                etol_preset_options=etol_preset_options(),
-                error="Select an available nucleotide reference database (e.g. a SILVA rRNA database) for contig species identification.",
-                message="",
-            ), 400
+            return _batch_form_error(
+                "Select an available nucleotide reference database (e.g. a SILVA rRNA database) for contig species identification."
+            )
 
     # Contig re-probing (Hu, Haas & Lathe 2022, Box 3): one round of using each
     # taxon's top contigs as probes against the SAME patient library to pull more
@@ -749,14 +733,7 @@ def run_batch_blast_route():
     reprobe_active = reprobe_requested and assemble_contigs_active
 
     if not database_ids:
-        return render_template(
-            "batch.html",
-            blast_programs=BLAST_PROGRAMS,
-            database_options=database_options(),
-            etol_preset_options=etol_preset_options(),
-            error="Choose at least one database for the batch run.",
-            message="",
-        ), 400
+        return _batch_form_error("Choose at least one database for the batch run.")
 
     # Pull every request-bound value out before spawning workers: Flask's
     # `request` is bound to this thread's context and must not be touched from
@@ -778,14 +755,7 @@ def run_batch_blast_route():
             sequence, expected_type=str(BLAST_PROGRAMS[program]["query_type"])
         )
     except Exception as exc:
-        return render_template(
-            "batch.html",
-            blast_programs=BLAST_PROGRAMS,
-            database_options=database_options(),
-            etol_preset_options=etol_preset_options(),
-            error=str(exc),
-            message="",
-        ), 400
+        return _batch_form_error(str(exc))
 
     # Benchmarks showed concurrency across patient databases scales far better
     # than -num_threads within one search, so split the core budget into
@@ -1189,8 +1159,7 @@ def run_batch_blast_route():
             for result_row in database_results
         ),
         "human_filter_warning": summarize_human_filter_warnings(database_results),
-        "etol_normalized": etol_preset_key is not None
-        and etol_preset_is_microbial(etol_preset_key),
+        "etol_normalized": etol_preset_key is not None,
         "etol_dedup_removed": sum(
             result_row.get("etol_dedup_removed", 0) for result_row in database_results
         ),

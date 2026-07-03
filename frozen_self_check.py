@@ -104,7 +104,7 @@ def run() -> int:
     from blast_runner import run_blast_probe_panel
     from etol_summary import etol_search_fasta, etol_search_query_ids
     from human_filter import extract_reads, filter_human_hits
-    from assembler import default_assembler
+    from assembler import Cap3Assembler
     from app import deduplicate_reads_to_best_probe, filter_net_probe_hits
 
     try:
@@ -177,7 +177,7 @@ def run() -> int:
         ))
 
         # (3) CAP3 assembly of the survivors -- only when CAP3 is bundled/available.
-        assembler = default_assembler()
+        assembler = Cap3Assembler()
         if assembler.is_available():
             reads, _method = extract_reads(str(sample_db), str(sample_fasta), sorted(kept_survivors))
             contigs = assembler.assemble(reads)

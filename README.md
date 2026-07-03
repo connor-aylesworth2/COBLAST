@@ -559,7 +559,7 @@ appended automatically and are not a separately selectable preset. The presets
 offer an optional secondary human filter that removes host-derived reads. Only
 one preset can be active at a time.
 
-The microbial presets can also assemble matched reads into contigs, identify
+The eToL presets can also assemble matched reads into contigs, identify
 them, and optionally **re-probe** (a second pass that uses contigs as probes to
 recover reads the net missed) — leave re-probing off for routine and cohort runs
 and characterise it once per data type before relying on it; see
