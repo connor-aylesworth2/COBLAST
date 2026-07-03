@@ -1,16 +1,19 @@
 # COBLAST+ Prototype
 
-## Tester Quick Start: Use the Release Folder First
+## Tester Quick Start: Download the Release Executable First
 
-Most Windows testers should start with the files in the `release` subdirectory,
-not the source-code setup below. The release folder contains:
+Most Windows testers should start with the prebuilt executable from the latest
+GitHub Release (the **Releases** section of the repository page), not the
+source-code setup below. The executable is no longer stored in the repository
+tree; it is attached to each Release as:
 
 ```text
-release\COBLAST.exe
-release\README.md
+COBLAST.exe
+README.md
 ```
 
-Download or copy the `release` folder, read `release\README.md`, then run:
+Download `COBLAST.exe` and its `README.md` into a local folder, read the
+`README.md`, then run:
 
 ```powershell
 .\COBLAST.exe
@@ -136,15 +139,11 @@ terminal window.
 The standalone `.exe` does not bundle large user-created BLAST databases or
 clinical datasets. Those remain local files chosen or created by the user.
 
-For the current prototype, a prebuilt Windows executable may be provided at:
-
-```text
-release\COBLAST.exe
-```
-
-That file can be downloaded from GitHub and run directly on Windows. Because it
-is an unsigned research prototype executable, Windows SmartScreen or antivirus
-software may warn before first launch.
+For the current prototype, a prebuilt Windows executable is attached to the
+latest GitHub Release (the **Releases** section of the repository page) rather
+than committed to the repository tree. Download `COBLAST.exe` from there and run
+it directly on Windows. Because it is an unsigned research prototype executable,
+Windows SmartScreen or antivirus software may warn before first launch.
 
 Build the executable from a clean checkout on Windows:
 

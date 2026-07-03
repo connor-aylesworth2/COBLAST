@@ -62,6 +62,10 @@ def test_source_fasta_for_blast_prefix_does_not_guess_between_multiple_files():
 def test_register_sra_database_preserves_an_existing_source_path(monkeypatch):
     existing = type("Existing", (), {"source_fasta_path": "reads/SRR1.fasta"})()
     monkeypatch.setattr(sra_workflow, "get_database_by_prefix", lambda _prefix: existing)
+    # Keep the test BLAST-free: the display name now comes from the DB's own title.
+    monkeypatch.setattr(
+        sra_workflow, "verify_database_prefix", lambda _prefix: {"database_title": ""}
+    )
     captured = {}
 
     def register(**fields):

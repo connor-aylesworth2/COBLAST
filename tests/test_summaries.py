@@ -21,6 +21,7 @@ from etol_summary import (
     etol_search_query_ids,
     etol_species_count_rows,
     normalized_abundance,
+    sort_results_by_condition,
 )
 
 
@@ -456,3 +457,27 @@ def test_batch_summary_export_omits_absent_rows():
     assert parsed["Total hits"] == "5"
 
 
+# --- sample ordering by design-matrix condition ----------------------------
+
+def test_sort_results_by_condition_groups_by_design_matrix_order():
+    # Condition order follows the matrix's first-seen order (Control before AD),
+    # samples sort alphabetically within a condition, and a sample with no matrix
+    # row falls to the end rather than being scattered.
+    results = [
+        {"display_name": "SRA SRR3 reads", "db_prefix_path": ""},
+        {"display_name": "SRA SRR1 reads", "db_prefix_path": ""},
+        {"display_name": "SRA SRR2 reads", "db_prefix_path": ""},
+        {"display_name": "SRA SRR9 reads", "db_prefix_path": ""},  # absent from matrix
+    ]
+    index = parse_design_matrix(
+        "sample,condition\nSRR1,Control\nSRR3,Control\nSRR2,AD\n", filename="d.csv"
+    )
+    ordered = [r["display_name"] for r in sort_results_by_condition(results, index)]
+    assert ordered == [
+        "SRA SRR1 reads",
+        "SRA SRR3 reads",
+        "SRA SRR2 reads",
+        "SRA SRR9 reads",
+    ]
+    # No matrix -> original order untouched (never sort on the unreliable regex).
+    assert sort_results_by_condition(results, None) is results

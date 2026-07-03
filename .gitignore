@@ -16,6 +16,12 @@ dist/
 *.manifest
 /run_COBLAST.exe
 release/COBLAST_data/
+# The built .exe is distributed via GitHub Releases, not tracked in the repo
+# (a 63 MB binary bloats every clone). See the README's release instructions.
+release/COBLAST.exe
+
+# Local agent/editor tooling and private notes (not needed to use or build COBLAST)
+.claude/
 
 # Local configuration and secrets
 .env

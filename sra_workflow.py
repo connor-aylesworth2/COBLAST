@@ -19,6 +19,7 @@ from database_registry import (
     get_database_by_prefix,
     register_existing_database,
     slugify,
+    verify_database_prefix,
 )
 from database_size import database_storage_bytes, format_bytes
 
@@ -346,8 +347,13 @@ def register_sra_blast_database(
         existing = get_database_by_prefix(db_prefix_path)
         if existing is not None and existing.source_fasta_path:
             source = existing.source_fasta_path
+    # Name from the database's own BLAST title (falling back to the prefix stem)
+    # rather than a forced "SRA <acc> reads" wrapper. ponytail: one extra info
+    # read; registration is a deliberate, infrequent action, not a hot path.
+    info = verify_database_prefix(db_prefix_path)
+    display_name = str(info.get("database_title") or "").strip() or Path(str(db_prefix_path)).name
     return register_existing_database(
-        display_name=f"SRA {accession} reads",
+        display_name=display_name,
         db_type="nucl",
         db_prefix_path=db_prefix_path,
         source_fasta_path=source,

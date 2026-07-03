@@ -250,6 +250,13 @@
                 {% if sample.error %}
                   <p class="error">{{ sample.error }}</p>
                 {% elif sample.detected_species %}
+                  {# When contig identification ran, hide rows detected by probing
+                     but not contig-confirmed (their confirmed-reads cell is n/a).
+                     Display-only: exports still contain every detected row. #}
+                  {% set visible_species = sample.detected_species if not batch.identify_contigs
+                     else sample.detected_species | rejectattr("confirmed_reads", "equalto", "") | list %}
+                  {% set hidden_count = sample.detected_species | length - (visible_species | length) %}
+                  {% if visible_species %}
                   <div class="table-wrap">
                     <table>
                       <thead>
@@ -264,7 +271,7 @@
                         </tr>
                       </thead>
                       <tbody>
-                        {% for species in sample.detected_species %}
+                        {% for species in visible_species %}
                           <tr>
                             <td>{{ species.domain }}</td>
                             <td>{{ species.group }}</td>
@@ -278,6 +285,10 @@
                       </tbody>
                     </table>
                   </div>
+                  {% endif %}
+                  {% if hidden_count %}
+                    <p class="muted">{{ hidden_count }} detected but contig-unconfirmed row(s) hidden here &mdash; included in the CSV/TSV downloads.</p>
+                  {% endif %}
                 {% else %}
                   <p class="muted">No eToL probes matched in this sample.</p>
                 {% endif %}

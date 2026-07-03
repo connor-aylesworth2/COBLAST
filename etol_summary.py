@@ -793,3 +793,28 @@ def build_etol_matrix(
         "host_transcripts_per_cell": HOST_TRANSCRIPTS_PER_CELL,
         "unmatched_samples": unmatched_samples,
     }
+
+
+def sort_results_by_condition(
+    database_results: list[dict[str, Any]],
+    condition_index: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Order samples by design-matrix condition (first-seen), then sample label.
+
+    Reorders only when an explicit design matrix is supplied; the regex condition
+    guesser (:func:`_sample_condition`) is too unreliable to sort on. Samples with
+    no matching matrix row sort last so the gap stays visible. Callers sort the
+    sample list once, upstream, so the heatmap, on-page tables, and CSV/TSV
+    exports all inherit the one condition-ordered layout.
+    """
+    if not condition_index:
+        return database_results
+    order = {cond: i for i, cond in enumerate(condition_index.get("conditions") or [])}
+    last = len(order)
+
+    def key(row: dict[str, Any]) -> tuple[int, str]:
+        condition, matched = _condition_from_index(row, condition_index)
+        rank = order.get(condition, last) if matched else last
+        return (rank, _sample_label(row))
+
+    return sorted(database_results, key=key)

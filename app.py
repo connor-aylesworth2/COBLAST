@@ -39,6 +39,7 @@ from etol_summary import (
     etol_search_fasta,
     etol_search_query_ids,
     group_read_ids_by_taxon,
+    sort_results_by_condition,
 )
 from etol_validation import compute_confusion
 from design_matrix import DesignMatrixError, parse_design_matrix
@@ -1155,6 +1156,12 @@ def run_batch_blast_route():
         if outcome["query_count"]:
             query_count = outcome["query_count"]
             query_total_length = outcome["query_total_length"]
+
+    # Group samples by design-matrix condition once, before summaries/exports are
+    # built and the batch is saved, so the heatmap, tables, and downloads share
+    # one condition-ordered column layout.
+    if design_matrix_index:
+        database_results = sort_results_by_condition(database_results, design_matrix_index)
 
     hit_filter = ""
     if apoe_probe_preset:
