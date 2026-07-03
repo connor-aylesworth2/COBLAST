@@ -18,6 +18,10 @@ Run from the repository root:
     # from an exported matrix JSON (offline; the /etol-matrix.json download)
     python scripts/plot_etol.py --matrix-json matrix.json --out fig9.png --heatmap fig10.png
 
+    # everything a dissertation needs in one shot: figures + data CSVs
+    # (metrics vs Veso's published Fig 9, and the per-cell confusion table)
+    python scripts/plot_etol.py --batch-id <uuid> --out fig9.png --heatmap fig10.png --data veso
+
     # numbers only, no plotting libraries required
     python scripts/plot_etol.py --matrix-json matrix.json --print-only
 
@@ -27,6 +31,7 @@ Requires ``matplotlib`` (``pip install matplotlib``) unless ``--print-only``.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from pathlib import Path
@@ -35,21 +40,61 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from etol_summary import build_etol_matrix, etol_preset_records  # noqa: E402
-from etol_validation import compute_confusion  # noqa: E402
+from etol_validation import _finalize, compute_confusion  # noqa: E402
+
+# The dissertation's published Figure 9 counts (Edinburgh B270917) -- the target a
+# COBLAST+ reproduction has to hit. Metrics are derived from these by the same
+# _finalize the app uses, so the "published" row can't drift from the code.
+VESO_FIG9 = {"tp": 9, "fp": 1, "fn": 35, "tn": 411}
 
 
-def load_matrix(args: argparse.Namespace) -> dict:
-    """Build the rows-by-samples matrix from a saved batch or an exported JSON."""
+def load_matrix(args: argparse.Namespace) -> tuple[dict, dict | None]:
+    """Return (matrix, batch); ``batch`` is None for the --matrix-json path.
+
+    The batch is needed only to emit the per-cell confusion CSV (--data), which
+    reuses the app's ``etol_confusion_rows_as_delimited``.
+    """
     if args.matrix_json:
-        return json.loads(Path(args.matrix_json).read_text(encoding="utf-8"))
+        return json.loads(Path(args.matrix_json).read_text(encoding="utf-8")), None
     from result_store import load_batch_result
 
     batch = load_batch_result(args.batch_id)
     if batch.get("etol_preset_key") != "etol_v":
         raise SystemExit(f"Batch {args.batch_id} is not an eToL-V run.")
-    return build_etol_matrix(
+    matrix = build_etol_matrix(
         batch.get("database_results", []), etol_preset_records("etol_v")
     )
+    return matrix, batch
+
+
+def write_data(cm: dict, batch: dict | None, prefix: str) -> None:
+    """Write the dissertation data files: metrics (reproduced vs published) + cells."""
+    def r(value):
+        return "" if value is None else round(value, 4)
+
+    published = _finalize(dict(VESO_FIG9))
+    metrics_path = f"{prefix}_metrics.csv"
+    with open(metrics_path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["source", "TP", "FP", "FN", "TN", "N",
+                    "accuracy", "precision", "recall", "F1"])
+        for name, m in (("COBLAST+ (reproduced)", cm),
+                        ("Veso dissertation Fig 9 (published)", published)):
+            w.writerow([name, m["tp"], m["fp"], m["fn"], m["tn"], m["n"],
+                        r(m["accuracy"]), r(m["precision"]), r(m["recall"]), r(m["f1"])])
+    print(f"wrote {metrics_path}"
+          + ("  [MATCHES published]" if (cm["tp"], cm["fp"], cm["fn"], cm["tn"])
+             == (VESO_FIG9["tp"], VESO_FIG9["fp"], VESO_FIG9["fn"], VESO_FIG9["tn"])
+             else "  [DIFFERS from published -- inspect cells CSV]"))
+
+    if batch is not None:
+        from result_store import etol_confusion_rows_as_delimited
+
+        cells_path = f"{prefix}_cells.csv"
+        Path(cells_path).write_text(
+            etol_confusion_rows_as_delimited(batch, ","), encoding="utf-8"
+        )
+        print(f"wrote {cells_path}")
 
 
 def _plt():
@@ -151,10 +196,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--heatmap", help="Also write the validated-hit heatmap here.")
     parser.add_argument("--stage", choices=("validated", "raw"), default="validated")
     parser.add_argument("--title", default="Confusion Matrix for eToL-V vs eToL Results")
+    parser.add_argument("--data", metavar="PREFIX",
+                        help="Also write <PREFIX>_metrics.csv (reproduced vs Veso's "
+                             "published Fig 9) and, from a batch, <PREFIX>_cells.csv.")
     parser.add_argument("--print-only", action="store_true", help="Print numbers; no plotting.")
     args = parser.parse_args(argv)
 
-    matrix = load_matrix(args)
+    matrix, batch = load_matrix(args)
     cm = compute_confusion(matrix, stage=args.stage)
 
     print(
@@ -166,6 +214,8 @@ def main(argv: list[str] | None = None) -> int:
             "No samples matched the bundled eToL WGS ground truth; nothing to plot. "
             "Run the eToL-V preset on the SRP398685 / EBB samples."
         )
+    if args.data:
+        write_data(cm, batch, args.data)
     if args.print_only:
         return 0
 
