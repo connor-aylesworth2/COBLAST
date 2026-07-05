@@ -1,9 +1,13 @@
 """Shared configuration helpers for source and bundled COBLAST+ runs."""
 
 from pathlib import Path
+import hashlib
 import os
 import shutil
 import sys
+import tarfile
+import urllib.request
+import zipfile
 
 
 # Default install location used when BLAST_BIN is not supplied.
@@ -81,7 +85,8 @@ def tool_name(name: str) -> str:
 
 def blast_exe(name: str) -> Path:
     """Resolve one BLAST+ executable and fail with a useful setup message."""
-    exe_path = blast_bin_dir() / tool_name(name)
+    bin_dir = ensure_tool_bin("blast", blast_bin_dir)
+    exe_path = bin_dir / tool_name(name)
     if not exe_path.exists():
         raise FileNotFoundError(
             f"Could not find {exe_path}. Set BLAST_BIN to your BLAST+ bin directory."
@@ -169,6 +174,142 @@ def cap3_exe() -> Path:
     )
 
 
+# --- Optional auto-install of external tools -------------------------------
+#
+# When a required binary is not already present (env override, bundled copy, or
+# a known install location), COBLAST can fetch a portable build and unpack it
+# into the per-user data dir — no admin rights, fully reversible (delete the
+# folder). CAP3 is deliberately absent: its license forbids redistribution, so
+# it stays detect-only (install UGENE).
+#
+#   proof:    the executable whose presence proves an unpacked tree is usable.
+#   url:      pinned version + host (never "LATEST"); HTTPS is enforced.
+#   sha256:   pin for real supply-chain integrity. None here means "verify
+#             against NCBI's published .md5 sidecar instead" — that catches a
+#             corrupt download, with trust rooted in the same TLS host. A
+#             download with neither a pinned hash nor a sidecar fails closed.
+#   bin_glob: where `proof` lives under the extracted archive.
+#
+# ponytail: pin real sha256 values before shipping (defense in depth) and
+# confirm the URLs still resolve; NCBI bumps versions.
+_DOWNLOADABLE_TOOLS: dict[str, dict[str, str | None]] = {
+    "blast": {
+        "proof": "blastn",
+        "url": (
+            "https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/2.17.0/"
+            "ncbi-blast-2.17.0+-x64-win64.tar.gz"
+        ),
+        "sha256": None,
+        "bin_glob": "ncbi-blast-*/bin",
+    },
+    "sra": {
+        "proof": "fastq-dump",
+        "url": (
+            "https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/3.2.0/"
+            "sratoolkit.3.2.0-win64.zip"
+        ),
+        "sha256": None,
+        "bin_glob": "sratoolkit.*/bin",
+    },
+}
+
+
+def _hash_file(path: Path, algo: str) -> str:
+    digest = hashlib.new(algo)
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _verify_download(archive: Path, url: str, sha256: str | None) -> None:
+    """Fail closed unless the archive matches a pinned sha256 or NCBI's .md5."""
+    if sha256:
+        actual = _hash_file(archive, "sha256")
+        if actual.lower() != sha256.lower():
+            archive.unlink(missing_ok=True)
+            raise RuntimeError(f"sha256 mismatch for {archive.name} (got {actual}).")
+        return
+    try:
+        with urllib.request.urlopen(url + ".md5", timeout=30) as response:
+            expected = response.read().decode("utf-8", "replace").split()[0]
+    except Exception as exc:  # no sidecar -> refuse to run an unverified binary
+        archive.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"No pinned sha256 and no .md5 sidecar for {url}; refusing to run an "
+            "unverified download. Pin sha256 in _DOWNLOADABLE_TOOLS."
+        ) from exc
+    actual = _hash_file(archive, "md5")
+    if actual.lower() != expected.lower():
+        archive.unlink(missing_ok=True)
+        raise RuntimeError(f"md5 mismatch for {archive.name} (got {actual}).")
+
+
+def _extract_archive(archive: Path, dest: Path) -> None:
+    name = archive.name.lower()
+    if name.endswith(".zip"):
+        with zipfile.ZipFile(archive) as bundle:
+            bundle.extractall(dest)
+    elif name.endswith((".tar.gz", ".tgz")):
+        with tarfile.open(archive, "r:gz") as bundle:
+            try:
+                bundle.extractall(dest, filter="data")  # 3.12+: block path traversal
+            except TypeError:
+                bundle.extractall(dest)  # ponytail: <3.12; source is checksum-verified NCBI
+    else:
+        raise RuntimeError(f"Unknown archive type: {archive.name}")
+
+
+def _find_tool_bin(root: Path, bin_glob: str, proof_exe: str) -> Path | None:
+    if not root.exists():
+        return None
+    for candidate in sorted(root.glob(bin_glob)):
+        if (candidate / proof_exe).exists():
+            return candidate
+    return None
+
+
+def download_verify_extract(url: str, dest: Path, sha256: str | None = None) -> None:
+    """Download `url` over HTTPS, verify it, then unpack it into `dest`."""
+    if not url.lower().startswith("https://"):
+        raise ValueError(f"Refusing non-HTTPS download URL: {url}")
+    dest.mkdir(parents=True, exist_ok=True)
+    archive = dest / url.rsplit("/", 1)[-1]
+    # ponytail: stdlib one-shot download; add resume/retry if flaky networks bite.
+    urllib.request.urlretrieve(url, archive)
+    _verify_download(archive, url, sha256)
+    _extract_archive(archive, dest)
+    archive.unlink(missing_ok=True)
+
+
+def ensure_tool_bin(name: str, detector) -> Path | None:
+    """Return a usable bin dir for `name`, auto-installing it if possible.
+
+    `detector` is the tool's existing resolver (env -> bundled -> known install
+    locations). If it points at a real install, that wins. Otherwise, if the
+    tool is downloadable, fetch a portable build into the data dir once and
+    reuse it thereafter. Returns None only when the tool is neither installed
+    nor downloadable (e.g. CAP3).
+    """
+    spec = _DOWNLOADABLE_TOOLS.get(name)
+    proof_exe = tool_name(spec["proof"]) if spec else None
+
+    found = detector()
+    if found is not None and (proof_exe is None or (Path(found) / proof_exe).exists()):
+        return Path(found)
+    if spec is None:  # not auto-installable (CAP3): hand back whatever detection found
+        return Path(found) if found is not None else None
+
+    install_root = runtime_data_dir() / "tools" / name
+    bin_dir = _find_tool_bin(install_root, spec["bin_glob"], proof_exe)
+    if bin_dir is None:  # not fetched yet
+        download_verify_extract(spec["url"], install_root, spec["sha256"])
+        bin_dir = _find_tool_bin(install_root, spec["bin_glob"], proof_exe)
+    if bin_dir is None:
+        raise RuntimeError(f"Installed {name} but no {proof_exe} under {install_root}.")
+    return bin_dir
+
+
 def flask_port() -> int:
     """Read and validate the Flask port from BLAST_FLASK_PORT."""
     raw_port = os.environ.get("BLAST_FLASK_PORT", str(DEFAULT_FLASK_PORT))
@@ -234,3 +375,39 @@ def allocate_batch_resources(
 
     threads_per_job = max(1, budget // workers)
     return workers, threads_per_job
+
+
+if __name__ == "__main__":
+    # ponytail: offline checks for the auto-install logic (no network touched).
+    import tempfile
+
+    # HTTPS is enforced before anything is fetched.
+    try:
+        download_verify_extract("http://example.com/x.zip", Path(tempfile.gettempdir()))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("non-HTTPS URL should be refused")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        assert _find_tool_bin(root, "sratoolkit.*/bin", "fastq-dump") is None
+        bin_dir = root / "sratoolkit.3.2.0" / "bin"
+        bin_dir.mkdir(parents=True)
+        (bin_dir / "fastq-dump").write_text("x")
+        assert _find_tool_bin(root, "sratoolkit.*/bin", "fastq-dump") == bin_dir
+
+        # A pinned sha256 that does not match must fail closed.
+        blob = root / "blob.zip"
+        blob.write_bytes(b"hello")
+        try:
+            _verify_download(blob, "https://x/blob.zip", "deadbeef")
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("sha256 mismatch should fail closed")
+
+    # CAP3 is not auto-installable: ensure_tool_bin returns detection, never downloads.
+    assert ensure_tool_bin("cap3", lambda: None) is None
+    assert ensure_tool_bin("cap3", lambda: Path("/opt/ugene")) == Path("/opt/ugene")
+    print("config auto-install checks OK")

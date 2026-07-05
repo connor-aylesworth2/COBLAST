@@ -368,15 +368,33 @@ def missing_blast_tools(blast_bin: Path) -> list[str]:
 
 
 def find_blast_bin(cli_blast_bin: str | None) -> Path:
-    """Find a BLAST+ bin folder containing every required executable."""
+    """Find a BLAST+ bin folder containing every required executable.
+
+    If none is found in a known location, fetch a portable BLAST+ into the
+    per-user data dir so a fresh machine can launch without a manual install.
+    """
     for candidate in candidate_blast_bins(cli_blast_bin):
         if candidate.exists() and not missing_blast_tools(candidate):
             return candidate
 
+    install_error: Exception | None = None
+    try:
+        from config import blast_bin_dir, ensure_tool_bin
+
+        step("BLAST+ not found locally; fetching a portable copy")
+        installed = ensure_tool_bin("blast", blast_bin_dir)
+        if installed is not None and not missing_blast_tools(installed):
+            print(f"  Installed BLAST+ into {installed}")
+            return installed
+    except Exception as exc:  # fall through to the manual-install message below
+        install_error = exc
+
     searched = "\n".join(f"  - {candidate}" for candidate in candidate_blast_bins(cli_blast_bin))
+    hint = f"\nAuto-install failed: {install_error}\n" if install_error else "\n"
     raise LauncherError(
-        "Could not find a complete BLAST+ bin directory.\n"
-        "Install/extract NCBI BLAST+ and rerun with:\n"
+        "Could not find or install a complete BLAST+ bin directory."
+        + hint
+        + "Install/extract NCBI BLAST+ and rerun with:\n"
         "  python run_COBLAST.py --blast-bin \"C:\\Tools\\ncbi-blast-2.17.0+\\bin\"\n\n"
         f"Searched:\n{searched}"
     )

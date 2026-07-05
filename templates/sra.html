@@ -64,17 +64,13 @@
           </div>
         </details>
 
-        {% if sra_toolkit_bin %}
-          <form class="mini-form" method="post" action="/sra/fetch">
-            <label for="fetch_accessions">Fetch SRA runs</label>
-            <textarea id="fetch_accessions" name="accessions" rows="2"
-              placeholder="SRR000001, SRR000002  (run accessions only: SRR / ERR / DRR)"></textarea>
-            <button type="submit" class="button">Build &amp; Send Fetch Query</button>
-            <span class="muted">Opens a terminal that downloads each run and converts it to a full FASTA in the scanned SRA folder above. Full runs can be tens of GB and take a while; the project appears in the table below when done.</span>
-          </form>
-        {% else %}
-          <p class="muted">Install the SRA Toolkit (or set <code>SRA_TOOLKIT_BIN</code>) to fetch runs by accession.</p>
-        {% endif %}
+        <form class="mini-form" method="post" action="/sra/fetch">
+          <label for="fetch_accessions">Fetch SRA runs</label>
+          <textarea id="fetch_accessions" name="accessions" rows="2"
+            placeholder="SRR000001, SRR000002  (run accessions only: SRR / ERR / DRR)"></textarea>
+          <button type="submit" class="button">Build &amp; Send Fetch Query</button>
+          <span class="muted">Opens a terminal that downloads each run and converts it to a full FASTA in the scanned SRA folder above. Full runs can be tens of GB and take a while; the project appears in the table below when done.{% if not sra_toolkit_bin %} The SRA Toolkit isn't installed yet, so the first fetch downloads it (~150&nbsp;MB) once before starting.{% endif %}</span>
+        </form>
       </section>
 
       <section class="panel">

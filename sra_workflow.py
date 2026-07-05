@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 
-from config import resource_root, runtime_data_dir, tool_name
+from config import ensure_tool_bin, resource_root, runtime_data_dir, tool_name
 from database_registry import (
     create_database_from_fasta,
     get_database_by_prefix,
@@ -108,8 +108,8 @@ def sra_toolkit_bin() -> Path | None:
 
 
 def sra_tool_exe(name: str) -> Path:
-    """Resolve an SRA Toolkit executable for local pilot conversion."""
-    bin_dir = sra_toolkit_bin()
+    """Resolve an SRA Toolkit executable, auto-installing the toolkit if absent."""
+    bin_dir = ensure_tool_bin("sra", sra_toolkit_bin)
     if bin_dir is None:
         raise FileNotFoundError(
             "Could not find SRA Toolkit. Set SRA_TOOLKIT_BIN to the toolkit bin directory."
