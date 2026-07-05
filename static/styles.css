@@ -603,16 +603,6 @@ pre {
   font-weight: 700;
 }
 
-.working-links {
-  display: flex;
-  gap: 20px;
-  white-space: nowrap;
-}
-
-.working-links span {
-  color: #004b8d;
-}
-
 .working-status-page {
   min-height: 350px;
   padding: 0 20px 48px;
@@ -710,11 +700,6 @@ pre {
     flex-direction: column;
     gap: 8px;
     padding: 10px 0;
-  }
-
-  .working-links {
-    flex-wrap: wrap;
-    gap: 10px;
   }
 
   .section-header {

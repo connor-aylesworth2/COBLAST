@@ -176,10 +176,33 @@ def open_browser_url(url: str) -> None:
         )
 
 
-def open_browser_later(url: str, delay_seconds: float = 2.0) -> None:
-    """Open the browser shortly after Flask starts listening."""
+def wait_for_port(port: int, timeout: float = 30.0) -> bool:
+    """Block until 127.0.0.1:port accepts a connection, or timeout elapses.
+
+    A fixed sleep raced Flask's bind on slow/AV-scanned first runs, so the
+    browser opened before the server was listening and testers saw a dead
+    'port not accessible' tab. Polling the real socket removes the guess.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(0.1)  # refused/unreachable yet; avoid a busy loop
+    return False
+
+
+def open_browser_later(url: str, port: int) -> None:
+    """Open the browser once Flask is actually listening on port."""
     def opener() -> None:
-        time.sleep(delay_seconds)
+        if not wait_for_port(port):
+            print(
+                "  The local server did not start listening in time.\n"
+                f"  Open this address manually once it does: {url}",
+                flush=True,
+            )
+            return
         open_browser_url(url)
 
     thread = threading.Thread(target=opener, daemon=True)
@@ -506,7 +529,7 @@ def start_app(
     process = subprocess.Popen([str(python_path), str(app)], env=env, cwd=str(project_root()))
     try:
         if open_browser:
-            open_browser_later(url)
+            open_browser_later(url, port)
         print(f"\nCOBLAST is running at {url}. Press Ctrl+C in this terminal to stop it.")
         process.wait()
     except KeyboardInterrupt:
@@ -540,7 +563,7 @@ def start_standalone_app(
     from config import FLASK_HOST, flask_port
 
     if open_browser:
-        open_browser_later(url)
+        open_browser_later(url, port)
 
     print(f"\nCOBLAST is running at {url}. Press Ctrl+C in this terminal to stop it.")
     flask_app.run(host=FLASK_HOST, port=flask_port(), debug=False)

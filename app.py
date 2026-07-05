@@ -90,8 +90,10 @@ from sra_workflow import (
     convert_sra_to_pilot_fasta,
     create_pilot_database_from_fasta,
     discover_sra_projects,
+    parse_run_accessions,
     register_sra_blast_database,
     source_fasta_for_blast_prefix,
+    spawn_prefetch_terminal,
     sra_toolkit_bin,
 )
 
@@ -1277,6 +1279,19 @@ def sra_page():
         sra_toolkit_bin=str(toolkit_bin) if toolkit_bin else "",
         message=request.args.get("message", ""),
         error=error,
+    )
+
+
+@app.post("/sra/fetch")
+def fetch_sra_route():
+    """Open a terminal that prefetches SRA runs into the scanned SRA folder."""
+    try:
+        accessions = parse_run_accessions(request.form.get("accessions", ""))
+        command = spawn_prefetch_terminal(accessions)
+    except Exception as exc:
+        return redirect_to_sra(error=str(exc))
+    return redirect_to_sra(
+        message=f"Opened a terminal downloading {len(accessions)} run(s): {command}"
     )
 
 

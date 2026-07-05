@@ -8,10 +8,13 @@ from existing FASTA or local SRA files.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
+import sys
 
 from config import resource_root, runtime_data_dir, tool_name
 from database_registry import (
@@ -114,6 +117,65 @@ def sra_tool_exe(name: str) -> Path:
     if not exe_path.exists():
         raise FileNotFoundError(f"Could not find {exe_path}.")
     return exe_path
+
+
+# Run-level accessions only (SRR/ERR/DRR). Study/experiment/sample accessions
+# (SRP/SRX/SRS/PRJ...) are rejected so a tester can't accidentally queue a whole
+# multi-terabyte study; prefetch pulls the actual per-sample reads from a run.
+RUN_ACCESSION_RE = re.compile(r"^[SED]RR\d+$")
+
+
+def sra_download_dir() -> Path:
+    """The scanned SRA root that new prefetch downloads should land in."""
+    target = runtime_data_dir() / "sra"
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def parse_run_accessions(raw: str) -> list[str]:
+    """Split user input into de-duplicated, validated SRA run accessions."""
+    tokens = [token.strip().upper() for token in re.split(r"[\s,;]+", raw) if token.strip()]
+    if not tokens:
+        raise ValueError("Enter at least one SRA run accession, e.g. SRR123456.")
+    bad = [token for token in tokens if not RUN_ACCESSION_RE.match(token)]
+    if bad:
+        raise ValueError(
+            "Only SRA run accessions (SRR/ERR/DRR) are allowed. Rejected: "
+            + ", ".join(bad)
+        )
+    seen: set[str] = set()
+    unique: list[str] = []
+    for token in tokens:
+        if token not in seen:
+            seen.add(token)
+            unique.append(token)
+    return unique
+
+
+def spawn_prefetch_terminal(accessions: list[str]) -> str:
+    """Open a terminal that prefetches the given runs into the SRA download dir.
+
+    Returns the command string that was launched, for display. The download runs
+    in its own window so the web request returns immediately and the user sees
+    live prefetch progress; discovered .sra files appear on the next page load.
+    """
+    command = [str(sra_tool_exe("prefetch")), "-O", str(sra_download_dir()), *accessions]
+    if os.name == "nt":
+        # `cmd /k` keeps the new console open after prefetch exits so progress and
+        # any error stay visible. The accession is last and unquoted, so cmd won't
+        # strip the outer quotes list2cmdline puts around the exe path.
+        subprocess.Popen(["cmd", "/k", *command], creationflags=subprocess.CREATE_NEW_CONSOLE)
+        return subprocess.list2cmdline(command)
+    shell_command = shlex.join(command)
+    if sys.platform == "darwin":
+        subprocess.Popen(
+            ["osascript", "-e", f"tell application \"Terminal\" to do script {json.dumps(shell_command)}"]
+        )
+    else:
+        # ponytail: Linux terminal emulators vary too much to guess; run detached
+        # in the background. Swap in `x-terminal-emulator -e` if a window is needed.
+        subprocess.Popen(command, start_new_session=True)
+    return shell_command
 
 
 def project_accession(path: Path) -> str:
@@ -361,3 +423,17 @@ def register_sra_blast_database(
         category="sra",
         notes="Registered from the SRA workbench.",
     )
+
+
+if __name__ == "__main__":
+    # ponytail: smallest check that fails if the accession guard breaks.
+    assert parse_run_accessions("srr1, ERR2 ; DRR3\nSRR1") == ["SRR1", "ERR2", "DRR3"]
+    assert parse_run_accessions(" srr9 ") == ["SRR9"]
+    for bad in ["", "SRP123", "PRJNA1", "SRX9", "hello"]:
+        try:
+            parse_run_accessions(bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected rejection for {bad!r}")
+    print("parse_run_accessions OK")

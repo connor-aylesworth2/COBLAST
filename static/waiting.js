@@ -84,12 +84,6 @@
             <div class="working-breadcrumb">
               <strong>COBLAST+</strong> &raquo; local job &raquo; <span class="working-rid-breadcrumb">RID-LOCAL</span>
             </div>
-            <nav class="working-links" aria-label="Waiting page navigation">
-              <span>Home</span>
-              <span>Recent Results</span>
-              <span>Saved Strategies</span>
-              <span>Help</span>
-            </nav>
           </div>
         </div>
         <main class="working-status-page">
