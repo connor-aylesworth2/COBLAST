@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 
-from config import ensure_tool_bin, resource_root, runtime_data_dir, tool_name
+from config import blast_exe, ensure_tool_bin, resource_root, runtime_data_dir, tool_name
 from database_registry import (
     create_database_from_fasta,
     get_database_by_prefix,
@@ -154,13 +154,27 @@ def parse_run_accessions(raw: str) -> list[str]:
 
 
 def build_fetch_script_lines(
-    accessions: list[str], sra_dir: Path, prefetch: Path, fastq_dump: Path
+    accessions: list[str],
+    sra_dir: Path,
+    prefetch: Path,
+    fastq_dump: Path,
+    makeblastdb: Path,
 ) -> list[str]:
-    """Shell lines that prefetch each run, then convert its .sra to full FASTA.
+    """Per accession: prefetch the .sra, expand it to FASTA, index it as a blastdb.
 
-    prefetch only downloads the compressed .sra (a few GB); fastq-dump expands it
-    to FASTA (often 10x larger) beside the .sra so the run shows up as a
-    fasta-ready project that /databases can turn into a full BLAST database.
+    Three steps so a fetched run lands *blast-ready* rather than stalling at
+    fasta-ready: the workbench only shows a "Register BLASTDB" control once
+    .nin/.nal index files exist, so without the makeblastdb step a tester ends up
+    with a FASTA they cannot register (0 B BLASTDB) and cannot feed to eToL.
+      1. prefetch --max-size u: download the .sra with no size cap. prefetch's
+         default cap is 20G and would silently truncate a larger run; the
+         accession guard already blocks whole studies, so the cap only hurts here.
+      2. fastq-dump --fasta 0 --split-spot --skip-technical --readids: expand the
+         whole run to one FASTA, every biological read its own record so paired
+         mates stay separate instead of concatenating into chimeric sequences.
+      3. makeblastdb -parse_seqids: index that FASTA into a nucleotide blastdb
+         beside it. -parse_seqids builds the id index eToL read recovery and the
+         human filter (blastdbcmd) depend on; without it recovery silently degrades.
     Double-quoted paths work in both cmd.exe and POSIX shells; accessions are
     pre-validated (SRR/ERR/DRR) so they never need quoting.
     """
@@ -168,15 +182,16 @@ def build_fetch_script_lines(
     for accession in accessions:
         accession_dir = sra_dir / accession
         sra_file = accession_dir / f"{accession}.sra"
-        lines.append(f'"{prefetch}" -O "{sra_dir}" {accession}')
-        # --fasta 0: FASTA, no line wrapping. --split-spot: emit every biological
-        # read of a spot as its own record in one file, so paired mates aren't
-        # concatenated into chimeric sequences that would poison the blastdb.
-        # --skip-technical drops adapters/barcodes; no --maxSpotId so the whole
-        # run is converted (the pilot button caps spots; this is the full path).
+        fasta_file = accession_dir / f"{accession}.fasta"
+        db_prefix = accession_dir / accession
+        lines.append(f'"{prefetch}" --max-size u -O "{sra_dir}" {accession}')
         lines.append(
             f'"{fastq_dump}" --fasta 0 --split-spot --skip-technical --readids '
             f'--outdir "{accession_dir}" "{sra_file}"'
+        )
+        lines.append(
+            f'"{makeblastdb}" -in "{fasta_file}" -dbtype nucl -parse_seqids '
+            f'-title {accession} -out "{db_prefix}"'
         )
     return lines
 
@@ -188,14 +203,35 @@ def _run_in_new_terminal(lines: list[str]) -> None:
     window run the whole prefetch+convert chain for every accession.
     """
     if os.name == "nt":
+        # Guard every step: cmd.exe has no `set -e`, so without this a failed
+        # prefetch/convert/index just scrolls past and the next step runs on a
+        # missing file, leaving a half-built folder that looks "done". Stop at the
+        # first failure and pause so the tester actually sees which step broke.
+        guarded = "\n".join(f"{line}\nif errorlevel 1 goto :fail" for line in lines)
+        script = (
+            "@echo off\n"
+            + guarded
+            + "\necho.\n"
+            "echo === All runs downloaded, converted, and indexed. Refresh the SRA"
+            " Workbench, then register the new BLASTDBs. ===\n"
+            "pause\nexit /b 0\n"
+            ":fail\necho.\n"
+            "echo *** A step above FAILED. Scroll up to read the error, fix it, then"
+            " re-run. Nothing was registered. ***\n"
+            "pause\nexit /b 1\n"
+        )
         fd, path = tempfile.mkstemp(prefix="coblast_sra_fetch_", suffix=".cmd")
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write("@echo off\n" + "\n".join(lines) + "\n")
+            handle.write(script)
         subprocess.Popen(["cmd", "/k", path], creationflags=subprocess.CREATE_NEW_CONSOLE)
         return
     fd, path = tempfile.mkstemp(prefix="coblast_sra_fetch_", suffix=".sh")
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write("#!/bin/sh\nset -e\n" + "\n".join(lines) + "\n")
+        handle.write(
+            "#!/bin/sh\nset -e\n"
+            + "\n".join(lines)
+            + '\necho "=== Done. Refresh the SRA Workbench and register the new BLASTDBs. ==="\n'
+        )
     os.chmod(path, 0o755)
     if sys.platform == "darwin":
         run = json.dumps(f"sh {shlex.quote(path)}")
@@ -214,7 +250,11 @@ def spawn_sra_fetch(accessions: list[str]) -> Path:
     """
     sra_dir = sra_download_dir()
     lines = build_fetch_script_lines(
-        accessions, sra_dir, sra_tool_exe("prefetch"), sra_tool_exe("fastq-dump")
+        accessions,
+        sra_dir,
+        sra_tool_exe("prefetch"),
+        sra_tool_exe("fastq-dump"),
+        blast_exe("makeblastdb"),
     )
     _run_in_new_terminal(lines)
     return sra_dir
@@ -482,9 +522,11 @@ if __name__ == "__main__":
     print("parse_run_accessions OK")
 
     prefetch, fastq_dump = Path("/tools/prefetch"), Path("/tools/fastq-dump")
-    lines = build_fetch_script_lines(["SRR1", "SRR2"], Path("/data/sra"), prefetch, fastq_dump)
-    assert len(lines) == 4  # prefetch + convert per accession
-    assert lines[0] == f'"{prefetch}" -O "{Path("/data/sra")}" SRR1'
+    makeblastdb = Path("/tools/makeblastdb")
+    lines = build_fetch_script_lines(["SRR1", "SRR2"], Path("/data/sra"), prefetch, fastq_dump, makeblastdb)
+    assert len(lines) == 6  # prefetch + convert + index per accession
+    assert lines[0] == f'"{prefetch}" --max-size u -O "{Path("/data/sra")}" SRR1'  # no size cap
     assert str(fastq_dump) in lines[1] and "--maxSpotId" not in lines[1]  # full run, not a pilot
     assert "--split-spot" in lines[1]  # every read its own record, no chimeric mates
+    assert str(makeblastdb) in lines[2] and "-parse_seqids" in lines[2]  # blast-ready, id index for eToL
     print("build_fetch_script_lines OK")

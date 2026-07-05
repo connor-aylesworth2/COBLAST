@@ -6,11 +6,28 @@ import sra_workflow
 
 from sra_workflow import (
     SraFileSummary,
+    build_fetch_script_lines,
     find_blast_prefixes,
     find_fasta_files,
     find_sra_files,
     source_fasta_for_blast_prefix,
 )
+
+
+def test_fetch_script_indexes_each_run_into_a_blastdb():
+    # The whole point of the fetch flow: a fetched run must end blast-ready, or
+    # there is nothing to register. Guard the prefetch -> FASTA -> makeblastdb chain.
+    lines = build_fetch_script_lines(
+        ["SRR1"],
+        Path("/data/sra"),
+        Path("/t/prefetch"),
+        Path("/t/fastq-dump"),
+        Path("/t/makeblastdb"),
+    )
+    assert len(lines) == 3
+    assert "--max-size u" in lines[0]  # no 20G default cap silently truncating a run
+    assert "--split-spot" in lines[1]  # mates stay separate, not chimeric
+    assert "makeblastdb" in lines[2] and "-parse_seqids" in lines[2]  # id index for eToL
 
 
 def test_find_fasta_files_filters_and_sorts():
