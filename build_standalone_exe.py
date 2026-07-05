@@ -148,6 +148,9 @@ def build_command(blast_bin: Path, cap3_bin: Path | None, name: str) -> list[str
         "PyInstaller",
         "--clean",
         "--onefile",
+        # UPX compression is a top antivirus false-positive trigger; skip it so
+        # testers hit fewer quarantine/SmartScreen scares on an unsigned exe.
+        "--noupx",
         "--name",
         name,
         "--workpath",

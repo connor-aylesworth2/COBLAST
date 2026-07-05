@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from blast_runner import reads_to_fasta
@@ -39,6 +41,13 @@ from database_registry import blast_safe_path
 DEFAULT_HUMAN_EVALUE = "1e9"
 HUMAN_BITSCORE_THRESHOLD = 150.0
 DEFAULT_HUMAN_TIMEOUT_SECONDS = 1800
+
+# Every batch worker scans the SAME multi-GB human genome DB. Run 30 concurrent
+# and they thrash disk/page-cache re-reading it (CPU sat at 2-4%); serialized,
+# the first scan warms the cache and the rest run warm, each with all cores.
+# Serializing changes only *when* a search runs, never its result.
+# ponytail: one global lock; fine because there is exactly one shared human DB.
+_HUMAN_BLAST_LOCK = threading.Lock()
 
 
 def _unique_read_ids(hits: list[dict[str, str]]) -> list[str]:
@@ -188,13 +197,14 @@ def find_human_read_ids(
         # heaviest post-BLAST step; run it across the job's cores rather than one.
         if num_threads:
             command += ["-num_threads", str(num_threads)]
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-            check=False,
-        )
+        with _HUMAN_BLAST_LOCK:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
     if completed.returncode != 0:
         raise RuntimeError(
             "Human-genome BLAST failed: "
@@ -241,11 +251,17 @@ def filter_human_hits(
         "hits_removed": 0,
         "method": "none",
         "note": "",
+        # Split the phase so a slow run points at the culprit (id-indexed read
+        # recovery vs the human-genome BLAST) without toggling features across runs.
+        "extract_seconds": 0.0,
+        "blast_seconds": 0.0,
     }
     if not read_ids:
         return hits, stats
 
+    _t = perf_counter()
     reads, method = extract_reads(db_prefix_path, source_fasta_path, read_ids)
+    stats["extract_seconds"] = perf_counter() - _t
     stats["method"] = method
     stats["reads_checked"] = len(reads)
     stats["reads_unresolved"] = len(read_ids) - len(reads)
@@ -257,6 +273,7 @@ def filter_human_hits(
         )
         return hits, stats
 
+    _t = perf_counter()
     human_ids = find_human_read_ids(
         reads,
         human_db_prefix_path,
@@ -265,6 +282,7 @@ def filter_human_hits(
         timeout_seconds=timeout_seconds,
         num_threads=num_threads,
     )
+    stats["blast_seconds"] = perf_counter() - _t
     stats["human_reads"] = len(human_ids)
 
     kept = [hit for hit in hits if hit.get("sseqid", "") not in human_ids]

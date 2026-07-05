@@ -853,7 +853,9 @@ def run_batch_blast_route():
                         db_prefix_path=database.db_prefix_path,
                         source_fasta_path=database.source_fasta_path,
                         human_db_prefix_path=human_db.db_prefix_path,
-                        num_threads=threads_per_job,
+                        # Serialized against a shared lock, so one human search runs
+                        # at a time -- give it the whole core budget, not 1 thread.
+                        num_threads=default_thread_count(),
                     )
                 except Exception as exc:
                     human_filter_stats = {
@@ -1011,6 +1013,8 @@ def run_batch_blast_route():
                 f"[etol-timing] {database.display_name}: "
                 f"blast={result.runtime_seconds:.1f}s "
                 f"human_filter={phase_seconds['human_filter']:.1f}s "
+                f"(hf_extract={(human_filter_stats or {}).get('extract_seconds', 0.0):.1f}s "
+                f"hf_blast={(human_filter_stats or {}).get('blast_seconds', 0.0):.1f}s) "
                 f"dedup={phase_seconds['dedup']:.1f}s "
                 f"assembly={phase_seconds['assembly']:.1f}s "
                 f"reprobe={phase_seconds['reprobe']:.1f}s "
