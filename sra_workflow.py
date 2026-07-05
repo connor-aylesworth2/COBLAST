@@ -169,10 +169,13 @@ def build_fetch_script_lines(
         accession_dir = sra_dir / accession
         sra_file = accession_dir / f"{accession}.sra"
         lines.append(f'"{prefetch}" -O "{sra_dir}" {accession}')
-        # --fasta 0: FASTA, no line wrapping; no --maxSpotId so the whole run is
-        # converted (the pilot button caps spots; this is the full-database path).
+        # --fasta 0: FASTA, no line wrapping. --split-spot: emit every biological
+        # read of a spot as its own record in one file, so paired mates aren't
+        # concatenated into chimeric sequences that would poison the blastdb.
+        # --skip-technical drops adapters/barcodes; no --maxSpotId so the whole
+        # run is converted (the pilot button caps spots; this is the full path).
         lines.append(
-            f'"{fastq_dump}" --fasta 0 --skip-technical --readids '
+            f'"{fastq_dump}" --fasta 0 --split-spot --skip-technical --readids '
             f'--outdir "{accession_dir}" "{sra_file}"'
         )
     return lines
@@ -418,6 +421,7 @@ def convert_sra_to_pilot_fasta(
         str(sra_tool_exe("fastq-dump")),
         "--fasta",
         "0",
+        "--split-spot",  # one record per biological read; no chimeric mate concat
         "--skip-technical",
         "--readids",
         "--maxSpotId",
@@ -482,4 +486,5 @@ if __name__ == "__main__":
     assert len(lines) == 4  # prefetch + convert per accession
     assert lines[0] == f'"{prefetch}" -O "{Path("/data/sra")}" SRR1'
     assert str(fastq_dump) in lines[1] and "--maxSpotId" not in lines[1]  # full run, not a pilot
+    assert "--split-spot" in lines[1]  # every read its own record, no chimeric mates
     print("build_fetch_script_lines OK")
