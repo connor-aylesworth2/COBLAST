@@ -454,6 +454,10 @@ commercial server. Those remain separate deployment decisions.
 
 The SRA workbench can:
 
+- fetch full SRA runs by accession: enter one or more run accessions
+  (SRR/ERR/DRR) and COBLAST opens a terminal that runs `prefetch` then
+  `fastq-dump` to download and convert each run to a complete FASTA in the
+  scanned `sra` folder, when the SRA Toolkit is available
 - list local `.sra`, FASTA, and BLAST database artifacts
 - register an existing SRA-derived BLAST database prefix
 - register all discovered SRA-derived BLAST database prefixes, or only selected
@@ -466,10 +470,30 @@ The SRA workbench can:
 
 ### Getting SRA data onto your machine
 
-The workbench only *scans* local folders — it never downloads from NCBI. Get
-the data onto disk first, using one of two paths, then drop it in a per-project
-subfolder of the scanned `sra` folder (one folder per accession/patient, e.g.
+The workbench can now fetch runs for you, or you can place data on disk
+yourself. Every path lands data in a per-project subfolder of the scanned `sra`
+folder (one folder per accession/patient, e.g.
 `%LOCALAPPDATA%\COBLAST_data\sra\SRRxxxxxxxx\`).
+
+**Path 0 — Fetch SRA runs from the workbench (recommended, needs the toolkit).**
+In the SRA workbench's **Fetch SRA runs** box, enter one or more run accessions
+(SRR/ERR/DRR, separated by commas, spaces, or newlines) and press **Build &
+Send Fetch Query**. COBLAST opens a new terminal that runs `prefetch` then a
+full `fastq-dump --fasta` for each accession, downloading the run and converting
+it to a complete FASTA under `...\sra\<ACCESSION>\`. This is Path 2 below,
+automated. The run appears in the SRA Projects table as `fasta-ready` when the
+terminal finishes; build the full database from `/databases` → Create from
+FASTA. Notes:
+
+- Only *run* accessions are accepted. Study, experiment, and sample accessions
+  (SRP/SRX/SRS/PRJ...) are rejected so a whole multi-terabyte study is never
+  queued by accident.
+- Requires the SRA Toolkit. Set `SRA_TOOLKIT_BIN` to its `bin` folder or drop
+  the unzipped `sratoolkit.<ver>` folder next to the `.exe`; the Fetch box is
+  hidden until the toolkit is found.
+- Downloads are kept on disk and re-discovered on every visit, so a run only
+  downloads once per machine. A full run can be tens of GB — `prefetch` pulls a
+  compressed `.sra` (a few GB) and `fastq-dump` expands it to the larger FASTA.
 
 **Path 1 — browser only (small pilot runs, no toolkit).** In the NCBI SRA Run
 Browser (`https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRRxxxxxxxx`),
@@ -479,8 +503,10 @@ shows as `fasta-ready`; use **Create Pilot DB**. (This export is capped/slow —
 is a sample, not a whole run.) You can also download the raw `.sra` object from
 the Run Browser's **Data access** tab, but converting it still needs Path 2.
 
-**Path 2 — SRA Toolkit (full runs, and `.sra` conversion).** Browser FASTA
-export does not scale to a whole run. Install the NCBI SRA Toolkit, then:
+**Path 2 — SRA Toolkit by hand (what Path 0 automates).** Browser FASTA export
+does not scale to a whole run. Path 0 runs these steps for you; do them manually
+only if you want to fetch outside the workbench. Install the NCBI SRA Toolkit,
+then:
 
 ```powershell
 prefetch SRRxxxxxxxx
@@ -496,7 +522,8 @@ set `SRA_TOOLKIT_BIN` to its `bin` folder, or drop the unzipped
 
 The intended first simulation is deliberately small:
 
-1. Put one SRA project under a scanned folder such as:
+1. Put one SRA project under a scanned folder such as the following (or use
+   **Fetch SRA runs** to download one by accession):
 
    ```text
    %LOCALAPPDATA%\COBLAST_data\sra\patient_001\patient_001.sra

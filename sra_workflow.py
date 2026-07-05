@@ -15,6 +15,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 
 from config import resource_root, runtime_data_dir, tool_name
 from database_registry import (
@@ -152,30 +153,68 @@ def parse_run_accessions(raw: str) -> list[str]:
     return unique
 
 
-def spawn_prefetch_terminal(accessions: list[str]) -> str:
-    """Open a terminal that prefetches the given runs into the SRA download dir.
+def build_fetch_script_lines(
+    accessions: list[str], sra_dir: Path, prefetch: Path, fastq_dump: Path
+) -> list[str]:
+    """Shell lines that prefetch each run, then convert its .sra to full FASTA.
 
-    Returns the command string that was launched, for display. The download runs
-    in its own window so the web request returns immediately and the user sees
-    live prefetch progress; discovered .sra files appear on the next page load.
+    prefetch only downloads the compressed .sra (a few GB); fastq-dump expands it
+    to FASTA (often 10x larger) beside the .sra so the run shows up as a
+    fasta-ready project that /databases can turn into a full BLAST database.
+    Double-quoted paths work in both cmd.exe and POSIX shells; accessions are
+    pre-validated (SRR/ERR/DRR) so they never need quoting.
     """
-    command = [str(sra_tool_exe("prefetch")), "-O", str(sra_download_dir()), *accessions]
-    if os.name == "nt":
-        # `cmd /k` keeps the new console open after prefetch exits so progress and
-        # any error stay visible. The accession is last and unquoted, so cmd won't
-        # strip the outer quotes list2cmdline puts around the exe path.
-        subprocess.Popen(["cmd", "/k", *command], creationflags=subprocess.CREATE_NEW_CONSOLE)
-        return subprocess.list2cmdline(command)
-    shell_command = shlex.join(command)
-    if sys.platform == "darwin":
-        subprocess.Popen(
-            ["osascript", "-e", f"tell application \"Terminal\" to do script {json.dumps(shell_command)}"]
+    lines: list[str] = []
+    for accession in accessions:
+        accession_dir = sra_dir / accession
+        sra_file = accession_dir / f"{accession}.sra"
+        lines.append(f'"{prefetch}" -O "{sra_dir}" {accession}')
+        # --fasta 0: FASTA, no line wrapping; no --maxSpotId so the whole run is
+        # converted (the pilot button caps spots; this is the full-database path).
+        lines.append(
+            f'"{fastq_dump}" --fasta 0 --skip-technical --readids '
+            f'--outdir "{accession_dir}" "{sra_file}"'
         )
+    return lines
+
+
+def _run_in_new_terminal(lines: list[str]) -> None:
+    """Write the shell lines to a temp script and run it in a new terminal.
+
+    A temp script sidesteps cmd.exe/bash inline-quoting differences and lets one
+    window run the whole prefetch+convert chain for every accession.
+    """
+    if os.name == "nt":
+        fd, path = tempfile.mkstemp(prefix="coblast_sra_fetch_", suffix=".cmd")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write("@echo off\n" + "\n".join(lines) + "\n")
+        subprocess.Popen(["cmd", "/k", path], creationflags=subprocess.CREATE_NEW_CONSOLE)
+        return
+    fd, path = tempfile.mkstemp(prefix="coblast_sra_fetch_", suffix=".sh")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write("#!/bin/sh\nset -e\n" + "\n".join(lines) + "\n")
+    os.chmod(path, 0o755)
+    if sys.platform == "darwin":
+        run = json.dumps(f"sh {shlex.quote(path)}")
+        subprocess.Popen(["osascript", "-e", f"tell application \"Terminal\" to do script {run}"])
     else:
         # ponytail: Linux terminal emulators vary too much to guess; run detached
-        # in the background. Swap in `x-terminal-emulator -e` if a window is needed.
-        subprocess.Popen(command, start_new_session=True)
-    return shell_command
+        # in the background. Swap in `x-terminal-emulator -e sh path` for a window.
+        subprocess.Popen(["/bin/sh", path], start_new_session=True)
+
+
+def spawn_sra_fetch(accessions: list[str]) -> Path:
+    """Fetch + convert the given runs in a new terminal; return the download dir.
+
+    Runs in its own window so the web request returns immediately; the finished
+    .sra and FASTA files appear in the SRA Projects table on the next page load.
+    """
+    sra_dir = sra_download_dir()
+    lines = build_fetch_script_lines(
+        accessions, sra_dir, sra_tool_exe("prefetch"), sra_tool_exe("fastq-dump")
+    )
+    _run_in_new_terminal(lines)
+    return sra_dir
 
 
 def project_accession(path: Path) -> str:
@@ -437,3 +476,10 @@ if __name__ == "__main__":
         else:
             raise AssertionError(f"expected rejection for {bad!r}")
     print("parse_run_accessions OK")
+
+    prefetch, fastq_dump = Path("/tools/prefetch"), Path("/tools/fastq-dump")
+    lines = build_fetch_script_lines(["SRR1", "SRR2"], Path("/data/sra"), prefetch, fastq_dump)
+    assert len(lines) == 4  # prefetch + convert per accession
+    assert lines[0] == f'"{prefetch}" -O "{Path("/data/sra")}" SRR1'
+    assert str(fastq_dump) in lines[1] and "--maxSpotId" not in lines[1]  # full run, not a pilot
+    print("build_fetch_script_lines OK")
