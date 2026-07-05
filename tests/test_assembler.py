@@ -151,12 +151,16 @@ def test_cap3_exe_prefers_env_dir(tmp_path, monkeypatch):
 
 def test_cap3_exe_falls_back_to_path(monkeypatch):
     monkeypatch.delenv("CAP3_BIN", raising=False)
+    # Neutralize the UGENE default-path probe so PATH is actually reached on a
+    # machine that has UGENE/CAP3 installed (otherwise the real install wins).
+    monkeypatch.setattr(config, "_ugene_cap3_candidates", lambda: [])
     monkeypatch.setattr(config.shutil, "which", lambda _name: "/usr/local/bin/cap3")
     assert config.cap3_exe() == Path("/usr/local/bin/cap3")
 
 
 def test_cap3_exe_raises_when_missing(monkeypatch):
     monkeypatch.delenv("CAP3_BIN", raising=False)
+    monkeypatch.setattr(config, "_ugene_cap3_candidates", lambda: [])
     monkeypatch.setattr(config.shutil, "which", lambda _name: None)
     with pytest.raises(FileNotFoundError, match="Could not find the CAP3 assembler"):
         config.cap3_exe()

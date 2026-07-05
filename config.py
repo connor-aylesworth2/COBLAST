@@ -208,7 +208,9 @@ _DOWNLOADABLE_TOOLS: dict[str, dict[str, str | None]] = {
             "https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/3.2.0/"
             "sratoolkit.3.2.0-win64.zip"
         ),
-        "sha256": None,
+        # NCBI ships no .md5 sidecar for the SRA sdk, so this must be pinned or
+        # the download fails closed. Computed from the 3.2.0 win64 zip.
+        "sha256": "4b090fc4e12f21203909b997ebdc1140de378d959e4c898f514d6f31d915702e",
         "bin_glob": "sratoolkit.*/bin",
     },
 }
@@ -308,6 +310,32 @@ def ensure_tool_bin(name: str, detector) -> Path | None:
     if bin_dir is None:
         raise RuntimeError(f"Installed {name} but no {proof_exe} under {install_root}.")
     return bin_dir
+
+
+def verify_downloadable_tools() -> None:
+    """Pre-ship gate: assert every auto-install entry is fetchable + verifiable.
+
+    Run `python config.py --check-downloads` before handing testers a build (or
+    wire it into CI). It catches exactly what a tester would otherwise hit at
+    runtime: a URL that 404s, or an entry with neither a pinned sha256 nor a
+    .md5 sidecar (which fails closed). HEAD requests only — no large download.
+    """
+    for name, spec in _DOWNLOADABLE_TOOLS.items():
+        url = spec["url"]
+        try:
+            urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=30).close()
+        except Exception as exc:
+            raise AssertionError(f"{name}: download URL not reachable: {url} ({exc})")
+        if spec["sha256"]:
+            continue
+        try:
+            urllib.request.urlopen(url + ".md5", timeout=30).close()
+        except Exception:
+            raise AssertionError(
+                f"{name}: no pinned sha256 and no .md5 sidecar for {url}; testers "
+                "would hit a fail-closed download. Pin sha256 in _DOWNLOADABLE_TOOLS."
+            )
+    print("downloadable tools OK")
 
 
 def flask_port() -> int:
@@ -411,3 +439,7 @@ if __name__ == "__main__":
     assert ensure_tool_bin("cap3", lambda: None) is None
     assert ensure_tool_bin("cap3", lambda: Path("/opt/ugene")) == Path("/opt/ugene")
     print("config auto-install checks OK")
+
+    # Opt-in network check (run before shipping a test build): python config.py --check-downloads
+    if "--check-downloads" in sys.argv:
+        verify_downloadable_tools()
