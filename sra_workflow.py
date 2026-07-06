@@ -196,6 +196,42 @@ def build_fetch_script_lines(
     return lines
 
 
+def _windows_fetch_script(lines: list[str]) -> str:
+    """PowerShell body: hold the machine awake, run each step, release + pause.
+
+    On Windows, *locking* the screen never stops a running process; only *sleep*
+    does. So the fetch doesn't need `screen` (a Unix terminal-detach tool that
+    can't touch power state anyway) -- it needs Windows told not to idle-sleep
+    while it runs. SetThreadExecutionState(ES_CONTINUOUS|ES_SYSTEM_REQUIRED) does
+    exactly that, scoped to this window and released in `finally`, so an
+    unattended locked machine keeps downloading without changing the user's
+    global power plan or needing admin. Each native step is guarded on
+    $LASTEXITCODE so a failure stops the chain instead of building on a bad file.
+    0x80000000/0x80000001 are cast from hex strings because PowerShell parses the
+    bare literal 0x80000000 as a negative Int32 that won't convert to uint.
+    """
+    guard = "\n  if ($LASTEXITCODE -ne 0) { throw 'A step failed.' }\n"
+    steps = "".join("& " + line + guard for line in lines)
+    return (
+        "$p = Add-Type -PassThru -Name CoblastPwr -Namespace Win32 -MemberDefinition "
+        "'[DllImport(\"kernel32.dll\")] public static extern uint SetThreadExecutionState(uint f);'\n"
+        "[void]$p::SetThreadExecutionState([uint32]'0x80000001')  # ES_CONTINUOUS|ES_SYSTEM_REQUIRED\n"
+        "try {\n"
+        + steps
+        + "  Write-Host ''\n"
+        "  Write-Host '=== All runs downloaded, converted, and indexed. Refresh the SRA"
+        " Workbench, then register the new BLASTDBs. ==='\n"
+        "} catch {\n"
+        "  Write-Host ''\n"
+        "  Write-Host '*** A step above FAILED. Scroll up to read the error, fix it, then"
+        " re-run. Nothing was registered. ***'\n"
+        "} finally {\n"
+        "  [void]$p::SetThreadExecutionState([uint32]'0x80000000')  # release the wake lock\n"
+        "  Read-Host 'Press Enter to close'\n"
+        "}\n"
+    )
+
+
 def _run_in_new_terminal(lines: list[str]) -> None:
     """Write the shell lines to a temp script and run it in a new terminal.
 
@@ -203,27 +239,13 @@ def _run_in_new_terminal(lines: list[str]) -> None:
     window run the whole prefetch+convert chain for every accession.
     """
     if os.name == "nt":
-        # Guard every step: cmd.exe has no `set -e`, so without this a failed
-        # prefetch/convert/index just scrolls past and the next step runs on a
-        # missing file, leaving a half-built folder that looks "done". Stop at the
-        # first failure and pause so the tester actually sees which step broke.
-        guarded = "\n".join(f"{line}\nif errorlevel 1 goto :fail" for line in lines)
-        script = (
-            "@echo off\n"
-            + guarded
-            + "\necho.\n"
-            "echo === All runs downloaded, converted, and indexed. Refresh the SRA"
-            " Workbench, then register the new BLASTDBs. ===\n"
-            "pause\nexit /b 0\n"
-            ":fail\necho.\n"
-            "echo *** A step above FAILED. Scroll up to read the error, fix it, then"
-            " re-run. Nothing was registered. ***\n"
-            "pause\nexit /b 1\n"
-        )
-        fd, path = tempfile.mkstemp(prefix="coblast_sra_fetch_", suffix=".cmd")
+        fd, path = tempfile.mkstemp(prefix="coblast_sra_fetch_", suffix=".ps1")
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(script)
-        subprocess.Popen(["cmd", "/k", path], creationflags=subprocess.CREATE_NEW_CONSOLE)
+            handle.write(_windows_fetch_script(lines))
+        subprocess.Popen(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path],
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+        )
         return
     fd, path = tempfile.mkstemp(prefix="coblast_sra_fetch_", suffix=".sh")
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -530,3 +552,9 @@ if __name__ == "__main__":
     assert "--split-spot" in lines[1]  # every read its own record, no chimeric mates
     assert str(makeblastdb) in lines[2] and "-parse_seqids" in lines[2]  # blast-ready, id index for eToL
     print("build_fetch_script_lines OK")
+
+    win = _windows_fetch_script(['"pf" -O "d" A', '"fq" -x "d" A', '"mb" -in "d" -out "p"'])
+    assert "SetThreadExecutionState([uint32]'0x80000001')" in win  # holds the wake lock
+    assert win.count("SetThreadExecutionState([uint32]'0x80000000')") == 1  # releases it once
+    assert win.count("if ($LASTEXITCODE -ne 0)") == 3  # every step guarded
+    print("_windows_fetch_script OK")

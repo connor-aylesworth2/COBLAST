@@ -475,8 +475,8 @@ yourself. Every path lands data in a per-project subfolder of the scanned `sra`
 folder (one folder per accession/patient, e.g.
 `%LOCALAPPDATA%\COBLAST_data\sra\SRRxxxxxxxx\`).
 
-**Path 0 — Fetch SRA runs from the workbench (recommended, needs the toolkit).**
-In the SRA workbench's **Fetch SRA runs** box, enter one or more run accessions
+**Path 0 — SRA-mart: fetch SRA runs from the workbench (recommended, needs the toolkit).**
+In the SRA workbench's **SRA-mart** box, enter one or more run accessions
 (SRR/ERR/DRR, separated by commas, spaces, or newlines) and press **Build &
 Send Fetch Query**. COBLAST opens a new terminal that runs `prefetch` then a
 full `fastq-dump --fasta` for each accession, downloading the run and converting
@@ -523,7 +523,7 @@ set `SRA_TOOLKIT_BIN` to its `bin` folder, or drop the unzipped
 The intended first simulation is deliberately small:
 
 1. Put one SRA project under a scanned folder such as the following (or use
-   **Fetch SRA runs** to download one by accession):
+   **SRA-mart** to download one by accession):
 
    ```text
    %LOCALAPPDATA%\COBLAST_data\sra\patient_001\patient_001.sra
