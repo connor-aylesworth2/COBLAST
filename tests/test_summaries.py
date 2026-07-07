@@ -481,3 +481,22 @@ def test_sort_results_by_condition_groups_by_design_matrix_order():
     ]
     # No matrix -> original order untouched (never sort on the unreliable regex).
     assert sort_results_by_condition(results, None) is results
+
+
+def test_sort_results_by_condition_puts_controls_left_of_treatment():
+    # Even when the matrix lists a treatment group first, control columns move to
+    # the left so a left-to-right read runs control -> treatment.
+    results = [
+        {"display_name": "SRA SRR1 reads", "db_prefix_path": ""},  # AD
+        {"display_name": "SRA SRR2 reads", "db_prefix_path": ""},  # CTRL
+        {"display_name": "SRA SRR3 reads", "db_prefix_path": ""},  # Control
+    ]
+    index = parse_design_matrix(
+        "sample,condition\nSRR1,AD\nSRR2,CTRL\nSRR3,Control\n", filename="d.csv"
+    )
+    ordered = [r["display_name"] for r in sort_results_by_condition(results, index)]
+    assert ordered == [
+        "SRA SRR2 reads",  # CTRL (control, first-seen among controls)
+        "SRA SRR3 reads",  # Control
+        "SRA SRR1 reads",  # AD (treatment, last)
+    ]

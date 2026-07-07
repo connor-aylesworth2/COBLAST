@@ -782,26 +782,40 @@ def build_etol_matrix(
     }
 
 
+# A condition is a "control" group when its label carries the word control/ctrl
+# (any case), so control columns can be pushed left of treatment columns.
+_CONTROL_CONDITION_RE = re.compile(r"\b(?:control|ctrl)\b", re.IGNORECASE)
+
+
+def _is_control_condition(condition: str) -> bool:
+    """True when a design-matrix condition label denotes a control group."""
+    return bool(_CONTROL_CONDITION_RE.search(condition or ""))
+
+
 def sort_results_by_condition(
     database_results: list[dict[str, Any]],
     condition_index: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
-    """Order samples by design-matrix condition (first-seen), then sample label.
+    """Order samples with control groups first, then design-matrix condition
+    (first-seen), then sample label.
 
     Reorders only when an explicit design matrix is supplied; the regex condition
-    guesser (:func:`_sample_condition`) is too unreliable to sort on. Samples with
-    no matching matrix row sort last so the gap stays visible. Callers sort the
-    sample list once, upstream, so the heatmap, on-page tables, and CSV/TSV
-    exports all inherit the one condition-ordered layout.
+    guesser (:func:`_sample_condition`) is too unreliable to sort on. Control
+    groups (label contains control/ctrl) sort ahead of all treatment groups so a
+    left-to-right read runs control -> treatment; samples with no matching matrix
+    row sort last so the gap stays visible. Callers sort the sample list once,
+    upstream, so the heatmap, on-page tables, and CSV/TSV exports all inherit the
+    one condition-ordered layout.
     """
     if not condition_index:
         return database_results
     order = {cond: i for i, cond in enumerate(condition_index.get("conditions") or [])}
     last = len(order)
 
-    def key(row: dict[str, Any]) -> tuple[int, str]:
+    def key(row: dict[str, Any]) -> tuple[int, int, str]:
         condition, matched = _condition_from_index(row, condition_index)
         rank = order.get(condition, last) if matched else last
-        return (rank, _sample_label(row))
+        control_first = 0 if matched and _is_control_condition(condition) else 1
+        return (control_first, rank, _sample_label(row))
 
     return sorted(database_results, key=key)
