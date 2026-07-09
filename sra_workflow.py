@@ -157,17 +157,16 @@ def build_fetch_script_lines(
     accessions: list[str],
     sra_dir: Path,
     prefetch: Path,
-    fastq_dump: Path,
+    fasterq_dump: Path,
     makeblastdb: Path,
 ) -> list[tuple[str, str]]:
     """Per accession: prefetch the .sra, expand it to FASTA, index it as a blastdb.
 
     Returns (progress_header, command) pairs. The terminal echoes the header
-    before each command so the user always sees "run i/N, step x/3" -- prefetch
-    also gets --progress for a live download bar (the long pole), and the headers
-    cover fastq-dump, which otherwise sits silent for minutes on a big run. The
-    header is plain ASCII with no apostrophes so it single-quotes cleanly in both
-    PowerShell and sh.
+    before each command so the user always sees "run i/N, step x/3". Steps 1 and 2
+    each also show a live native progress bar; step 3 (makeblastdb) has no progress
+    option at all, so the header is the only position signal there. The header is
+    plain ASCII with no apostrophes so it single-quotes cleanly in PowerShell and sh.
 
     Three steps so a fetched run lands *blast-ready* rather than stalling at
     fasta-ready: the workbench only shows a "Register BLASTDB" control once
@@ -177,9 +176,18 @@ def build_fetch_script_lines(
          bar and no size cap. prefetch's default cap is 20G and would silently
          truncate a larger run; the accession guard already blocks whole studies,
          so the cap only hurts here.
-      2. fastq-dump --fasta 0 --split-spot --skip-technical --readids: expand the
-         whole run to one FASTA, every biological read its own record so paired
-         mates stay separate instead of concatenating into chimeric sequences.
+      2. fasterq-dump --fasta --split-spot --skip-technical --progress: expand the
+         whole run to one FASTA with a live progress bar (fastq-dump has none) and
+         multi-threaded, so a big run's convert isn't a long silent stall. Every
+         biological read is its own record so paired mates stay separate instead of
+         concatenating into chimeric sequences. --seq-defline '$ac.$si.$ri'
+         reproduces fastq-dump --readids' unique <acc>.<spot>.<read> ids: without a
+         read id in the defline, --split-spot gives both mates of a spot the SAME id
+         and step 3's -parse_seqids collides/drops them. Single-quoted so neither
+         PowerShell nor sh expands the $ tokens. -O writes <acc>.fasta beside the
+         .sra; -t keeps fasterq-dump's multi-GB scratch on the same disk (its
+         default is the cwd, which the terminal launches from); -f overwrites a
+         partial FASTA left by a re-run.
       3. makeblastdb -parse_seqids: index that FASTA into a nucleotide blastdb
          beside it. -parse_seqids builds the id index eToL read recovery and the
          human filter (blastdbcmd) depend on; without it recovery silently degrades.
@@ -200,8 +208,9 @@ def build_fetch_script_lines(
         ))
         steps.append((
             f"{tag} - step 2/3: converting to FASTA",
-            f'"{fastq_dump}" --fasta 0 --split-spot --skip-technical --readids '
-            f'--outdir "{accession_dir}" "{sra_file}"',
+            f'"{fasterq_dump}" --fasta --split-spot --skip-technical --progress -f '
+            f"--seq-defline '$ac.$si.$ri' "
+            f'-O "{accession_dir}" -t "{accession_dir}" "{sra_file}"',
         ))
         steps.append((
             f"{tag} - step 3/3: building BLAST database",
@@ -310,7 +319,7 @@ def spawn_sra_fetch(accessions: list[str]) -> Path:
         accessions,
         sra_dir,
         sra_tool_exe("prefetch"),
-        sra_tool_exe("fastq-dump"),
+        sra_tool_exe("fasterq-dump"),
         blast_exe("makeblastdb"),
     )
     _run_in_new_terminal(steps)
@@ -578,17 +587,18 @@ if __name__ == "__main__":
             raise AssertionError(f"expected rejection for {bad!r}")
     print("parse_run_accessions OK")
 
-    prefetch, fastq_dump = Path("/tools/prefetch"), Path("/tools/fastq-dump")
+    prefetch, fasterq_dump = Path("/tools/prefetch"), Path("/tools/fasterq-dump")
     makeblastdb = Path("/tools/makeblastdb")
-    steps = build_fetch_script_lines(["SRR1", "SRR2"], Path("/data/sra"), prefetch, fastq_dump, makeblastdb)
+    steps = build_fetch_script_lines(["SRR1", "SRR2"], Path("/data/sra"), prefetch, fasterq_dump, makeblastdb)
     headers = [header for header, _ in steps]
     cmds = [cmd for _, cmd in steps]
     assert len(steps) == 6  # prefetch + convert + index per accession
     assert cmds[0] == f'"{prefetch}" --progress --max-size u -O "{Path("/data/sra")}" SRR1'  # bar + no cap
     assert headers[0] == "[run 1/2] SRR1 - step 1/3: downloading .sra"  # position the user reads
     assert headers[3] == "[run 2/2] SRR2 - step 1/3: downloading .sra"  # second run counted
-    assert str(fastq_dump) in cmds[1] and "--maxSpotId" not in cmds[1]  # full run, not a pilot
+    assert str(fasterq_dump) in cmds[1] and "--progress" in cmds[1]  # native convert progress bar
     assert "--split-spot" in cmds[1]  # every read its own record, no chimeric mates
+    assert "--seq-defline '$ac.$si.$ri'" in cmds[1]  # unique <acc>.<spot>.<read> ids, no mate collision
     assert str(makeblastdb) in cmds[2] and "-parse_seqids" in cmds[2]  # blast-ready, id index for eToL
     print("build_fetch_script_lines OK")
 
