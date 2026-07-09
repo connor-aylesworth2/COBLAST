@@ -31,7 +31,7 @@ def test_fetch_script_indexes_each_run_into_a_blastdb():
     assert "--max-size u" in cmds[0]  # no 20G default cap silently truncating a run
     assert "--progress" in cmds[1]  # live convert bar (fasterq-dump, not fastq-dump)
     assert "--split-spot" in cmds[1]  # mates stay separate, not chimeric
-    assert "--seq-defline '$ac.$si.$ri'" in cmds[1]  # unique read ids for -parse_seqids/eToL
+    assert "--seq-defline '>$ac.$si.$ri'" in cmds[1]  # '>' header + unique read ids for -parse_seqids/eToL
     assert "makeblastdb" in cmds[2] and "-parse_seqids" in cmds[2]  # id index for eToL
     assert headers == [  # each step announces its position before it runs
         "[run 1/1] SRR1 - step 1/3: downloading .sra",

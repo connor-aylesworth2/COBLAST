@@ -180,11 +180,15 @@ def build_fetch_script_lines(
          whole run to one FASTA with a live progress bar (fastq-dump has none) and
          multi-threaded, so a big run's convert isn't a long silent stall. Every
          biological read is its own record so paired mates stay separate instead of
-         concatenating into chimeric sequences. --seq-defline '$ac.$si.$ri'
+         concatenating into chimeric sequences. --seq-defline '>$ac.$si.$ri'
          reproduces fastq-dump --readids' unique <acc>.<spot>.<read> ids: without a
          read id in the defline, --split-spot gives both mates of a spot the SAME id
-         and step 3's -parse_seqids collides/drops them. Single-quoted so neither
-         PowerShell nor sh expands the $ tokens. -O writes <acc>.fasta beside the
+         and step 3's -parse_seqids collides/drops them. The leading '>' is required:
+         fasterq-dump uses --seq-defline as the *whole* header line and does NOT
+         auto-prepend it, so omitting it yields headerless records makeblastdb
+         rejects ("Input doesn't start with a defline"). Single-quoted so neither
+         PowerShell (& runs the exe directly, so '>' is not a redirect) nor sh
+         expands the $ tokens or treats '>' specially. -O writes <acc>.fasta beside the
          .sra; -t keeps fasterq-dump's multi-GB scratch on the same disk (its
          default is the cwd, which the terminal launches from); -f overwrites a
          partial FASTA left by a re-run.
@@ -209,7 +213,7 @@ def build_fetch_script_lines(
         steps.append((
             f"{tag} - step 2/3: converting to FASTA",
             f'"{fasterq_dump}" --fasta --split-spot --skip-technical --progress -f '
-            f"--seq-defline '$ac.$si.$ri' "
+            f"--seq-defline '>$ac.$si.$ri' "
             f'-O "{accession_dir}" -t "{accession_dir}" "{sra_file}"',
         ))
         steps.append((
@@ -598,7 +602,7 @@ if __name__ == "__main__":
     assert headers[3] == "[run 2/2] SRR2 - step 1/3: downloading .sra"  # second run counted
     assert str(fasterq_dump) in cmds[1] and "--progress" in cmds[1]  # native convert progress bar
     assert "--split-spot" in cmds[1]  # every read its own record, no chimeric mates
-    assert "--seq-defline '$ac.$si.$ri'" in cmds[1]  # unique <acc>.<spot>.<read> ids, no mate collision
+    assert "--seq-defline '>$ac.$si.$ri'" in cmds[1]  # '>' header + unique <acc>.<spot>.<read> ids
     assert str(makeblastdb) in cmds[2] and "-parse_seqids" in cmds[2]  # blast-ready, id index for eToL
     print("build_fetch_script_lines OK")
 
