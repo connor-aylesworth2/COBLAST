@@ -55,6 +55,40 @@ def insert_database(
     return registry.get_database(database_id)
 
 
+def test_create_database_passes_spaceless_in_arg_for_spaced_source_dir(
+    isolated_registry, monkeypatch
+):
+    # A FASTA inside a directory with a space must never reach makeblastdb's -in as
+    # a spaced string: BLAST+ splits -in on whitespace, so "E:\S DRIVE\reads.fasta"
+    # would be read as two files. We run from the dir and pass the bare filename.
+    source_dir = isolated_registry / "S DRIVE"
+    source_dir.mkdir()
+    source = source_dir / "reads.fasta"
+    source.write_text(">r\nACGT\n", encoding="ascii")
+
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["cwd"] = kwargs.get("cwd")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(registry, "blast_exe", lambda name: Path(name))
+    monkeypatch.setattr(registry.subprocess, "run", fake_run)
+    monkeypatch.setattr(registry, "upsert_database", lambda **kwargs: SimpleNamespace(**kwargs))
+
+    registry.create_database_from_fasta(
+        display_name="Spaced Source",
+        db_type="nucl",
+        source_fasta_path=source,
+    )
+
+    in_value = captured["command"][captured["command"].index("-in") + 1]
+    assert in_value == "reads.fasta"
+    assert " " not in in_value
+    assert Path(captured["cwd"]) == source_dir
+
+
 def test_remove_database_deletes_only_the_registry_row(isolated_registry):
     prefix = isolated_registry / "external" / "patient"
     prefix.parent.mkdir()

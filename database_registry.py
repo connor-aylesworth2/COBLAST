@@ -423,8 +423,15 @@ def create_database_from_fasta(
 
     command = [
         str(blast_exe("makeblastdb")),
+        # Pass the bare filename with cwd=source.parent, not the full path. BLAST+
+        # splits -in on internal whitespace (it accepts a space-separated list of
+        # input files), so a directory containing spaces like "E:\S DRIVE" is torn
+        # into "E:\S" + "DRIVE\..." even when the OS quotes the argument correctly.
+        # The 8.3 short-path dodge in blast_safe_path only works when the volume
+        # has NtfsDisable8dot3NameCreation off, which external drives often don't.
+        # A space-free basename sidesteps BLAST's splitter regardless.
         "-in",
-        blast_safe_path(source),
+        source.name,
         "-dbtype",
         db_type,
         # -parse_seqids builds the id index blastdbcmd needs to pull reads back out
@@ -432,10 +439,16 @@ def create_database_from_fasta(
         # without it, recovery silently falls back to scanning the source FASTA.
         "-parse_seqids",
         "-out",
+        # ponytail: source-side spaces fixed; a spaced DB *prefix* (spaced Windows
+        # username, or a user-typed -out) still breaks -db later, which BLAST also
+        # splits on whitespace. Upgrade path: same basename+cwd trick at the -db
+        # call sites, or force managed DBs into a space-free dir. Not hit here: the
+        # default prefix lands under the space-free managed dir.
         blast_safe_path(prefix),
     ]
     completed = subprocess.run(
         command,
+        cwd=source.parent,
         capture_output=True,
         text=True,
         check=False,

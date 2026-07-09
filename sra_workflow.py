@@ -159,16 +159,24 @@ def build_fetch_script_lines(
     prefetch: Path,
     fastq_dump: Path,
     makeblastdb: Path,
-) -> list[str]:
+) -> list[tuple[str, str]]:
     """Per accession: prefetch the .sra, expand it to FASTA, index it as a blastdb.
+
+    Returns (progress_header, command) pairs. The terminal echoes the header
+    before each command so the user always sees "run i/N, step x/3" -- prefetch
+    also gets --progress for a live download bar (the long pole), and the headers
+    cover fastq-dump, which otherwise sits silent for minutes on a big run. The
+    header is plain ASCII with no apostrophes so it single-quotes cleanly in both
+    PowerShell and sh.
 
     Three steps so a fetched run lands *blast-ready* rather than stalling at
     fasta-ready: the workbench only shows a "Register BLASTDB" control once
     .nin/.nal index files exist, so without the makeblastdb step a tester ends up
     with a FASTA they cannot register (0 B BLASTDB) and cannot feed to eToL.
-      1. prefetch --max-size u: download the .sra with no size cap. prefetch's
-         default cap is 20G and would silently truncate a larger run; the
-         accession guard already blocks whole studies, so the cap only hurts here.
+      1. prefetch --progress --max-size u: download the .sra with a live progress
+         bar and no size cap. prefetch's default cap is 20G and would silently
+         truncate a larger run; the accession guard already blocks whole studies,
+         so the cap only hurts here.
       2. fastq-dump --fasta 0 --split-spot --skip-technical --readids: expand the
          whole run to one FASTA, every biological read its own record so paired
          mates stay separate instead of concatenating into chimeric sequences.
@@ -178,25 +186,32 @@ def build_fetch_script_lines(
     Double-quoted paths work in both cmd.exe and POSIX shells; accessions are
     pre-validated (SRR/ERR/DRR) so they never need quoting.
     """
-    lines: list[str] = []
-    for accession in accessions:
+    total = len(accessions)
+    steps: list[tuple[str, str]] = []
+    for index, accession in enumerate(accessions, start=1):
         accession_dir = sra_dir / accession
         sra_file = accession_dir / f"{accession}.sra"
         fasta_file = accession_dir / f"{accession}.fasta"
         db_prefix = accession_dir / accession
-        lines.append(f'"{prefetch}" --max-size u -O "{sra_dir}" {accession}')
-        lines.append(
+        tag = f"[run {index}/{total}] {accession}"
+        steps.append((
+            f"{tag} - step 1/3: downloading .sra",
+            f'"{prefetch}" --progress --max-size u -O "{sra_dir}" {accession}',
+        ))
+        steps.append((
+            f"{tag} - step 2/3: converting to FASTA",
             f'"{fastq_dump}" --fasta 0 --split-spot --skip-technical --readids '
-            f'--outdir "{accession_dir}" "{sra_file}"'
-        )
-        lines.append(
+            f'--outdir "{accession_dir}" "{sra_file}"',
+        ))
+        steps.append((
+            f"{tag} - step 3/3: building BLAST database",
             f'"{makeblastdb}" -in "{fasta_file}" -dbtype nucl -parse_seqids '
-            f'-title {accession} -out "{db_prefix}"'
-        )
-    return lines
+            f'-title {accession} -out "{db_prefix}"',
+        ))
+    return steps
 
 
-def _windows_fetch_script(lines: list[str]) -> str:
+def _windows_fetch_script(steps: list[tuple[str, str]]) -> str:
     """PowerShell body: hold the machine awake, run each step, release + pause.
 
     On Windows, *locking* the screen never stops a running process; only *sleep*
@@ -205,19 +220,35 @@ def _windows_fetch_script(lines: list[str]) -> str:
     while it runs. SetThreadExecutionState(ES_CONTINUOUS|ES_SYSTEM_REQUIRED) does
     exactly that, scoped to this window and released in `finally`, so an
     unattended locked machine keeps downloading without changing the user's
-    global power plan or needing admin. Each native step is guarded on
-    $LASTEXITCODE so a failure stops the chain instead of building on a bad file.
+    global power plan or needing admin. We *also* request away mode best-effort so
+    a *manual* Sleep keeps the CPU running (screen off) where the machine supports
+    it; a real S3 suspend powers the CPU/NIC off, so no code can download through
+    it -- preventing the suspend is the only option. Each native step prints its progress
+    header, then is guarded on $LASTEXITCODE so a failure stops the chain instead
+    of building on a bad file. The guard runs *after* the native command, so
+    $LASTEXITCODE is always set by then (the Write-Host lines never touch it).
     0x80000000/0x80000001 are cast from hex strings because PowerShell parses the
     bare literal 0x80000000 as a negative Int32 that won't convert to uint.
     """
-    guard = "\n  if ($LASTEXITCODE -ne 0) { throw 'A step failed.' }\n"
-    steps = "".join("& " + line + guard for line in lines)
+    guard = "  if ($LASTEXITCODE -ne 0) { throw 'A step failed.' }\n"
+    body = "".join(
+        f"  Write-Host ''\n  Write-Host '=== {header} ==='\n  & {command}\n{guard}"
+        for header, command in steps
+    )
     return (
         "$p = Add-Type -PassThru -Name CoblastPwr -Namespace Win32 -MemberDefinition "
         "'[DllImport(\"kernel32.dll\")] public static extern uint SetThreadExecutionState(uint f);'\n"
-        "[void]$p::SetThreadExecutionState([uint32]'0x80000001')  # ES_CONTINUOUS|ES_SYSTEM_REQUIRED\n"
+        "[void]$p::SetThreadExecutionState([uint32]'0x80000001')  # ES_CONTINUOUS|ES_SYSTEM_REQUIRED: block idle sleep\n"
+        # ponytail: best-effort away mode -- if the machine supports it and the power
+        # plan enables it (desktops mostly; off by default; unsupported on most laptops
+        # and Modern Standby), a manual Sleep keeps the CPU running with the screen off
+        # so the download survives. Set AFTER the base lock: if away mode is unavailable
+        # this call is a no-op and the idle-sleep block above still stands (no regression).
+        # Ceiling: a real S3 suspend can't be worked around; that needs the lid/sleep-
+        # button power setting changed, which we deliberately don't touch.
+        "[void]$p::SetThreadExecutionState([uint32]'0x80000041')  # + ES_AWAYMODE_REQUIRED (best-effort)\n"
         "try {\n"
-        + steps
+        + body
         + "  Write-Host ''\n"
         "  Write-Host '=== All runs downloaded, converted, and indexed. Refresh the SRA"
         " Workbench, then register the new BLASTDBs. ==='\n"
@@ -232,27 +263,31 @@ def _windows_fetch_script(lines: list[str]) -> str:
     )
 
 
-def _run_in_new_terminal(lines: list[str]) -> None:
-    """Write the shell lines to a temp script and run it in a new terminal.
+def _run_in_new_terminal(steps: list[tuple[str, str]]) -> None:
+    """Write the (header, command) steps to a temp script and run it in a terminal.
 
     A temp script sidesteps cmd.exe/bash inline-quoting differences and lets one
-    window run the whole prefetch+convert chain for every accession.
+    window run the whole prefetch+convert chain for every accession. Each step's
+    progress header is echoed before its command so the user can watch position.
     """
     if os.name == "nt":
         fd, path = tempfile.mkstemp(prefix="coblast_sra_fetch_", suffix=".ps1")
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(_windows_fetch_script(lines))
+            handle.write(_windows_fetch_script(steps))
         subprocess.Popen(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path],
             creationflags=subprocess.CREATE_NEW_CONSOLE,
         )
         return
     fd, path = tempfile.mkstemp(prefix="coblast_sra_fetch_", suffix=".sh")
+    body = "".join(
+        f"echo\necho '=== {header} ==='\n{command}\n" for header, command in steps
+    )
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(
             "#!/bin/sh\nset -e\n"
-            + "\n".join(lines)
-            + '\necho "=== Done. Refresh the SRA Workbench and register the new BLASTDBs. ==="\n'
+            + body
+            + "echo\necho '=== Done. Refresh the SRA Workbench and register the new BLASTDBs. ==='\n"
         )
     os.chmod(path, 0o755)
     if sys.platform == "darwin":
@@ -271,14 +306,14 @@ def spawn_sra_fetch(accessions: list[str]) -> Path:
     .sra and FASTA files appear in the SRA Projects table on the next page load.
     """
     sra_dir = sra_download_dir()
-    lines = build_fetch_script_lines(
+    steps = build_fetch_script_lines(
         accessions,
         sra_dir,
         sra_tool_exe("prefetch"),
         sra_tool_exe("fastq-dump"),
         blast_exe("makeblastdb"),
     )
-    _run_in_new_terminal(lines)
+    _run_in_new_terminal(steps)
     return sra_dir
 
 
@@ -545,16 +580,23 @@ if __name__ == "__main__":
 
     prefetch, fastq_dump = Path("/tools/prefetch"), Path("/tools/fastq-dump")
     makeblastdb = Path("/tools/makeblastdb")
-    lines = build_fetch_script_lines(["SRR1", "SRR2"], Path("/data/sra"), prefetch, fastq_dump, makeblastdb)
-    assert len(lines) == 6  # prefetch + convert + index per accession
-    assert lines[0] == f'"{prefetch}" --max-size u -O "{Path("/data/sra")}" SRR1'  # no size cap
-    assert str(fastq_dump) in lines[1] and "--maxSpotId" not in lines[1]  # full run, not a pilot
-    assert "--split-spot" in lines[1]  # every read its own record, no chimeric mates
-    assert str(makeblastdb) in lines[2] and "-parse_seqids" in lines[2]  # blast-ready, id index for eToL
+    steps = build_fetch_script_lines(["SRR1", "SRR2"], Path("/data/sra"), prefetch, fastq_dump, makeblastdb)
+    headers = [header for header, _ in steps]
+    cmds = [cmd for _, cmd in steps]
+    assert len(steps) == 6  # prefetch + convert + index per accession
+    assert cmds[0] == f'"{prefetch}" --progress --max-size u -O "{Path("/data/sra")}" SRR1'  # bar + no cap
+    assert headers[0] == "[run 1/2] SRR1 - step 1/3: downloading .sra"  # position the user reads
+    assert headers[3] == "[run 2/2] SRR2 - step 1/3: downloading .sra"  # second run counted
+    assert str(fastq_dump) in cmds[1] and "--maxSpotId" not in cmds[1]  # full run, not a pilot
+    assert "--split-spot" in cmds[1]  # every read its own record, no chimeric mates
+    assert str(makeblastdb) in cmds[2] and "-parse_seqids" in cmds[2]  # blast-ready, id index for eToL
     print("build_fetch_script_lines OK")
 
-    win = _windows_fetch_script(['"pf" -O "d" A', '"fq" -x "d" A', '"mb" -in "d" -out "p"'])
+    win = _windows_fetch_script([("run 1", '"pf" -O "d" A'), ("run 2", '"fq" -x "d" A'),
+                                 ("run 3", '"mb" -in "d" -out "p"')])
     assert "SetThreadExecutionState([uint32]'0x80000001')" in win  # holds the wake lock
+    assert "SetThreadExecutionState([uint32]'0x80000041')" in win  # best-effort away mode
     assert win.count("SetThreadExecutionState([uint32]'0x80000000')") == 1  # releases it once
     assert win.count("if ($LASTEXITCODE -ne 0)") == 3  # every step guarded
+    assert win.count("Write-Host '=== run ") == 3  # every step prints its progress header
     print("_windows_fetch_script OK")

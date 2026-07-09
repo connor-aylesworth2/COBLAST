@@ -17,17 +17,25 @@ from sra_workflow import (
 def test_fetch_script_indexes_each_run_into_a_blastdb():
     # The whole point of the fetch flow: a fetched run must end blast-ready, or
     # there is nothing to register. Guard the prefetch -> FASTA -> makeblastdb chain.
-    lines = build_fetch_script_lines(
+    steps = build_fetch_script_lines(
         ["SRR1"],
         Path("/data/sra"),
         Path("/t/prefetch"),
         Path("/t/fastq-dump"),
         Path("/t/makeblastdb"),
     )
-    assert len(lines) == 3
-    assert "--max-size u" in lines[0]  # no 20G default cap silently truncating a run
-    assert "--split-spot" in lines[1]  # mates stay separate, not chimeric
-    assert "makeblastdb" in lines[2] and "-parse_seqids" in lines[2]  # id index for eToL
+    headers = [header for header, _ in steps]
+    cmds = [cmd for _, cmd in steps]
+    assert len(steps) == 3
+    assert "--progress" in cmds[0]  # live download bar so the user sees progress
+    assert "--max-size u" in cmds[0]  # no 20G default cap silently truncating a run
+    assert "--split-spot" in cmds[1]  # mates stay separate, not chimeric
+    assert "makeblastdb" in cmds[2] and "-parse_seqids" in cmds[2]  # id index for eToL
+    assert headers == [  # each step announces its position before it runs
+        "[run 1/1] SRR1 - step 1/3: downloading .sra",
+        "[run 1/1] SRR1 - step 2/3: converting to FASTA",
+        "[run 1/1] SRR1 - step 3/3: building BLAST database",
+    ]
 
 
 def test_find_fasta_files_filters_and_sorts():
