@@ -49,6 +49,36 @@ If that diagnostic succeeds but the browser launch still fails, run:
 
 Then open the printed `http://127.0.0.1:...` address manually.
 
+## Choosing Where COBLAST+ Stores Data
+
+COBLAST+ writes everything it builds — BLAST databases, SRA downloads, search
+results, the database registry, and temporary scratch files — under a single
+data folder. Because databases and SRA runs can reach tens or hundreds of GB,
+you can point that folder at any drive with free space instead of the system
+drive.
+
+- **First launch:** `COBLAST.exe` shows a folder picker. Choose a folder on the
+  drive you want (for example `D:\COBLAST_data`); COBLAST+ remembers it for
+  every future launch. Skip the picker and COBLAST+ falls back to the default
+  `%LOCALAPPDATA%\COBLAST_data` on `C:`.
+- **Change it later:** open the **Settings** page from the top navigation bar
+  (or `http://127.0.0.1:5000/settings`), enter a new folder, and save. The
+  change applies the next time you start COBLAST+.
+- **No spaces in the path.** BLAST+ cannot build databases under a spaced path
+  such as `D:\My Data`; use a space-free folder such as `D:\COBLAST_data`.
+  COBLAST+ rejects a spaced path and asks again.
+- **Existing data is not moved.** Switching folders starts a fresh database
+  registry at the new location. Databases built at the old location stay on
+  disk and keep working, but are not listed until you re-add them on the
+  Databases page (Add Existing BLAST Database). No files are deleted.
+- **Temporary scratch follows the data folder too**, so large
+  `fastq-dump`/CAP3/BLAST scratch during big runs stays off the system drive.
+
+Advanced/scripted alternatives: `COBLAST.exe --data-dir D:\COBLAST_data` sets
+the location without the picker, `COBLAST.exe --pick-data-dir` forces the picker
+to reappear, and setting the `COBLAST_DATA_DIR` environment variable overrides
+the saved location for a single session.
+
 ## What COBLAST Does
 
 COBLAST+ is a general-purpose, clinician-oriented graphical front end for NCBI
@@ -177,9 +207,15 @@ Then run the app through the executable:
 
 By default the standalone executable stores app data in a stable per-user
 folder at `%LOCALAPPDATA%\COBLAST_data`, so the same data is reused no matter
-where the `.exe` lives. To override that location, set `COBLAST_DATA_DIR`:
+where the `.exe` lives. To store data on a different drive, use the first-run
+folder picker or the **Settings** page (see
+[Choosing Where COBLAST+ Stores Data](#choosing-where-coblast-stores-data)).
+The choice is saved and reused on every launch. For scripted runs you can pass
+the folder directly, or set `COBLAST_DATA_DIR` to override it for one session:
 
 ```powershell
+.\dist\COBLAST.exe --data-dir C:\COBLAST_data
+# or, for a single session:
 $env:COBLAST_DATA_DIR = 'C:\COBLAST_data'
 .\dist\COBLAST.exe
 ```
@@ -237,8 +273,10 @@ external FASTA or BLAST database files must remain at the same paths, or the
 database registry may show them as `missing`. Use the database-management page
 to verify databases after updating.
 
-If a tester used `COBLAST_DATA_DIR` to store data somewhere else, set
-`COBLAST_DATA_DIR` again before launching the new version.
+If a tester chose a custom data folder (the first-run picker or the Settings
+page), the new version reads that same saved location automatically — there is
+nothing to set again. The `COBLAST_DATA_DIR` environment variable, if used,
+still overrides the saved location for that session.
 
 To remove a test version after confirming a newer one works:
 

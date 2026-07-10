@@ -17,6 +17,36 @@ exports are stored in a stable per-user data folder at `%LOCALAPPDATA%\COBLAST_d
 
 This executable is unsigned and intended for agreed prototype testing only.
 
+## Choosing Where COBLAST+ Stores Data
+
+COBLAST+ writes everything it builds — BLAST databases, SRA downloads, search
+results, the database registry, and temporary scratch files — under a single
+data folder. Databases and SRA runs can reach tens or hundreds of GB, so you can
+put that folder on any drive with room to spare instead of your system (`C:`)
+drive.
+
+- **First launch:** a folder picker asks where to store COBLAST+ data. Choose a
+  folder on the drive you want (for example `D:\COBLAST_data`); COBLAST+
+  remembers it for every future launch. If you skip the picker, COBLAST+ uses
+  the default `%LOCALAPPDATA%\COBLAST_data` on `C:`.
+- **Change it later:** open the **Settings** page from the top navigation bar
+  (or `http://127.0.0.1:5000/settings`), enter a new folder, and save. The
+  change takes effect the next time you start COBLAST+.
+- **No spaces in the path.** BLAST+ cannot build databases under a folder whose
+  path contains spaces (for example `D:\My Data`). Choose a space-free folder
+  such as `D:\COBLAST_data`; COBLAST+ rejects a spaced path and asks again.
+- **Existing data is not moved.** Switching folders starts a fresh database
+  registry at the new location. Databases you built at the old location stay on
+  disk and keep working, but they are not listed until you re-add them on the
+  Databases page (Add Existing BLAST Database). Their files are never deleted.
+- **Temporary files follow the data folder too**, so large `fastq-dump`/CAP3/
+  BLAST scratch during big runs no longer fills your system drive.
+
+Advanced/scripted use: launch `COBLAST.exe --data-dir D:\COBLAST_data` to set
+the location without the picker, or `COBLAST.exe --pick-data-dir` to force the
+picker to reappear. Setting the `COBLAST_DATA_DIR` environment variable
+overrides the saved location for one session.
+
 ## Optional: Contig Assembly (eToL re-probing)
 
 The eToL presets can assemble matched reads into contigs and re-probe
@@ -56,7 +86,9 @@ containing `COBLAST.exe`. Persistent app data lives separately in a stable
 per-user folder at `%LOCALAPPDATA%\COBLAST_data` (for example
 `C:\Users\<you>\AppData\Local\COBLAST_data`). Because that folder is independent
 of where `COBLAST.exe` sits, databases and results carry over automatically
-across version updates.
+across version updates. If you chose a custom data folder (the first-run picker
+or the Settings page), the new version reads that same saved location
+automatically — there is nothing to re-select.
 
 To install a newer version and keep old databases/results:
 
