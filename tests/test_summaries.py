@@ -199,6 +199,33 @@ def test_build_etol_matrix_shape_and_counts():
     assert matrix["confirmed"] is None
 
 
+def test_matrix_domain_shares_exclude_human_controls():
+    # The eToL Domain Pie sums the matrix hit counts by each row's domain (client
+    # side). Guard that contract here: hits aggregate cleanly by domain, the human
+    # PGK1/hNSE control probes never surface as a domain, and the shares add up.
+    records = etol_preset_records("etol_quick")
+    first_probe_by_domain: dict[str, str] = {}
+    for rec in records:
+        first_probe_by_domain.setdefault(rec["domain"], rec["probe"])
+    (d1, p1), (d2, p2) = list(first_probe_by_domain.items())[:2]
+    results = [
+        {
+            "display_name": "s",
+            "hits": [{"qseqid": p1}] * 7 + [{"qseqid": p2}] * 3,
+            "etol_control_counts": {"PGK1_2": 500, "hNSE_2": 500},
+        }
+    ]
+    matrix = build_etol_matrix(results, records, level="species")
+    totals: dict[str, int] = {}
+    for r, row in enumerate(matrix["rows"]):
+        s = sum(matrix["hits"][r])
+        if s:
+            totals[row["domain"]] = totals.get(row["domain"], 0) + s
+    assert totals == {d1: 7, d2: 3}
+    assert "Human control" not in totals  # controls are not panel rows
+    assert sum(totals.values()) == 10     # -> shares 70% / 30%
+
+
 def test_build_etol_matrix_labels_run_accessions():
     # SRR/ERR/DRR run accessions (not just SRX experiment accessions) should be
     # picked up so SRR-built patient databases get a clean column label.

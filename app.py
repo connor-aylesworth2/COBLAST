@@ -5,6 +5,7 @@ delegate BLAST/database work to helper modules, and render templates with the
 objects those helpers return.
 """
 
+import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -82,7 +83,10 @@ from config import (
     allocate_batch_resources,
     default_thread_count,
     flask_port,
+    load_saved_data_dir,
     resource_path,
+    runtime_data_dir,
+    save_data_dir,
 )
 from database_size import database_storage_bytes, format_bytes
 from sra_workflow import (
@@ -1259,6 +1263,47 @@ def databases_page():
         ),
         error=request.args.get("error") or registry_error,
         message=request.args.get("message", ""),
+    )
+
+
+@app.get("/settings")
+def settings_page():
+    """Show the active data location and a form to change it."""
+    active_dir = runtime_data_dir()
+    saved_dir = load_saved_data_dir()
+    try:
+        free_label = format_bytes(shutil.disk_usage(active_dir).free)
+    except OSError:
+        free_label = "unknown"
+    # A saved pointer that differs from the active dir means a change is pending
+    # a restart (the data-dir constants are read once at import time).
+    pending_dir = str(saved_dir) if saved_dir and saved_dir != active_dir else ""
+    return render_template(
+        "settings.html",
+        data_dir=str(active_dir),
+        pending_dir=pending_dir,
+        free_label=free_label,
+        error=request.args.get("error", ""),
+        message=request.args.get("message", ""),
+    )
+
+
+@app.post("/settings")
+def update_settings_route():
+    """Persist a new data location; it takes effect on the next launch."""
+    try:
+        chosen = save_data_dir(request.form.get("data_dir", ""))
+    except Exception as exc:
+        return redirect(url_for("settings_page", error=str(exc)))
+    return redirect(
+        url_for(
+            "settings_page",
+            message=(
+                f"Data location saved: {chosen}. Restart COBLAST+ to apply. "
+                "Databases built at the old location stay on disk — re-add "
+                "them via Databases → Register existing."
+            ),
+        )
     )
 
 

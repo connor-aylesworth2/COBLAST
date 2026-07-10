@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import hashlib
+import json
 import os
 import shutil
 import sys
@@ -53,11 +54,72 @@ def user_data_base() -> Path:
     return Path.home() / ".local" / "share"
 
 
+def _settings_path() -> Path:
+    """Fixed-location pointer file recording the user's chosen data dir.
+
+    Lives under the OS per-user base (on Windows: %LOCALAPPDATA%\\COBLAST), never
+    inside the movable data dir it points at — that chicken-and-egg is why this
+    tiny JSON exists instead of storing the choice in the SQLite registry (which
+    itself lives in the data dir).
+    """
+    return user_data_base() / "COBLAST" / "settings.json"
+
+
+def validate_data_dir(path: str | Path) -> Path:
+    """Validate a candidate data dir and return it resolved.
+
+    Rejects paths containing spaces because BLAST+ splits ``-out``/``-db`` on
+    internal whitespace, so a data dir like ``D:\\My Data`` silently yields broken
+    databases (the default DB-prefix sites in database_registry.py and
+    sra_workflow.py both inherit this dir). Also confirms the dir is creatable and
+    writable, so a bad choice fails here rather than mid-run.
+    """
+    raw = str(path).strip()
+    if not raw:
+        raise ValueError("Enter a folder path for COBLAST+ data.")
+    resolved = Path(raw).expanduser().resolve()
+    if " " in str(resolved):
+        raise ValueError(
+            f"The data folder path cannot contain spaces (got: {resolved}). "
+            "BLAST+ cannot build databases under a spaced path — choose a "
+            r"space-free folder such as D:\COBLAST_data."
+        )
+    try:
+        resolved.mkdir(parents=True, exist_ok=True)
+        probe = resolved / ".coblast_write_test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+    except OSError as exc:
+        raise ValueError(f"Cannot write to {resolved}: {exc}") from exc
+    return resolved
+
+
+def load_saved_data_dir() -> Path | None:
+    """Return the user's saved data dir, or None if unset/unreadable/corrupt."""
+    try:
+        value = json.loads(_settings_path().read_text(encoding="utf-8")).get("data_dir")
+    except (OSError, ValueError):
+        return None
+    return Path(value).expanduser().resolve() if value else None
+
+
+def save_data_dir(path: str | Path) -> Path:
+    """Validate and persist the chosen data dir to the fixed pointer; return it."""
+    validated = validate_data_dir(path)
+    settings = _settings_path()
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(json.dumps({"data_dir": str(validated)}), encoding="utf-8")
+    return validated
+
+
 def runtime_data_dir() -> Path:
     """Choose where mutable app data should live."""
     env_data_dir = os.environ.get("COBLAST_DATA_DIR")
     if env_data_dir:
         return Path(env_data_dir).expanduser().resolve()
+    saved = load_saved_data_dir()
+    if saved:
+        return saved
     if is_frozen():
         # A stable per-user location keeps data across version installs instead
         # of trapping it beside whichever .exe happened to create it.
@@ -439,6 +501,43 @@ if __name__ == "__main__":
     assert ensure_tool_bin("cap3", lambda: None) is None
     assert ensure_tool_bin("cap3", lambda: Path("/opt/ugene")) == Path("/opt/ugene")
     print("config auto-install checks OK")
+
+    # ponytail: data-dir pointer + validation checks (no network, no real data dir).
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        saved_env = {k: os.environ.get(k) for k in ("LOCALAPPDATA", "XDG_DATA_HOME")}
+        os.environ["LOCALAPPDATA"] = str(base)  # Windows pointer home
+        os.environ["XDG_DATA_HOME"] = str(base)  # Linux pointer home
+        try:
+            assert load_saved_data_dir() is None
+            # load reads back a hand-written pointer (read path does not validate)
+            _settings_path().parent.mkdir(parents=True, exist_ok=True)
+            _settings_path().write_text(
+                json.dumps({"data_dir": str(base / "store")}), encoding="utf-8"
+            )
+            assert load_saved_data_dir() == (base / "store").expanduser().resolve()
+            # a corrupt pointer degrades to None instead of crashing
+            _settings_path().write_text("{ not json", encoding="utf-8")
+            assert load_saved_data_dir() is None
+            # spaces are always rejected, before any disk is touched
+            try:
+                validate_data_dir("some folder/with space")
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("spaced data dir should be rejected")
+            # a clean, writable dir round-trips through save/load
+            if " " not in str(base):
+                chosen = save_data_dir(base / "picked")
+                assert chosen == (base / "picked").resolve()
+                assert load_saved_data_dir() == chosen
+        finally:
+            for key, value in saved_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+    print("data-dir pointer checks OK")
 
     # Opt-in network check (run before shipping a test build): python config.py --check-downloads
     if "--check-downloads" in sys.argv:

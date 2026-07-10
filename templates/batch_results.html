@@ -18,6 +18,7 @@
           <a href="/batch-blast">Batch BLAST</a>
           <a href="/sra">SRA Workbench</a>
           <a href="/databases">Databases</a>
+          <a href="/settings">Settings</a>
         </nav>
       </div>
     </header>
@@ -356,6 +357,35 @@
               </div>
             </section>
             <script src="{{ url_for('static', filename='etol_heatmap.js') }}"></script>
+
+            <section class="panel">
+              <div class="panel__header">
+                <h2 class="panel__title">eToL Domain Pie</h2>
+              </div>
+              <p class="muted">
+                A coarser companion to the heatmap: the share of this job's
+                non-human probe-matched reads falling into each Tree-of-Life
+                domain. Host control probes are excluded and, when the secondary
+                human filter ran, human-derived reads are already removed. Pick a
+                single sample or view the whole job.
+              </p>
+              <div
+                id="etol-pie"
+                data-matrix-url="{{ url_for('etol_matrix_json', batch_id=batch.batch_id) }}"
+              >
+                <div class="etol-heatmap__controls">
+                  <label>Sample
+                    <select data-role="sample"></select>
+                  </label>
+                  <span class="etol-heatmap__spacer"></span>
+                  <button type="button" class="button button-secondary" data-role="png">Export PNG</button>
+                  <button type="button" class="button button-secondary" data-role="svg">Export SVG</button>
+                </div>
+                <p class="muted" data-role="status"></p>
+                <div class="etol-heatmap__canvas" data-role="canvas"></div>
+              </div>
+            </section>
+            <script src="{{ url_for('static', filename='etol_pie.js') }}"></script>
           {% endif %}
 
           {% if batch.etol_preset_key == 'etol_v' and batch.etol_confusion %}

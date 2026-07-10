@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Settings</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    {# Same header/navigation structure as the other pages. #}
+    <header class="site-header">
+      <div class="site-header__inner">
+        <div class="brand">
+          <span class="brand__name">COBLAST+</span>
+          <span class="brand__sub">Clinician-Oriented BLAST+</span>
+        </div>
+        <nav class="nav">
+          <a href="/">Run BLAST</a>
+          <a href="/batch-blast">Batch BLAST</a>
+          <a href="/sra">SRA Workbench</a>
+          <a href="/databases">Databases</a>
+          <a href="/settings">Settings</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="page">
+      <h1 class="page-title">Settings</h1>
+
+      {# Messages/errors are passed via query parameters after POST redirects. #}
+      {% if message %}
+        <p class="message">{{ message }}</p>
+      {% endif %}
+      {% if error %}
+        <p class="error">{{ error }}</p>
+      {% endif %}
+
+      <section class="panel">
+        <div class="panel__header">
+          <h2 class="panel__title">Data location</h2>
+        </div>
+
+        <p>
+          COBLAST+ stores everything it builds — BLAST databases, SRA downloads,
+          search results, the database registry, and temporary scratch files —
+          under a single data folder. Point it at a drive with plenty of free
+          space to keep large databases off your system drive.
+        </p>
+
+        <p><strong>Active location:</strong> <code>{{ data_dir }}</code>
+          (free space on this drive: {{ free_label }})</p>
+
+        {% if pending_dir %}
+          <p class="message">
+            A new location is saved and will be used after you restart:
+            <code>{{ pending_dir }}</code>
+          </p>
+        {% endif %}
+
+        <form method="post" action="/settings">
+          <label for="settings_data_dir">Data folder</label>
+          <input
+            id="settings_data_dir"
+            name="data_dir"
+            value="{{ pending_dir or data_dir }}"
+            placeholder="D:\COBLAST_data"
+            required
+          >
+          <button type="submit">Save data location</button>
+        </form>
+
+        <ul>
+          <li><strong>Takes effect on restart.</strong> Close COBLAST+ and start
+            it again after saving.</li>
+          <li><strong>No spaces in the path.</strong> BLAST+ cannot build
+            databases under a folder whose path contains spaces (for example
+            <code>D:\My Data</code>). Choose a space-free folder such as
+            <code>D:\COBLAST_data</code>.</li>
+          <li><strong>Existing data is not moved.</strong> Changing the location
+            starts a fresh database registry at the new folder. Databases built
+            at the old location stay on disk and keep working — re-add them via
+            <a href="/databases">Databases → Register existing</a>.</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>

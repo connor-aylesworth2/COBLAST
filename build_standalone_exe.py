@@ -159,10 +159,8 @@ def build_command(blast_bin: Path, cap3_bin: Path | None, name: str) -> list[str
         str(root / "dist"),
         "--collect-submodules",
         "Bio.SeqIO",
-        "--exclude-module",
-        "tkinter",
-        "--exclude-module",
-        "_tkinter",
+        # tkinter is bundled (previously excluded) so the first-run data-location
+        # folder picker in run_COBLAST.py works in the frozen build.
         "--add-data",
         add_data_arg(root / "templates", "templates"),
         "--add-data",

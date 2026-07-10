@@ -93,6 +93,94 @@ def standalone_data_dir() -> Path:
     return runtime_data_dir()
 
 
+def _prompt_for_data_dir() -> Path | None:
+    """Show a native folder picker; return a validated dir, or None to fall back.
+
+    Uses tkinter (stdlib). Re-prompts on an invalid (e.g. spaced) choice. Returns
+    None when tkinter is unavailable/headless or the user cancels, so the caller
+    keeps the default location rather than failing to launch.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, messagebox
+    except Exception:
+        print(
+            f"[{APP_NAME}] Folder picker unavailable; using the default data "
+            "location. Change it later on the Settings page, or relaunch with "
+            "--data-dir <path>.",
+            flush=True,
+        )
+        return None
+
+    from config import validate_data_dir
+
+    root = None
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        while True:
+            chosen = filedialog.askdirectory(
+                title="Choose where COBLAST+ stores its data "
+                "(databases, SRA downloads, results)"
+            )
+            if not chosen:
+                return None
+            try:
+                return validate_data_dir(chosen)
+            except ValueError as exc:
+                messagebox.showerror("Invalid folder", str(exc))
+    except Exception:
+        return None
+    finally:
+        if root is not None:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+
+
+def resolve_data_dir(args: argparse.Namespace) -> Path:
+    """Pick the data dir from --data-dir, the saved pointer, or a first-run picker."""
+    from config import load_saved_data_dir, runtime_data_dir, save_data_dir
+
+    if args.data_dir:
+        try:
+            return save_data_dir(args.data_dir)
+        except ValueError as exc:
+            raise LauncherError(str(exc)) from exc
+
+    want_picker = args.pick_data_dir or (
+        is_frozen()
+        and load_saved_data_dir() is None
+        and not os.environ.get("COBLAST_DATA_DIR")
+    )
+    if want_picker:
+        picked = _prompt_for_data_dir()
+        if picked is not None:
+            return save_data_dir(picked)
+
+    return runtime_data_dir()  # env -> saved pointer -> frozen default -> source instance
+
+
+def setup_data_location(args: argparse.Namespace) -> None:
+    """Pin the data dir and redirect temp scratch onto the same drive.
+
+    Exports COBLAST_DATA_DIR so every module and subprocess agrees on one
+    location, and points TMP/TEMP at ``<data_dir>/tmp`` so large fasterq-dump /
+    CAP3 / BLAST scratch does not quietly fill C:. Setting os.environ in the
+    parent covers both the frozen in-process app and the source-mode child
+    (which copies os.environ).
+    """
+    data_dir = resolve_data_dir(args)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["COBLAST_DATA_DIR"] = str(data_dir)
+
+    temp_dir = data_dir / "tmp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["TMP"] = os.environ["TEMP"] = os.environ["TMPDIR"] = str(temp_dir)
+    tempfile.tempdir = None  # drop any cached temp dir so the new TMP/TEMP takes effect
+
+
 def step(message: str) -> None:
     """Print a visible progress heading in the terminal."""
     print(f"\n[{APP_NAME}] {message}", flush=True)
@@ -685,6 +773,17 @@ def parse_args() -> argparse.Namespace:
         help="Run the packaged end-to-end self-check (read recovery + human filter "
         "+ CAP3) and exit. Used as a post-build gate against the frozen .exe.",
     )
+    parser.add_argument(
+        "--data-dir",
+        help="Folder where COBLAST+ stores its data (databases, SRA downloads, "
+        "results). Saved for future launches. Must be a space-free path.",
+    )
+    parser.add_argument(
+        "--pick-data-dir",
+        action="store_true",
+        help="Show a folder picker to choose the COBLAST+ data location, even if "
+        "one is already saved.",
+    )
     return parser.parse_args()
 
 
@@ -698,6 +797,11 @@ def main() -> int:
         require_supported_python()
         if args.self_check:
             return run_self_check()
+
+        # Resolve the data location (flag/saved pointer/first-run picker) and
+        # redirect temp scratch before any data-dir-derived module imports.
+        setup_data_location(args)
+
         if is_frozen() and has_bundled_app():
             return run_standalone(args)
 
