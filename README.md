@@ -9,7 +9,7 @@ dissertation research prototype (University of Edinburgh).
 
 [![tests](https://github.com/connor-aylesworth2/COBLAST-/actions/workflows/ci.yml/badge.svg)](https://github.com/connor-aylesworth2/COBLAST-/actions/workflows/ci.yml)
 
-![COBLAST+ Run BLAST interface](docs/coblast-run-blast.png)
+![COBLAST+ — running a BLAST job end to end](docs/COBLAST_gif.gif)
 
 ## What it does
 
