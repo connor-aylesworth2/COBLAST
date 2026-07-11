@@ -172,6 +172,16 @@ def setup_data_location(args: argparse.Namespace) -> None:
     (which copies os.environ).
     """
     data_dir = resolve_data_dir(args)
+    # A saved pointer or env value skips validate_data_dir, so re-check here that
+    # BLAST+ can actually build databases on this filesystem (exFAT/FAT USB sticks
+    # pass a plain write test but fail every makeblastdb). Clear message beats the
+    # raw NCBI "no write permissions" exception deep in the first run.
+    from config import require_blast_capable_data_dir
+
+    try:
+        require_blast_capable_data_dir(data_dir)
+    except ValueError as exc:
+        raise LauncherError(str(exc)) from exc
     data_dir.mkdir(parents=True, exist_ok=True)
     os.environ["COBLAST_DATA_DIR"] = str(data_dir)
 

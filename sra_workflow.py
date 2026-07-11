@@ -17,7 +17,14 @@ import subprocess
 import sys
 import tempfile
 
-from config import blast_exe, ensure_tool_bin, resource_root, runtime_data_dir, tool_name
+from config import (
+    blast_exe,
+    ensure_tool_bin,
+    resource_root,
+    runtime_data_dir,
+    sra_reads_dir,
+    tool_name,
+)
 from database_registry import (
     create_database_from_fasta,
     get_database_by_prefix,
@@ -70,7 +77,8 @@ def configured_sra_roots() -> list[Path]:
     if env_roots:
         roots.extend(Path(part).expanduser() for part in env_roots.split(os.pathsep) if part)
 
-    roots.append(runtime_data_dir() / "sra")
+    roots.append(sra_reads_dir())  # pull-from (may be a USB/exFAT drive)
+    roots.append(runtime_data_dir() / "sra")  # write-to (fetched DBs on the data dir)
     roots.append(resource_root().parent / "SRA_data")
 
     unique: list[Path] = []
@@ -127,7 +135,24 @@ RUN_ACCESSION_RE = re.compile(r"^[SED]RR\d+$")
 
 
 def sra_download_dir() -> Path:
-    """The scanned SRA root that new prefetch downloads should land in."""
+    """Pull-from root where new prefetch downloads (.sra/.fasta) land.
+
+    Defaults to ``<data_dir>/sra`` but follows the SRA reads pointer, so downloads
+    can go to a roomy USB/exFAT drive while the BLAST database step still targets
+    the data dir (see sra_blastdb_dir).
+    """
+    target = sra_reads_dir()
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def sra_blastdb_dir() -> Path:
+    """Write-to root for fetched BLAST databases: always under the data dir.
+
+    makeblastdb can't build on exFAT/FAT, so fetched DBs go here (the validated
+    data dir) regardless of where the reads live. When the reads pointer is unset,
+    this is the same folder as sra_download_dir() and behavior is unchanged.
+    """
     target = runtime_data_dir() / "sra"
     target.mkdir(parents=True, exist_ok=True)
     return target
@@ -159,6 +184,7 @@ def build_fetch_script_lines(
     prefetch: Path,
     fasterq_dump: Path,
     makeblastdb: Path,
+    db_dir: Path | None = None,
 ) -> list[tuple[str, str]]:
     """Per accession: prefetch the .sra, expand it to FASTA, index it as a blastdb.
 
@@ -198,13 +224,17 @@ def build_fetch_script_lines(
     Double-quoted paths work in both cmd.exe and POSIX shells; accessions are
     pre-validated (SRR/ERR/DRR) so they never need quoting.
     """
+    # db_dir None => build the DB beside the reads (single-drive, unchanged). When
+    # given (a separate write-to drive), reads land under sra_dir but step 3 writes
+    # the blastdb under db_dir, so makeblastdb never touches an exFAT reads drive.
+    db_root = Path(db_dir) if db_dir is not None else sra_dir
     total = len(accessions)
     steps: list[tuple[str, str]] = []
     for index, accession in enumerate(accessions, start=1):
         accession_dir = sra_dir / accession
         sra_file = accession_dir / f"{accession}.sra"
         fasta_file = accession_dir / f"{accession}.fasta"
-        db_prefix = accession_dir / accession
+        db_prefix = db_root / accession / accession
         tag = f"[run {index}/{total}] {accession}"
         steps.append((
             f"{tag} - step 1/3: downloading .sra",
@@ -318,13 +348,15 @@ def spawn_sra_fetch(accessions: list[str]) -> Path:
     Runs in its own window so the web request returns immediately; the finished
     .sra and FASTA files appear in the SRA Projects table on the next page load.
     """
-    sra_dir = sra_download_dir()
+    sra_dir = sra_download_dir()  # pull-from (reads); may be a USB/exFAT drive
+    db_dir = sra_blastdb_dir()  # write-to (databases); always the data dir
     steps = build_fetch_script_lines(
         accessions,
         sra_dir,
         sra_tool_exe("prefetch"),
         sra_tool_exe("fasterq-dump"),
         blast_exe("makeblastdb"),
+        db_dir=db_dir,
     )
     _run_in_new_terminal(steps)
     return sra_dir

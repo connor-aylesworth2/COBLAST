@@ -1,4 +1,66 @@
-# COBLAST+ Prototype
+# COBLAST+
+
+**A clinician-oriented graphical front end for NCBI BLAST+.** Paste or upload a
+sequence, pick a local database, and run `blastn` / `blastp` / `blastx` /
+`tblastn` from the browser — everything stays on `127.0.0.1`, so no sequence
+data leaves the machine. On top of ordinary BLAST it adds a batch/SRA workbench
+and validated microbiome (eToL) and APOE genotyping presets. Built as an MSc
+dissertation research prototype (University of Edinburgh).
+
+<!-- Add these once the CI workflow and LICENSE file exist:
+![Tests](https://github.com/connor-aylesworth2/<REPO>/actions/workflows/ci.yml/badge.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+-->
+
+![COBLAST+ Run BLAST interface](docs/coblast-run-blast.png)
+
+## What it does
+
+COBLAST+ wraps the stock NCBI BLAST+ executables, so a routine search returns the
+same hits as the command-line tools — it just makes them accessible through a
+browser to non-programmers. It validates FASTA input with Biopython, runs an
+allowlist of BLAST+ programs via `subprocess`, and parses the tabular/XML output
+into sortable result tables with CSV/TSV export. Databases are tracked in a local
+SQLite registry; you can build a BLAST database from a FASTA file or register an
+existing one. A batch path runs one query across many registered databases, which
+the SRA workbench and the optional presets build on.
+
+## Features
+
+- **Browser BLAST** — `blastn`/`blastp`/`blastx`/`tblastn` with clinician-facing
+  controls separated from advanced parameters; results as tables + CSV/TSV.
+- **Local-only by design** — bound to `127.0.0.1`; no sequence data leaves the
+  machine (relevant for clinical/patient sequences).
+- **Database registry** — SQLite-backed; build databases from FASTA or add
+  existing BLAST databases.
+- **SRA workbench** — pull SRA runs, assemble (CAP3), identify contigs, and BLAST
+  across many databases in one batch.
+- **Validated presets** — APOE genotyping and the electronic Tree of Life (eToL)
+  microbiome panel + viral eToL-V, with per-sample summaries and heatmap/pie
+  visualisations.
+- **One-file Windows executable** — PyInstaller build bundling BLAST+ and all
+  dependencies; configurable data directory for large databases/SRA runs.
+
+## Validation
+
+Correctness is checked, not assumed: a spike-in positive control
+(`tests/test_spike_in_control.py`) confirms a known planted sequence is recovered
+end to end, and the eToL preset is validated against the published Lathe et al.
+(2022) microbiome results (`tests/test_etol_validation.py`). The wider `tests/`
+suite (~14 modules) covers the assembler, BLAST runner, contig ID, database
+registry, design matrix, human-read filter, SRA workflow, and result summaries.
+Run it with `pytest`.
+
+## Try it in ~2 minutes (from source)
+
+With NCBI BLAST+ installed, the toy databases under `sample_data/` give a working
+search without downloading anything large. See
+[Source-code Quick Start](#source-code-quick-start) for the full setup, then build
+a database from `sample_data/toy_nt.fasta` and run `blastn` against it.
+
+> **Just want to run the prebuilt Windows app?** Jump to the
+> [Tester Quick Start](#tester-quick-start-download-the-release-executable-first)
+> below.
 
 ## Tester Quick Start: Download the Release Executable First
 

@@ -84,9 +84,12 @@ from config import (
     default_thread_count,
     flask_port,
     load_saved_data_dir,
+    load_saved_sra_reads_dir,
     resource_path,
     runtime_data_dir,
     save_data_dir,
+    save_sra_reads_dir,
+    sra_reads_dir,
 )
 from database_size import database_storage_bytes, format_bytes
 from sra_workflow import (
@@ -1278,14 +1281,43 @@ def settings_page():
     # A saved pointer that differs from the active dir means a change is pending
     # a restart (the data-dir constants are read once at import time).
     pending_dir = str(saved_dir) if saved_dir and saved_dir != active_dir else ""
+
+    # The SRA reads (pull-from) dir is resolved live, so it applies immediately —
+    # blank saved pointer means "same drive as the data dir".
+    reads_dir = sra_reads_dir()
+    reads_saved = load_saved_sra_reads_dir()
+    try:
+        reads_free_label = format_bytes(shutil.disk_usage(reads_dir).free)
+    except OSError:
+        reads_free_label = "unknown"
     return render_template(
         "settings.html",
         data_dir=str(active_dir),
         pending_dir=pending_dir,
         free_label=free_label,
+        sra_reads_dir=str(reads_saved) if reads_saved else "",
+        sra_reads_active=str(reads_dir),
+        sra_reads_free_label=reads_free_label,
         error=request.args.get("error", ""),
         message=request.args.get("message", ""),
     )
+
+
+@app.post("/settings/sra-reads")
+def update_sra_reads_route():
+    """Persist (or clear) the SRA reads pull-from drive; applies immediately."""
+    try:
+        chosen = save_sra_reads_dir(request.form.get("sra_reads_dir", ""))
+    except Exception as exc:
+        return redirect(url_for("settings_page", error=str(exc)))
+    if chosen is None:
+        message = "SRA reads location cleared — downloads now use the data drive."
+    else:
+        message = (
+            f"SRA reads location saved: {chosen}. New downloads land here; BLAST "
+            "databases are still built on the data drive. Applies immediately."
+        )
+    return redirect(url_for("settings_page", message=message))
 
 
 @app.post("/settings")

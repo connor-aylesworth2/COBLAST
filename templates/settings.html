@@ -76,10 +76,52 @@
             databases under a folder whose path contains spaces (for example
             <code>D:\My Data</code>). Choose a space-free folder such as
             <code>D:\COBLAST_data</code>.</li>
+          <li><strong>Must be an NTFS drive.</strong> BLAST+ cannot build
+            databases on FAT/exFAT drives (typical for USB sticks and SD cards).
+            When you save, COBLAST+ builds a tiny test database here to confirm
+            the drive works.</li>
           <li><strong>Existing data is not moved.</strong> Changing the location
             starts a fresh database registry at the new folder. Databases built
             at the old location stay on disk and keep working — re-add them via
             <a href="/databases">Databases → Register existing</a>.</li>
+        </ul>
+      </section>
+
+      <section class="panel">
+        <div class="panel__header">
+          <h2 class="panel__title">SRA reads location (pull-from)</h2>
+        </div>
+
+        <p>
+          Optionally keep downloaded SRA reads (<code>.sra</code>/<code>.fasta</code>)
+          on a <em>different</em> drive from the databases — for example a roomy USB
+          drive. Only the reads live here; BLAST databases are always built on the
+          data drive above, so this drive does <strong>not</strong> need to be NTFS
+          and an exFAT/FAT USB stick works.
+        </p>
+
+        <p><strong>Active reads location:</strong> <code>{{ sra_reads_active }}</code>
+          (free space on this drive: {{ sra_reads_free_label }})</p>
+
+        <form method="post" action="/settings/sra-reads">
+          <label for="settings_sra_reads_dir">SRA reads folder (leave blank to use the data drive)</label>
+          <input
+            id="settings_sra_reads_dir"
+            name="sra_reads_dir"
+            value="{{ sra_reads_dir }}"
+            placeholder="E:\sra"
+          >
+          <button type="submit">Save reads location</button>
+        </form>
+
+        <ul>
+          <li><strong>Applies immediately.</strong> No restart needed — the next
+            fetch and the SRA Workbench scan pick it up right away.</li>
+          <li><strong>Blank means same drive.</strong> With no reads folder set,
+            reads and databases share the data drive (the default).</li>
+          <li><strong>Two cards per run when split.</strong> Reads appear under
+            this drive and the built database under the data drive in the
+            <a href="/sra">SRA Workbench</a>; register the database from its card.</li>
         </ul>
       </section>
     </main>

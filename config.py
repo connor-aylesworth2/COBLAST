@@ -1,10 +1,12 @@
 """Shared configuration helpers for source and bundled COBLAST+ runs."""
 
 from pathlib import Path
+import ctypes
 import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tarfile
 import urllib.request
@@ -65,24 +67,117 @@ def _settings_path() -> Path:
     return user_data_base() / "COBLAST" / "settings.json"
 
 
-def validate_data_dir(path: str | Path) -> Path:
-    """Validate a candidate data dir and return it resolved.
+def blast_incompatible_filesystem(path: str | Path) -> str | None:
+    """Return the filesystem name if `path` is on one BLAST+ can't build DBs on.
 
-    Rejects paths containing spaces because BLAST+ splits ``-out``/``-db`` on
-    internal whitespace, so a data dir like ``D:\\My Data`` silently yields broken
-    databases (the default DB-prefix sites in database_registry.py and
-    sra_workflow.py both inherit this dir). Also confirms the dir is creatable and
-    writable, so a bad choice fails here rather than mid-run.
+    makeblastdb refuses to create databases on FAT/exFAT volumes (common on USB
+    sticks and SD cards): its CreateDirectories() write-permission check needs the
+    ACL model those filesystems lack, so it fails with "You do not have write
+    permissions" even though the OS can write there fine. NTFS/ReFS are fine.
+    Windows-only; returns None elsewhere (no drive volumes to inspect) and None
+    when the volume can't be queried (e.g. an unmounted drive), so this never
+    blocks on ambiguity — it only rejects a filesystem it positively identifies.
+    """
+    # ponytail: name-based FAT-family check (instant, no BLAST needed). If some
+    # other filesystem ever shows the same makeblastdb failure, swap this for a
+    # real one-shot makeblastdb probe of the directory.
+    if os.name != "nt":
+        return None
+    drive = os.path.splitdrive(os.fspath(Path(path)))[0]
+    if not drive:
+        return None
+    buf = ctypes.create_unicode_buffer(256)
+    ok = ctypes.windll.kernel32.GetVolumeInformationW(
+        ctypes.c_wchar_p(drive + "\\"), None, 0, None, None, None, buf, ctypes.sizeof(buf)
+    )
+    if not ok:
+        return None
+    return buf.value if buf.value.upper() in {"FAT", "FAT32", "EXFAT"} else None
+
+
+def require_blast_capable_data_dir(path: str | Path) -> None:
+    """Raise ValueError if BLAST+ cannot create databases on `path`'s filesystem.
+
+    Fast filesystem-name check only (no BLAST+ process) so it is cheap to call on
+    every launch. `makeblastdb_probe_error` is the authoritative version used when
+    a new write-to location is chosen.
+    """
+    bad_fs = blast_incompatible_filesystem(path)
+    if bad_fs:
+        raise ValueError(
+            f"The data folder {Path(path)} is on a {bad_fs} filesystem. BLAST+ cannot "
+            "create databases on FAT/exFAT drives (common on USB sticks and SD cards). "
+            "Choose a folder on an NTFS drive, or reformat the drive as NTFS."
+        )
+
+
+def _resolve_makeblastdb_no_install() -> Path | None:
+    """Find makeblastdb from env/bundle/default install, WITHOUT auto-installing.
+
+    Mirrors blast_bin_dir()'s precedence but never triggers a download, so using
+    it to validate a directory can't kick off a multi-hundred-MB BLAST+ fetch.
+    """
+    candidates: list[Path] = []
+    env_bin = os.environ.get("BLAST_BIN")
+    if env_bin:
+        candidates.append(Path(env_bin))
+    candidates.append(resource_path("blast", "bin"))
+    candidates.append(DEFAULT_BLAST_BIN)
+    for directory in candidates:
+        exe = directory / tool_name("makeblastdb")
+        if exe.exists():
+            return exe
+    return None
+
+
+def makeblastdb_probe_error(directory: str | Path) -> str | None:
+    """Actually build a throwaway 1-sequence DB in `directory`; return an error or None.
+
+    This is the authoritative "can BLAST+ write a database here" check that the
+    fast filesystem-name check only approximates — it also catches network shares
+    and other mounts that report an ordinary filesystem yet still reject
+    makeblastdb. Returns None (skip) when makeblastdb is not already available, so
+    validating a directory never forces a BLAST+ download.
+    """
+    makeblastdb = _resolve_makeblastdb_no_install()
+    if makeblastdb is None:
+        return None
+    probe_dir = Path(directory) / ".coblast_blastdb_probe"
+    try:
+        probe_dir.mkdir(parents=True, exist_ok=True)
+        fasta = probe_dir / "probe.fasta"
+        fasta.write_text(">probe\nACGTACGTACGTACGT\n", encoding="utf-8")
+        completed = subprocess.run(
+            [str(makeblastdb), "-in", str(fasta), "-dbtype", "nucl", "-out", str(probe_dir / "probe")],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            message = (completed.stderr or completed.stdout).strip()
+            return message.splitlines()[-1].strip() if message else "makeblastdb failed."
+        return None
+    except OSError as exc:
+        return str(exc)
+    finally:
+        shutil.rmtree(probe_dir, ignore_errors=True)
+
+
+def _validate_writable_dir(path: str | Path) -> Path:
+    """Resolve `path`, reject spaces, and confirm it is creatable/writable.
+
+    Rejects paths with spaces because BLAST+ splits ``-out``/``-db`` on internal
+    whitespace, so a spaced path silently yields broken databases. Shared by the
+    data dir (write-to) and SRA reads dir (pull-from) validators.
     """
     raw = str(path).strip()
     if not raw:
-        raise ValueError("Enter a folder path for COBLAST+ data.")
+        raise ValueError("Enter a folder path.")
     resolved = Path(raw).expanduser().resolve()
     if " " in str(resolved):
         raise ValueError(
-            f"The data folder path cannot contain spaces (got: {resolved}). "
-            "BLAST+ cannot build databases under a spaced path — choose a "
-            r"space-free folder such as D:\COBLAST_data."
+            f"The folder path cannot contain spaces (got: {resolved}). BLAST+ cannot "
+            r"build databases under a spaced path — choose a space-free folder such as D:\COBLAST_data."
         )
     try:
         resolved.mkdir(parents=True, exist_ok=True)
@@ -94,22 +189,111 @@ def validate_data_dir(path: str | Path) -> Path:
     return resolved
 
 
+def validate_data_dir(path: str | Path) -> Path:
+    """Validate a candidate *data* (write-to) dir and return it resolved.
+
+    Must be writable AND a filesystem BLAST+ can build databases on: a plain file
+    write succeeds on exFAT but makeblastdb does not, so this runs the fast
+    FAT/exFAT reject and then an authoritative one-shot makeblastdb probe (when
+    BLAST+ is available) — a bad choice fails here rather than mid-run.
+    """
+    resolved = _validate_writable_dir(path)
+    require_blast_capable_data_dir(resolved)
+    probe_error = makeblastdb_probe_error(resolved)
+    if probe_error:
+        raise ValueError(
+            f"BLAST+ could not build a test database in {resolved}: {probe_error} "
+            "Choose a folder on an NTFS drive that BLAST+ can write databases to."
+        )
+    return resolved
+
+
+def validate_sra_reads_dir(path: str | Path) -> Path:
+    """Validate a candidate SRA reads (pull-from) dir: writable only.
+
+    No makeblastdb check: prefetch/fasterq-dump write plain .sra/.fasta files,
+    which work on exFAT/FAT USB drives. The database step targets the data dir.
+    """
+    return _validate_writable_dir(path)
+
+
+def _read_settings() -> dict:
+    """Return the settings pointer as a dict (empty on missing/corrupt)."""
+    try:
+        data = json.loads(_settings_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_setting(key: str, value: str | None) -> None:
+    """Merge one key into the settings pointer without clobbering its siblings.
+
+    The data dir and SRA reads dir share one settings.json, so a whole-file
+    rewrite would wipe the other pointer. `value=None` removes the key.
+    """
+    settings = _settings_path()
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    data = _read_settings()
+    if value is None:
+        data.pop(key, None)
+    else:
+        data[key] = value
+    settings.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _load_pointer(key: str) -> Path | None:
+    value = _read_settings().get(key)
+    return Path(value).expanduser().resolve() if value else None
+
+
 def load_saved_data_dir() -> Path | None:
     """Return the user's saved data dir, or None if unset/unreadable/corrupt."""
-    try:
-        value = json.loads(_settings_path().read_text(encoding="utf-8")).get("data_dir")
-    except (OSError, ValueError):
-        return None
-    return Path(value).expanduser().resolve() if value else None
+    return _load_pointer("data_dir")
 
 
 def save_data_dir(path: str | Path) -> Path:
     """Validate and persist the chosen data dir to the fixed pointer; return it."""
     validated = validate_data_dir(path)
-    settings = _settings_path()
-    settings.parent.mkdir(parents=True, exist_ok=True)
-    settings.write_text(json.dumps({"data_dir": str(validated)}), encoding="utf-8")
+    _write_setting("data_dir", str(validated))
     return validated
+
+
+def load_saved_sra_reads_dir() -> Path | None:
+    """Return the saved SRA reads (pull-from) dir, or None if unset."""
+    return _load_pointer("sra_reads_dir")
+
+
+def save_sra_reads_dir(path: str | Path) -> Path | None:
+    """Persist the SRA reads (pull-from) dir; a blank value clears it.
+
+    Cleared means "use the data dir" (reads and databases share one drive). Only
+    writability is required, so an exFAT/USB drive is allowed here.
+    """
+    if not str(path).strip():
+        _write_setting("sra_reads_dir", None)
+        return None
+    validated = validate_sra_reads_dir(path)
+    _write_setting("sra_reads_dir", str(validated))
+    return validated
+
+
+def sra_reads_dir() -> Path:
+    """Effective SRA reads (pull-from) root where prefetch/fasterq-dump write.
+
+    Precedence: COBLAST_SRA_READS_DIR env, then the saved pull-from pointer (when
+    its drive is present), else ``<data_dir>/sra``. Defaulting to the data dir
+    means reads and databases share one drive out of the box — the same-drive
+    case, which already passed the write-to check. Read live on every fetch and
+    scan, so a change here takes effect without a restart.
+    """
+    env = os.environ.get("COBLAST_SRA_READS_DIR")
+    if env:
+        return Path(env).expanduser().resolve()
+    saved = load_saved_sra_reads_dir()
+    if saved and Path(saved.anchor).exists():
+        return saved
+    return runtime_data_dir() / "sra"
 
 
 def runtime_data_dir() -> Path:
@@ -536,6 +720,21 @@ if __name__ == "__main__":
                 chosen = save_data_dir(base / "picked")
                 assert chosen == (base / "picked").resolve()
                 assert load_saved_data_dir() == chosen
+                # the SRA reads pointer coexists with data_dir (merge, no clobber)
+                reads = save_sra_reads_dir(base / "reads")
+                assert reads == (base / "reads").resolve()
+                assert load_saved_sra_reads_dir() == reads
+                assert load_saved_data_dir() == chosen  # data_dir survived the reads write
+                # clearing the reads pointer leaves data_dir intact
+                assert save_sra_reads_dir("") is None
+                assert load_saved_sra_reads_dir() is None
+                assert load_saved_data_dir() == chosen
+            # the FAT/exFAT check must not false-positive on a normal (NTFS) temp dir
+            assert blast_incompatible_filesystem(base) is None
+            try:
+                require_blast_capable_data_dir(base)
+            except ValueError:
+                raise AssertionError("NTFS temp dir wrongly rejected as BLAST-incompatible")
             # a saved pointer on a missing drive (unplugged USB) is ignored, not returned
             if os.name == "nt":
                 for letter in "QZYXWVUT":

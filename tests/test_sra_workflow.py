@@ -40,6 +40,27 @@ def test_fetch_script_indexes_each_run_into_a_blastdb():
     ]
 
 
+def test_fetch_script_writes_db_to_separate_drive_when_given():
+    # The pull-from / write-to split: reads land on sra_dir (which may be an exFAT
+    # USB), but makeblastdb builds the DB under db_dir (the NTFS data dir).
+    reads, db = Path("/mnt/usb/sra"), Path("/data/COBLAST_data/sra")
+    steps = build_fetch_script_lines(
+        ["SRR1"], reads, Path("/t/prefetch"), Path("/t/fasterq-dump"), Path("/t/makeblastdb"),
+        db_dir=db,
+    )
+    cmds = [cmd for _, cmd in steps]
+    assert str(reads) in cmds[0]  # download -> pull-from drive (prefetch -O root)
+    assert str(reads / "SRR1") in cmds[1]  # convert -> pull-from accession dir
+    assert str(db / "SRR1" / "SRR1") in cmds[2]  # makeblastdb -out -> write-to drive
+    assert str(db) not in cmds[0] and str(db) not in cmds[1]  # DB drive untouched until step 3
+
+    # db_dir omitted keeps the old single-drive layout (DB beside the reads).
+    same = build_fetch_script_lines(
+        ["SRR1"], reads, Path("/t/prefetch"), Path("/t/fasterq-dump"), Path("/t/makeblastdb"),
+    )
+    assert str(reads / "SRR1" / "SRR1") in [c for _, c in same][2]
+
+
 def test_find_fasta_files_filters_and_sorts():
     files = [Path("d/b.fasta"), Path("d/a.fa"), Path("d/x.txt"), Path("d/c.fna")]
     assert find_fasta_files(files) == sorted(
