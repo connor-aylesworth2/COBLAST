@@ -7,7 +7,7 @@ data leaves the machine. On top of ordinary BLAST it adds a batch/SRA workbench
 and validated microbiome (eToL) and APOE genotyping presets. Built as an MSc
 dissertation research prototype (University of Edinburgh).
 
-[![tests](https://github.com/connor-aylesworth2/COBLAST-/actions/workflows/ci.yml/badge.svg)](https://github.com/connor-aylesworth2/COBLAST-/actions/workflows/ci.yml)
+[![tests](https://github.com/connor-aylesworth2/COBLAST/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/connor-aylesworth2/COBLAST/actions/workflows/ci.yml)
 
 ![COBLAST+ — running a BLAST job end to end](docs/COBLAST_gif.gif)
 
