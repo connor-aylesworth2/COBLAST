@@ -7,10 +7,7 @@ data leaves the machine. On top of ordinary BLAST it adds a batch/SRA workbench
 and validated microbiome (eToL) and APOE genotyping presets. Built as an MSc
 dissertation research prototype (University of Edinburgh).
 
-<!-- Add these once the CI workflow and LICENSE file exist:
-![Tests](https://github.com/connor-aylesworth2/<REPO>/actions/workflows/ci.yml/badge.svg)
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
--->
+[![tests](https://github.com/connor-aylesworth2/COBLAST-/actions/workflows/ci.yml/badge.svg)](https://github.com/connor-aylesworth2/COBLAST-/actions/workflows/ci.yml)
 
 ![COBLAST+ Run BLAST interface](docs/coblast-run-blast.png)
 
