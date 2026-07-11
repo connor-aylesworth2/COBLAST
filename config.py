@@ -118,8 +118,13 @@ def runtime_data_dir() -> Path:
     if env_data_dir:
         return Path(env_data_dir).expanduser().resolve()
     saved = load_saved_data_dir()
-    if saved:
+    if saved and Path(saved.anchor).exists():
         return saved
+    # ponytail: a saved dir on a gone drive (unplugged USB, or one that came back
+    # as a different letter after reboot) is ignored so the app still launches
+    # from the default location instead of dying in setup_data_location's mkdir.
+    # Self-heals when the drive returns. Add a picker re-prompt here if support
+    # tickets show users need to be asked rather than silently relocated.
     if is_frozen():
         # A stable per-user location keeps data across version installs instead
         # of trapping it beside whichever .exe happened to create it.
@@ -531,6 +536,15 @@ if __name__ == "__main__":
                 chosen = save_data_dir(base / "picked")
                 assert chosen == (base / "picked").resolve()
                 assert load_saved_data_dir() == chosen
+            # a saved pointer on a missing drive (unplugged USB) is ignored, not returned
+            if os.name == "nt":
+                for letter in "QZYXWVUT":
+                    if not Path(f"{letter}:\\").exists():
+                        _settings_path().write_text(
+                            json.dumps({"data_dir": f"{letter}:\\coblast"}), encoding="utf-8"
+                        )
+                        assert runtime_data_dir() != Path(f"{letter}:\\coblast")
+                        break
         finally:
             for key, value in saved_env.items():
                 if value is None:
