@@ -52,6 +52,11 @@
       .replace(/>/g, "&gt;");
   }
 
+  function csvCell(value) {
+    var s = String(value);
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
   function setStatus(message) {
     root.querySelector("[data-role=status]").textContent = message || "";
   }
@@ -197,11 +202,38 @@
     img.src = url;
   }
 
+  // One CSV of every possible pie: the whole job plus each sample, as
+  // (scope, domain, reads, percent) rows. Reuses domainTotals so the numbers
+  // match each chart's legend exactly (zero-total domains omitted, largest first).
+  function exportCsv() {
+    if (!matrix) return;
+    var scopes = [{ index: -1, label: "All samples (whole job)" }];
+    matrix.cols.forEach(function (col, i) {
+      scopes.push({ index: i, label: col.sample });
+    });
+    var lines = ["Scope,Domain,Reads,Percent"];
+    scopes.forEach(function (scope) {
+      var totals = domainTotals(scope.index);
+      var domains = Object.keys(totals).sort(function (a, b) { return totals[b] - totals[a]; });
+      var grand = domains.reduce(function (s, d) { return s + totals[d]; }, 0);
+      if (grand <= 0) {
+        lines.push([scope.label, "", 0, "0.0"].map(csvCell).join(","));
+        return;
+      }
+      domains.forEach(function (d) {
+        var pct = (totals[d] / grand * 100).toFixed(1);
+        lines.push([scope.label, d, totals[d], pct].map(csvCell).join(","));
+      });
+    });
+    download("etol_domain_pie.csv", "text/csv", lines.join("\r\n"));
+  }
+
   root.querySelector("[data-role=png]").addEventListener("click", exportPng);
   root.querySelector("[data-role=svg]").addEventListener("click", function () {
     var svgText = currentSvg();
     if (svgText) download("etol_domain_pie.svg", "image/svg+xml", svgText);
   });
+  root.querySelector("[data-role=csv]").addEventListener("click", exportCsv);
   var sampleSel = root.querySelector("[data-role=sample]");
   if (sampleSel) sampleSel.addEventListener("change", render);
 
