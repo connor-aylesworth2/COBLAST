@@ -8,12 +8,53 @@ on:
 
 jobs:
   pytest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    env:
+      BLAST_VERSION: "2.17.0"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - run: python -m pip install -r requirements-dev.txt
-      - run: python -m pytest -q -rs
+
+      - name: Install NCBI BLAST+
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="ncbi-blast-${BLAST_VERSION}+-x64-linux.tar.gz"
+          base_url="https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/${BLAST_VERSION}"
+          cd "$RUNNER_TEMP"
+          curl --fail --location --retry 3 --remote-name "${base_url}/${archive}"
+          curl --fail --location --retry 3 --remote-name "${base_url}/${archive}.md5"
+          md5sum --check "${archive}.md5"
+          tar --extract --gzip --file "$archive"
+          echo "BLAST_BIN=${RUNNER_TEMP}/ncbi-blast-${BLAST_VERSION}+/bin" >> "$GITHUB_ENV"
+
+      - name: Verify BLAST+ installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x "$BLAST_BIN/blastn"
+          test -x "$BLAST_BIN/makeblastdb"
+          python -c 'from config import blast_exe; print(blast_exe("blastn")); print(blast_exe("makeblastdb"))'
+          "$BLAST_BIN/blastn" -version | tee /dev/stderr | grep --fixed-strings "blastn: ${BLAST_VERSION}+"
+          "$BLAST_BIN/makeblastdb" -version | tee /dev/stderr | grep --fixed-strings "makeblastdb: ${BLAST_VERSION}+"
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Record Python environment
+        run: |
+          python -VV
+          python -m pip check
+          python -m pip freeze
+
+      - name: Run test suite
+        run: python -m pytest -vv -ra --tb=long --junitxml=pytest-results.xml
+
+      - name: Run required BLAST+ spike-in validation
+        run: python tests/test_spike_in_control.py
