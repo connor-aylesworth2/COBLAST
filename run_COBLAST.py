@@ -112,23 +112,52 @@ def _prompt_for_data_dir() -> Path | None:
         )
         return None
 
-    from config import validate_data_dir
+    from config import runtime_data_dir, validate_data_dir
+
+    # The standard per-user location (usually %LOCALAPPDATA%\COBLAST_data). Offer
+    # it up front so a tester isn't forced through the bare "Browse For Folder"
+    # tree — that dialog has no address bar and confused testers into just
+    # accepting whatever node was highlighted.
+    default_dir = runtime_data_dir()
+    try:
+        default_dir.mkdir(parents=True, exist_ok=True)  # so the browser opens here
+    except OSError:
+        pass
 
     root = None
     try:
         root = tk.Tk()
         root.withdraw()
+        offer_default = True
         while True:
+            if offer_default:
+                offer_default = False
+                if messagebox.askyesno(
+                    "COBLAST+ data location",
+                    "COBLAST+ keeps its databases, SRA downloads, and results in one "
+                    f"folder:\n\n{default_dir}\n\n"
+                    "Use this folder?\n\n"
+                    "Choose No to pick another location, for example a drive with "
+                    "more free space.",
+                ):
+                    try:
+                        return validate_data_dir(default_dir)
+                    except ValueError as exc:
+                        # e.g. a space in the profile path -> make them pick another.
+                        messagebox.showerror("Cannot use that folder", str(exc))
+                continue  # fall through to the browser (default declined or invalid)
             chosen = filedialog.askdirectory(
                 title="Choose where COBLAST+ stores its data "
-                "(databases, SRA downloads, results)"
+                "(databases, SRA downloads, results)",
+                initialdir=str(default_dir),
+                mustexist=False,
             )
             if not chosen:
                 return None
             try:
                 return validate_data_dir(chosen)
             except ValueError as exc:
-                messagebox.showerror("Invalid folder", str(exc))
+                messagebox.showerror("Cannot use that folder", str(exc))
     except Exception:
         return None
     finally:
