@@ -1303,6 +1303,27 @@ def settings_page():
     )
 
 
+@app.post("/settings/browse")
+def browse_folder_route():
+    """Open the machine's native folder dialog and hand the chosen path back.
+
+    A browser will never give a page an absolute path, so the picker has to run
+    server-side — which is fine here because the server *is* the user's machine
+    (Flask binds 127.0.0.1). The dialog blocks this worker thread while it is
+    open; Flask's threaded server keeps serving other requests meanwhile.
+    """
+    from folder_picker import ask_directory  # keeps tkinter out of app startup
+
+    try:
+        chosen = ask_directory(
+            "Choose a folder",
+            request.form.get("initialdir", "") or str(runtime_data_dir()),
+        )
+    except RuntimeError as exc:
+        return jsonify(error=f"{exc} Type the folder path instead.")
+    return jsonify(path=chosen or "")  # blank = cancelled, leave the field alone
+
+
 @app.post("/settings/sra-reads")
 def update_sra_reads_route():
     """Persist (or clear) the SRA reads pull-from drive; applies immediately."""

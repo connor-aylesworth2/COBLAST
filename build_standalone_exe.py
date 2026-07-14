@@ -58,6 +58,7 @@ MODULES = [
     "design_matrix",
     "etol_summary",
     "etol_validation",
+    "folder_picker",  # imported lazily by the launcher prompt and /settings/browse
 ]
 
 

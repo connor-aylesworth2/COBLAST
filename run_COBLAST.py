@@ -18,6 +18,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 import webbrowser
 
 from config import is_frozen, resource_root as bundle_root, tool_name
@@ -94,15 +95,19 @@ def standalone_data_dir() -> Path:
 
 
 def _prompt_for_data_dir() -> Path | None:
-    """Show a native folder picker; return a validated dir, or None to fall back.
+    """Ask for the data location in a small window; return a validated dir or None.
 
-    Uses tkinter (stdlib). Re-prompts on an invalid (e.g. spaced) choice. Returns
-    None when tkinter is unavailable/headless or the user cancels, so the caller
-    keeps the default location rather than failing to launch.
+    The window owns the input: an editable path field (prefilled with the default)
+    plus a Browse button that opens File Explorer. The earlier version made the
+    native folder dialog the *only* way in, so testers who lost that dialog — one
+    reported it vanishing after a few seconds — had no way to give a path at all.
+    Here the field always works, and Browse is just a convenience for populating it.
+
+    Returns None when tkinter is unavailable/headless or the user cancels, so the
+    caller keeps the default location rather than failing to launch.
     """
     try:
         import tkinter as tk
-        from tkinter import filedialog, messagebox
     except Exception:
         print(
             f"[{APP_NAME}] Folder picker unavailable; using the default data "
@@ -113,59 +118,90 @@ def _prompt_for_data_dir() -> Path | None:
         return None
 
     from config import runtime_data_dir, validate_data_dir
+    from folder_picker import ask_directory
 
-    # The standard per-user location (usually %LOCALAPPDATA%\COBLAST_data). Offer
-    # it up front so a tester isn't forced through the bare "Browse For Folder"
-    # tree — that dialog has no address bar and confused testers into just
-    # accepting whatever node was highlighted.
-    default_dir = runtime_data_dir()
+    default_dir = runtime_data_dir()  # usually %LOCALAPPDATA%\COBLAST_data
     try:
-        default_dir.mkdir(parents=True, exist_ok=True)  # so the browser opens here
+        default_dir.mkdir(parents=True, exist_ok=True)  # so Browse opens here
     except OSError:
         pass
 
+    chosen: Path | None = None
     root = None
     try:
         root = tk.Tk()
-        root.withdraw()
-        offer_default = True
-        while True:
-            if offer_default:
-                offer_default = False
-                if messagebox.askyesno(
-                    "COBLAST+ data location",
-                    "COBLAST+ keeps its databases, SRA downloads, and results in one "
-                    f"folder:\n\n{default_dir}\n\n"
-                    "Use this folder?\n\n"
-                    "Choose No to pick another location, for example a drive with "
-                    "more free space.",
-                ):
-                    try:
-                        return validate_data_dir(default_dir)
-                    except ValueError as exc:
-                        # e.g. a space in the profile path -> make them pick another.
-                        messagebox.showerror("Cannot use that folder", str(exc))
-                continue  # fall through to the browser (default declined or invalid)
-            chosen = filedialog.askdirectory(
-                title="Choose where COBLAST+ stores its data "
-                "(databases, SRA downloads, results)",
-                initialdir=str(default_dir),
-                mustexist=False,
-            )
-            if not chosen:
-                return None
+        root.title("COBLAST+ data location")
+        root.attributes("-topmost", True)
+        frame = tk.Frame(root, padx=16, pady=12)
+        frame.pack(fill="both", expand=True)
+
+        tk.Label(
+            frame,
+            justify="left",
+            wraplength=560,
+            text=(
+                "COBLAST+ keeps its databases, SRA downloads, and results in one "
+                "folder.\n\nUse the suggested folder, or point it at a drive with "
+                "more free space. The path must have no spaces."
+            ),
+        ).pack(anchor="w")
+
+        row = tk.Frame(frame)
+        row.pack(fill="x", pady=(10, 4))
+        entry = tk.Entry(row, width=60)
+        entry.insert(0, str(default_dir))
+        entry.pack(side="left", fill="x", expand=True)
+        status = tk.Label(frame, fg="#b00020", justify="left", wraplength=560)
+
+        def browse() -> None:
             try:
-                return validate_data_dir(chosen)
+                picked = ask_directory(
+                    "Choose where COBLAST+ stores its data "
+                    "(databases, SRA downloads, results)",
+                    entry.get().strip() or str(default_dir),
+                    parent=root,
+                )
+            except RuntimeError as exc:
+                status.config(text=f"{exc} Type the folder path instead.")
+                status.pack(anchor="w")
+                return
+            if picked:
+                entry.delete(0, tk.END)
+                entry.insert(0, picked)
+
+        def use_it() -> None:
+            nonlocal chosen
+            try:
+                # Validates spaces/filesystem here (a makeblastdb probe), so a bad
+                # drive fails now instead of mid-run. Briefly freezes the window.
+                chosen = validate_data_dir(entry.get())
             except ValueError as exc:
-                messagebox.showerror("Cannot use that folder", str(exc))
+                status.config(text=str(exc))
+                status.pack(anchor="w")
+                return
+            root.destroy()
+
+        tk.Button(row, text="Browse...", command=browse).pack(side="left", padx=(8, 0))
+        buttons = tk.Frame(frame)
+        buttons.pack(anchor="e", pady=(10, 0))
+        tk.Button(buttons, text="Cancel", command=root.destroy).pack(side="right")
+        tk.Button(buttons, text="Use this folder", command=use_it, default="active").pack(
+            side="right", padx=(0, 8)
+        )
+        entry.bind("<Return>", lambda _event: use_it())
+
+        root.mainloop()
     except Exception:
+        # A swallowed traceback is why the tester report had nothing to go on.
+        traceback.print_exc()
         return None
     finally:
         if root is not None:
             try:
                 root.destroy()
             except Exception:
-                pass
+                pass  # already destroyed by Use/Cancel
+    return chosen
 
 
 def resolve_data_dir(args: argparse.Namespace) -> Path:

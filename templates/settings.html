@@ -59,13 +59,17 @@
 
         <form method="post" action="/settings">
           <label for="settings_data_dir">Data folder</label>
-          <input
-            id="settings_data_dir"
-            name="data_dir"
-            value="{{ pending_dir or data_dir }}"
-            placeholder="D:\COBLAST_data"
-            required
-          >
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <input
+              id="settings_data_dir"
+              name="data_dir"
+              value="{{ pending_dir or data_dir }}"
+              placeholder="D:\COBLAST_data"
+              style="flex: 1;"
+              required
+            >
+            <button type="button" data-browse-for="settings_data_dir">Browse...</button>
+          </div>
           <button type="submit">Save data location</button>
         </form>
 
@@ -105,12 +109,16 @@
 
         <form method="post" action="/settings/sra-reads">
           <label for="settings_sra_reads_dir">SRA reads folder (leave blank to use the data drive)</label>
-          <input
-            id="settings_sra_reads_dir"
-            name="sra_reads_dir"
-            value="{{ sra_reads_dir }}"
-            placeholder="E:\sra"
-          >
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <input
+              id="settings_sra_reads_dir"
+              name="sra_reads_dir"
+              value="{{ sra_reads_dir }}"
+              placeholder="E:\sra"
+              style="flex: 1;"
+            >
+            <button type="button" data-browse-for="settings_sra_reads_dir">Browse...</button>
+          </div>
           <button type="submit">Save reads location</button>
         </form>
 
@@ -125,5 +133,33 @@
         </ul>
       </section>
     </main>
+
+    {# Browse opens the native folder dialog on this machine (COBLAST+ runs its
+       server locally) and drops the path into the field. The field stays typable,
+       so a machine without the dialog is never stuck. #}
+    <script>
+      document.querySelectorAll("button[data-browse-for]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const field = document.getElementById(button.dataset.browseFor);
+          button.disabled = true;
+          try {
+            const response = await fetch("/settings/browse", {
+              method: "POST",
+              body: new URLSearchParams({ initialdir: field.value }),
+            });
+            const data = await response.json();
+            if (data.error) {
+              alert(data.error);
+            } else if (data.path) {
+              field.value = data.path;
+            }
+          } catch (err) {
+            alert("Could not open the folder picker (" + err + "). Type the folder path instead.");
+          } finally {
+            button.disabled = false;
+          }
+        });
+      });
+    </script>
   </body>
 </html>
