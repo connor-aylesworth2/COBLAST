@@ -1,16 +1,28 @@
 /*
- * eToL / eToL-V domain pie chart.
+ * eToL / eToL-V domain composition chart (pie + stacked bars).
  *
  * A coarser companion to the heatmap: what share of a job's non-human
  * probe-matched reads falls into each Tree-of-Life domain (Archaea, Bacteria,
  * Fungi, ...). Reuses the same /batch-results/<id>/etol-matrix.json the heatmap
- * loads -- no extra endpoint -- and draws an inline SVG pie so the standalone
- * build stays lean and works offline.
+ * loads -- no extra endpoint -- and draws inline SVG so the standalone build
+ * stays lean and works offline.
+ *
+ * Two marks over one aggregation:
+ *   - Pie:          proportions within a single scope (one sample/condition/job).
+ *   - Stacked bars: one bar per sample (or per pooled condition), so the
+ *                   magnitude a pie throws away is comparable ACROSS samples --
+ *                   bar height is total abundance, segments are the pie.
+ *
+ * Bars default to reads per host cell, not raw reads: library depth and host
+ * content differ per sample, so raw counts are not comparable across columns --
+ * that is what the PGK1/hNSE control probes exist to correct (Hu, Haas & Lathe
+ * 2022), and it keeps this chart on the same axis as the heatmap below it. Raw
+ * counts and 100%-stacked (every pie side by side) stay available as options.
  *
  * Scopes: the whole job, one design-matrix condition (every sample in that group
- * pooled), one sample, or a grid of one labelled pie per condition -- the summary
- * of each sample group's microbiome. The condition labels are matrix.cols[i].condition,
- * already served for the heatmap's condition strip, so nothing new is fetched.
+ * pooled), one sample, or all conditions at once -- a grid of pies, or one pooled
+ * bar per condition. The condition labels are matrix.cols[i].condition, already
+ * served for the heatmap's condition strip, so nothing new is fetched.
  *
  * The matrix's hit counts are already the non-human reads: the human PGK1/hNSE
  * control probes are not panel records (so no "Human control" row exists), and
@@ -26,8 +38,14 @@
   }
 
   var MATRIX_URL = root.dataset.matrixUrl;
-  var GRID = "grid"; // scope value for the by-condition contact sheet
+  var GRID = "grid"; // scope value for "all conditions" (pie grid / pooled bars)
   var TILE_W = 540, TILE_H = 340;
+  var BAR = { w: 46, gap: 16, left: 78, right: 200, top: 58, bottom: 104, h: 300 };
+  var VALUE_LABELS = {
+    per_cell: "reads per host cell",
+    hits: "matched reads (raw)",
+    pct: "% of non-human reads",
+  };
 
   // Stable colours for the known ToL domains; anything else draws from a palette.
   var DOMAIN_COLORS = {
@@ -239,19 +257,207 @@
     return svgWrap(ncols * TILE_W, nrows * TILE_H, body.join(""));
   }
 
+  // --- Stacked bars ---------------------------------------------------------
+
+  function chartMode() {
+    var sel = root.querySelector("[data-role=chart]");
+    return sel ? sel.value : "pie";
+  }
+
+  function barValue() {
+    var sel = root.querySelector("[data-role=value]");
+    return sel ? sel.value : "per_cell";
+  }
+
+  // One bar per sample; the "all conditions" scope instead pools each condition
+  // into a single bar.
+  function barSeries(scope) {
+    if (scope.value === GRID) {
+      return conditionNames().map(function (name) {
+        return { label: name, condition: name, cols: conditionScope(name).cols };
+      });
+    }
+    return scope.cols.map(function (c) {
+      return {
+        label: matrix.cols[c].sample,
+        condition: String(matrix.cols[c].condition || "").trim(),
+        cols: [c],
+      };
+    });
+  }
+
+  // Stacked segment values for one bar, in the current y-axis units. Pooling a
+  // condition sums reads AND host cells (depth-weighted) rather than averaging
+  // per-sample ratios, so a deeper library carries proportional weight -- the
+  // same aggregation the pooled pie already does.
+  // ponytail: depth-weighted pooling; if per-sample spread matters more than the
+  // group total, plot samples (scope = All samples) rather than adding error bars.
+  function barTotals(series) {
+    var raw = domainTotals(series.cols);
+    var domains = Object.keys(raw);
+    var grand = domains.reduce(function (s, d) { return s + raw[d]; }, 0);
+    var mode = barValue();
+
+    if (mode === "hits") {
+      return { values: raw, total: grand, na: false };
+    }
+    if (mode === "pct") {
+      var pct = {};
+      domains.forEach(function (d) { pct[d] = grand > 0 ? (raw[d] / grand) * 100 : 0; });
+      return { values: pct, total: grand > 0 ? 100 : 0, na: false };
+    }
+    // reads per host cell: undefined when the control probes recovered no reads.
+    var hostCells = series.cols.reduce(function (s, c) {
+      return s + (matrix.cols[c].host_cells || 0);
+    }, 0);
+    if (hostCells <= 0) {
+      return { values: {}, total: 0, na: true };
+    }
+    var perCell = {};
+    domains.forEach(function (d) { perCell[d] = raw[d] / hostCells; });
+    return { values: perCell, total: grand / hostCells, na: false };
+  }
+
+  // ~5 axis ticks on the 1/2/5 x 10^n ladder.
+  function ticks(max) {
+    if (!(max > 0)) return [0, 1];
+    var step = Math.pow(10, Math.floor(Math.log10(max / 5)));
+    var err = max / 5 / step;
+    if (err >= 5) step *= 10;
+    else if (err >= 2) step *= 5;
+    else if (err >= 1) step *= 2;
+    var out = [];
+    for (var v = 0; v <= max + step / 2; v += step) out.push(v);
+    return out;
+  }
+
+  function num(value) {
+    return String(parseFloat(value.toPrecision(3)));
+  }
+
+  function buildBarsSvg(scope) {
+    var series = barSeries(scope);
+    var data = series.map(barTotals);
+
+    // One stack order and one legend for every bar: domains ranked by their total
+    // over the whole chart, largest at the bottom.
+    var everyCol = series.reduce(function (acc, s) { return acc.concat(s.cols); }, []);
+    var overall = domainTotals(everyCol);
+    var domains = Object.keys(overall).sort(function (a, b) { return overall[b] - overall[a]; });
+
+    var maxTotal = data.reduce(function (m, d) { return Math.max(m, d.total); }, 0);
+    var tickVals = ticks(maxTotal);
+    var top = tickVals[tickVals.length - 1] || 1;
+
+    var plotW = series.length * (BAR.w + BAR.gap) + BAR.gap;
+    var width = BAR.left + plotW + BAR.right;
+    var height = BAR.top + BAR.h + BAR.bottom;
+    var baseY = BAR.top + BAR.h;
+
+    var parts = ['<rect width="' + width + '" height="' + height + '" fill="#ffffff"/>'];
+    var title = (matrix.preset_label || "eToL") + " — non-human reads by domain";
+    parts.push('<text x="16" y="24" font-size="14" font-weight="600">' + esc(title) + "</text>");
+    parts.push('<text x="16" y="42" font-size="11" fill="#555">' +
+      esc(scope.subtitle || scope.label) + " — " + esc(VALUE_LABELS[barValue()]) + "</text>");
+
+    if (!domains.length) {
+      parts.push('<text x="16" y="80" font-size="12" fill="#666">No non-human probe-matched reads to plot.</text>');
+      return svgWrap(width, height, parts.join(""));
+    }
+
+    // Gridlines + y axis.
+    tickVals.forEach(function (v) {
+      var y = baseY - (v / top) * BAR.h;
+      parts.push('<line x1="' + BAR.left + '" y1="' + y.toFixed(1) + '" x2="' + (BAR.left + plotW) +
+        '" y2="' + y.toFixed(1) + '" stroke="#e9e9e9" stroke-width="1"/>');
+      parts.push('<text x="' + (BAR.left - 8) + '" y="' + (y + 3.5).toFixed(1) +
+        '" font-size="10" fill="#555" text-anchor="end">' + esc(num(v)) + "</text>");
+    });
+    parts.push('<line x1="' + BAR.left + '" y1="' + BAR.top + '" x2="' + BAR.left + '" y2="' + baseY +
+      '" stroke="#999" stroke-width="1"/>');
+    parts.push('<line x1="' + BAR.left + '" y1="' + baseY + '" x2="' + (BAR.left + plotW) + '" y2="' + baseY +
+      '" stroke="#999" stroke-width="1"/>');
+    parts.push('<text transform="rotate(-90 18 ' + (BAR.top + BAR.h / 2) + ')" x="18" y="' +
+      (BAR.top + BAR.h / 2) + '" font-size="11" fill="#333" text-anchor="middle">' +
+      esc(VALUE_LABELS[barValue()]) + "</text>");
+
+    // Bars: stacked bottom-up in the shared domain order.
+    series.forEach(function (s, i) {
+      var x = BAR.left + BAR.gap + i * (BAR.w + BAR.gap);
+      var cursor = baseY;
+      var cell = data[i];
+
+      if (cell.na) {
+        parts.push('<text x="' + (x + BAR.w / 2) + '" y="' + (baseY - 8) +
+          '" font-size="10" fill="#999" text-anchor="middle">n/a</text>');
+      }
+      domains.forEach(function (d) {
+        var value = cell.values[d] || 0;
+        if (value <= 0) return;
+        var h = (value / top) * BAR.h;
+        cursor -= h;
+        var tip = esc(s.label + " — " + d + ": " + num(value) + " " + VALUE_LABELS[barValue()]);
+        parts.push('<rect x="' + x + '" y="' + cursor.toFixed(2) + '" width="' + BAR.w + '" height="' +
+          h.toFixed(2) + '" fill="' + colorFor(d) + '" stroke="#ffffff" stroke-width="0.5"><title>' +
+          tip + "</title></rect>");
+      });
+
+      // Sample label (rotated) + its condition underneath.
+      var lx = x + BAR.w / 2;
+      var ly = baseY + 10;
+      parts.push('<text x="' + lx + '" y="' + ly + '" font-size="10" fill="#333" text-anchor="end" ' +
+        'transform="rotate(-45 ' + lx + " " + ly + ')">' + esc(s.label) + "</text>");
+      if (s.condition && scope.value !== GRID) {
+        parts.push('<text x="' + lx + '" y="' + (height - 14) + '" font-size="9" fill="#777" ' +
+          'text-anchor="middle">' + esc(s.condition) + "</text>");
+      }
+    });
+
+    // Legend on the right, same order as the stack.
+    var lgx = BAR.left + plotW + 20;
+    domains.forEach(function (d, i) {
+      var y = BAR.top + 10 + i * 22;
+      parts.push('<rect x="' + lgx + '" y="' + (y - 11) + '" width="13" height="13" fill="' + colorFor(d) + '"/>');
+      parts.push('<text x="' + (lgx + 19) + '" y="' + y + '" font-size="11" fill="#333">' + esc(d) + "</text>");
+    });
+
+    var hint = barValue() === "hits"
+      ? "Raw counts are not depth-normalized — compare across samples with care."
+      : "";
+    if (hint) {
+      parts.push('<text x="16" y="' + (height - 4) + '" font-size="10" fill="#a15c00">' + esc(hint) + "</text>");
+    }
+    return svgWrap(width, height, parts.join(""));
+  }
+
   function render() {
     var scope = currentScope();
-    var svg = scope.value === GRID ? buildGridSvg() : buildSvg(scope);
+    var svg;
+    if (chartMode() === "bars") {
+      svg = buildBarsSvg(scope);
+    } else if (scope.value === GRID) {
+      svg = buildGridSvg();
+    } else {
+      svg = buildSvg(scope);
+    }
     root.querySelector("[data-role=canvas]").innerHTML = svg;
+
+    // The value axis is a bars-only choice; the pie is always a proportion.
+    var valueSel = root.querySelector("[data-role=value]");
+    if (valueSel) valueSel.disabled = chartMode() !== "bars";
   }
 
   function populateScopes() {
     var sel = root.querySelector("[data-role=sample]");
     if (!sel) return;
+    var previous = sel.value;
     var conditions = conditionNames();
+    var gridLabel = chartMode() === "bars"
+      ? "All conditions (one pooled bar each)"
+      : "All conditions (grid)";
     var html = '<option value="all">All samples (whole job)</option>';
     if (conditions.length) {
-      html += '<option value="' + GRID + '">All conditions (grid)</option>';
+      html += '<option value="' + GRID + '">' + esc(gridLabel) + "</option>";
       html += '<optgroup label="Conditions">';
       conditions.forEach(function (name) {
         html += '<option value="' + esc("cond:" + name) + '">' + esc(name) + "</option>";
@@ -264,6 +470,7 @@
     });
     html += "</optgroup>";
     sel.innerHTML = html;
+    if (previous) sel.value = previous; // keep the scope when only the mark changed
   }
 
   function currentSvg() {
@@ -271,10 +478,15 @@
     return svg ? svg.outerHTML : null;
   }
 
-  // The grid is a different deliverable from a single pie -- name it so the two
-  // don't collide in the download folder.
+  // Each view is a different deliverable -- name them so they don't collide in
+  // the download folder.
   function exportName(extension) {
-    var stem = currentScope().value === GRID ? "etol_domain_pie_by_condition" : "etol_domain_pie";
+    var stem = "etol_domain_pie";
+    if (chartMode() === "bars") {
+      stem = "etol_domain_bars";
+    } else if (currentScope().value === GRID) {
+      stem = "etol_domain_pie_by_condition";
+    }
     return stem + "." + extension;
   }
 
@@ -318,28 +530,34 @@
     img.src = url;
   }
 
-  // One CSV of every pie the drop-down can draw: the whole job, each condition,
-  // and each sample, as (scope, domain, reads, percent) rows. Reuses domainTotals
-  // so the numbers match each chart's legend exactly (zero-total domains omitted,
-  // largest first).
+  // One CSV of every scope the drop-down can draw: the whole job, each condition,
+  // and each sample, as (scope, domain, reads, percent, reads per host cell) rows
+  // -- i.e. the numbers behind both marks, on all three bar axes. Reuses
+  // domainTotals so they match each chart exactly (zero-total domains omitted,
+  // largest first). Reads per host cell is blank when the control probes recovered
+  // no reads, so an unnormalizable sample reads as such instead of as zero.
   function exportCsv() {
     if (!matrix) return;
-    var lines = ["Scope,Domain,Reads,Percent"];
+    var lines = ["Scope,Domain,Reads,Percent,Reads per host cell"];
     scopes().forEach(function (scope) {
       if (scope.value === GRID) return; // a view of the condition scopes, not a scope
       var totals = domainTotals(scope.cols);
       var domains = Object.keys(totals).sort(function (a, b) { return totals[b] - totals[a]; });
       var grand = domains.reduce(function (s, d) { return s + totals[d]; }, 0);
       if (grand <= 0) {
-        lines.push([scope.csvLabel, "", 0, "0.0"].map(csvCell).join(","));
+        lines.push([scope.csvLabel, "", 0, "0.0", ""].map(csvCell).join(","));
         return;
       }
+      var hostCells = scope.cols.reduce(function (s, c) {
+        return s + (matrix.cols[c].host_cells || 0);
+      }, 0);
       domains.forEach(function (d) {
         var pct = (totals[d] / grand * 100).toFixed(1);
-        lines.push([scope.csvLabel, d, totals[d], pct].map(csvCell).join(","));
+        var perCell = hostCells > 0 ? num(totals[d] / hostCells) : "";
+        lines.push([scope.csvLabel, d, totals[d], pct, perCell].map(csvCell).join(","));
       });
     });
-    download("etol_domain_pie.csv", "text/csv", lines.join("\r\n"));
+    download("etol_domain_composition.csv", "text/csv", lines.join("\r\n"));
   }
 
   root.querySelector("[data-role=png]").addEventListener("click", exportPng);
@@ -350,6 +568,15 @@
   root.querySelector("[data-role=csv]").addEventListener("click", exportCsv);
   var sampleSel = root.querySelector("[data-role=sample]");
   if (sampleSel) sampleSel.addEventListener("change", render);
+  var chartSel = root.querySelector("[data-role=chart]");
+  if (chartSel) {
+    chartSel.addEventListener("change", function () {
+      populateScopes(); // the "all conditions" option means a grid or pooled bars
+      render();
+    });
+  }
+  var valueSel = root.querySelector("[data-role=value]");
+  if (valueSel) valueSel.addEventListener("change", render);
 
   setStatus("Loading…");
   fetch(MATRIX_URL + "?level=species")

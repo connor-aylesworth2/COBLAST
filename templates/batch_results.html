@@ -210,24 +210,42 @@
           {% if batch.batch_id %}
             <section class="panel">
               <div class="panel__header">
-                <h2 class="panel__title">eToL Domain Pie</h2>
+                <h2 class="panel__title">eToL Domain Composition</h2>
               </div>
               <p class="muted">
-                A coarser companion to the heatmap: the share of this job's
-                non-human probe-matched reads falling into each Tree-of-Life
-                domain. Host control probes are excluded and, when the secondary
-                human filter ran, human-derived reads are already removed. Pick a
-                single sample, a design-matrix condition (its samples pooled), the
-                whole job, or the condition grid &mdash; one labelled pie per
-                sample group, exportable as a single image.
+                A coarser companion to the heatmap: how this job's non-human
+                probe-matched reads split across the Tree-of-Life domains. Host
+                control probes are excluded and, when the secondary human filter
+                ran, human-derived reads are already removed. The <strong>pie</strong>
+                shows proportions within one scope; the <strong>stacked bars</strong>
+                show one bar per sample (or per pooled condition), so magnitude is
+                comparable across samples &mdash; bar height is total abundance,
+                the segments are the pie. Bars default to reads per host cell:
+                sequencing depth and host content differ per sample, so raw counts
+                are not comparable across columns (that is what the PGK1/hNSE
+                control probes correct for). Raw counts and 100%-stacked remain
+                available.
               </p>
               <div
                 id="etol-pie"
                 data-matrix-url="{{ url_for('etol_matrix_json', batch_id=batch.batch_id) }}"
               >
                 <div class="etol-heatmap__controls">
-                  <label>Sample
+                  <label>Chart
+                    <select data-role="chart">
+                      <option value="bars">Stacked bars</option>
+                      <option value="pie">Pie</option>
+                    </select>
+                  </label>
+                  <label>Scope
                     <select data-role="sample"></select>
+                  </label>
+                  <label>Value
+                    <select data-role="value">
+                      <option value="per_cell">Reads per host cell</option>
+                      <option value="hits">Matched reads (raw)</option>
+                      <option value="pct">% of non-human reads</option>
+                    </select>
                   </label>
                   <span class="etol-heatmap__spacer"></span>
                   <button type="button" class="button button-secondary" data-role="png">Export PNG</button>
