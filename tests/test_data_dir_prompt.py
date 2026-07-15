@@ -20,6 +20,11 @@ def _widgets(parent):
 
 
 def test_typed_path_is_accepted_without_the_dialog(monkeypatch, tmp_path):
+    try:
+        tkinter.Tk().destroy()  # headless CI has no display; _prompt swallows the error
+    except tkinter.TclError as exc:
+        pytest.skip(f"no display: {exc}")
+
     data_dir = tmp_path / "COBLAST_data"
     monkeypatch.setenv("COBLAST_DATA_DIR", str(data_dir))  # what the field prefills with
 
@@ -32,8 +37,5 @@ def test_typed_path_is_accepted_without_the_dialog(monkeypatch, tmp_path):
         raise AssertionError("the prompt has no 'Use this folder' button")
 
     monkeypatch.setattr(tkinter.Misc, "mainloop", press_use_this_folder)
-    try:
-        chosen = run_COBLAST._prompt_for_data_dir()
-    except tkinter.TclError as exc:  # headless box, no display
-        pytest.skip(f"no display: {exc}")
+    chosen = run_COBLAST._prompt_for_data_dir()
     assert chosen == data_dir.resolve()
