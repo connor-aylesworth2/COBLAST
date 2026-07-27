@@ -32,7 +32,113 @@
 (function () {
   "use strict";
 
-  var root = document.getElementById("etol-pie");
+  // --- Nonparametric two-group test (pure; see tests/test_etol_pie_stats.js) --
+
+  // Midranks of pooled values; tied values share their mean rank.
+  function midranks(values) {
+    var order = values.map(function (_, i) { return i; })
+      .sort(function (i, j) { return values[i] - values[j]; });
+    var ranks = new Array(values.length);
+    for (var i = 0; i < order.length; ) {
+      var j = i;
+      while (j + 1 < order.length && values[order[j + 1]] === values[order[i]]) j += 1;
+      var mean = (i + j) / 2 + 1;
+      for (var k = i; k <= j; k += 1) ranks[order[k]] = mean;
+      i = j + 1;
+    }
+    return ranks;
+  }
+
+  function choose(n, k) {
+    var c = 1;
+    for (var i = 0; i < k; i += 1) c = c * (n - i) / (i + 1);
+    return Math.round(c);
+  }
+
+  // Fixed-seed LCG: a p-value must not change between two renders of the same
+  // figure, so the sampled branch has to be deterministic.
+  function lcg(seed) {
+    var s = seed >>> 0;
+    return function () { s = (Math.imul(s, 1103515245) + 12345) >>> 0; return s / 4294967296; };
+  }
+
+  // Two-sided Wilcoxon rank-sum (Mann-Whitney) p by permuting group labels:
+  // exact when the C(n,n1) splits can be enumerated, else 20k sampled splits.
+  // Permutation is exact under ties -- and eToL group sizes (n < 10) are far too
+  // small for the normal approximation the textbook formula uses.
+  function wilcoxonP(a, b) {
+    var n1 = a.length, n2 = b.length, n = n1 + n2;
+    if (!n1 || !n2) return null;
+    var ranks = midranks(a.concat(b));
+    var mean = n1 * (n + 1) / 2;
+    var obs = 0, i, j, m, sum;
+    for (i = 0; i < n1; i += 1) obs += ranks[i];
+    var target = Math.abs(obs - mean) - 1e-9;
+    var hits = 0, trials = 0;
+
+    if (choose(n, n1) <= 100000) {
+      var idx = [];
+      for (j = 0; j < n1; j += 1) idx.push(j);
+      for (;;) {
+        sum = 0;
+        for (j = 0; j < n1; j += 1) sum += ranks[idx[j]];
+        if (Math.abs(sum - mean) >= target) hits += 1;
+        trials += 1;
+        j = n1 - 1; // next combination, lexicographic
+        while (j >= 0 && idx[j] === n - n1 + j) j -= 1;
+        if (j < 0) break;
+        idx[j] += 1;
+        for (m = j + 1; m < n1; m += 1) idx[m] = idx[m - 1] + 1;
+      }
+      return hits / trials;
+    }
+
+    var rand = lcg(20220317);
+    var pool = ranks.slice();
+    for (trials = 0; trials < 20000; trials += 1) {
+      for (j = n - 1; j > 0; j -= 1) { // Fisher-Yates
+        var t = Math.floor(rand() * (j + 1));
+        var tmp = pool[j]; pool[j] = pool[t]; pool[t] = tmp;
+      }
+      sum = 0;
+      for (j = 0; j < n1; j += 1) sum += pool[j];
+      if (Math.abs(sum - mean) >= target) hits += 1;
+    }
+    return (hits + 1) / (trials + 1);
+  }
+
+  // Benjamini-Hochberg adjusted p-values, returned in the input order.
+  function bh(ps) {
+    var m = ps.length;
+    var order = ps.map(function (_, i) { return i; })
+      .sort(function (i, j) { return ps[j] - ps[i]; });
+    var out = new Array(m);
+    var running = 1;
+    order.forEach(function (i, k) {
+      running = Math.min(running, ps[i] * m / (m - k));
+      out[i] = running;
+    });
+    return out;
+  }
+
+  function stars(q) {
+    if (q < 0.001) return "***";
+    if (q < 0.01) return "**";
+    if (q < 0.05) return "*";
+    return "";
+  }
+
+  function median(values) {
+    var s = values.slice().sort(function (x, y) { return x - y; });
+    var mid = s.length >> 1;
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  }
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { midranks: midranks, wilcoxonP: wilcoxonP, bh: bh, stars: stars, choose: choose };
+  }
+
+  var root = typeof document === "undefined" ? null : document.getElementById("etol-pie");
   if (!root) {
     return;
   }
@@ -335,6 +441,97 @@
     return String(parseFloat(value.toPrecision(3)));
   }
 
+  // Domains present in a set of columns, largest total first (stack + legend order).
+  function orderedDomains(cols) {
+    var overall = domainTotals(cols);
+    return Object.keys(overall).sort(function (a, b) { return overall[b] - overall[a]; });
+  }
+
+  // --- Significance ----------------------------------------------------------
+  //
+  // A bar segment is one pooled number; a p-value needs the spread that pooling
+  // threw away. So the test ignores the drawn bar and goes back to the per-sample
+  // values behind it: group them by design-matrix condition, compare the two
+  // groups per domain with an exact Wilcoxon rank-sum test (read counts are
+  // skewed, zero-inflated and n is small, so no distributional assumption is
+  // safe), Benjamini-Hochberg corrected across the domains in the legend.
+  //
+  // Refused rather than approximated:
+  //   - raw matched reads: not depth-normalized, so a "difference" can just be a
+  //     difference in library size. No test on that axis.
+  //   - the chi-square/Fisher-on-the-stack that a stacked bar invites: reads
+  //     within a sample are not independent draws, so it returns p ~ 0 for any
+  //     two libraries and means nothing.
+  // ponytail: two groups only; add Kruskal-Wallis if a 3-condition design shows up.
+  function domainStats(cols, domains) {
+    var mode = barValue();
+    if (mode === "hits") {
+      return { note: "Raw counts are not depth-normalized — comparing them across samples is " +
+        "unreliable, so no significance test is offered on this axis." };
+    }
+    var groups = {};
+    cols.forEach(function (c) {
+      var cond = String(matrix.cols[c].condition || "").trim();
+      if (cond) (groups[cond] = groups[cond] || []).push(c);
+    });
+    var names = Object.keys(groups);
+    if (names.length !== 2) {
+      return { note: names.length < 2
+        ? "No significance test: needs two design-matrix conditions."
+        : "No significance test: " + names.length + " conditions (only two-group testing is implemented)." };
+    }
+
+    // Per-sample value on the displayed axis; null when the sample cannot be
+    // normalized (no control-probe reads / no reads at all) so it drops out of
+    // the group rather than counting as a zero it never measured.
+    var perCol = matrix.cols.map(function (_, c) { return domainTotals([c]); });
+    function valueOf(c, domain) {
+      var totals = perCol[c];
+      var raw = totals[domain] || 0;
+      if (mode === "pct") {
+        var grand = Object.keys(totals).reduce(function (s, d) { return s + totals[d]; }, 0);
+        return grand > 0 ? (raw / grand) * 100 : null;
+      }
+      var cells = matrix.cols[c].host_cells || 0;
+      return cells > 0 ? raw / cells : null;
+    }
+    function valuesFor(name, domain) {
+      return groups[name].map(function (c) { return valueOf(c, domain); })
+        .filter(function (v) { return v !== null; });
+    }
+
+    var rows = domains.map(function (d) {
+      return { domain: d, a: valuesFor(names[0], d), b: valuesFor(names[1], d) };
+    }).filter(function (r) { return r.a.length >= 3 && r.b.length >= 3; });
+    if (!rows.length) {
+      return { note: "No significance test: needs at least 3 normalizable samples per condition." };
+    }
+
+    var ps = rows.map(function (r) { return wilcoxonP(r.a, r.b); });
+    var qs = bh(ps);
+    var by = {};
+    rows.forEach(function (r, i) {
+      by[r.domain] = {
+        p: ps[i], q: qs[i], stars: stars(qs[i]),
+        nA: r.a.length, nB: r.b.length,
+        medA: median(r.a), medB: median(r.b),
+      };
+    });
+    // Smallest q a single separated domain could reach here: the exact test's
+    // floor (2 / C(n, n1), perfect separation) after correcting over the tested
+    // domains. Above 0.05 the design is underpowered and an unmarked domain
+    // means "undetectable at any effect size", not "no difference" -- the caption
+    // has to say which, or a null result gets read as a negative finding.
+    var floorQ = rows.length * Math.min.apply(null, rows.map(function (r) {
+      return 2 / choose(r.a.length + r.b.length, r.a.length);
+    }));
+    return {
+      groups: names, by: by, axis: VALUE_LABELS[mode],
+      nA: rows[0].a.length, nB: rows[0].b.length, tested: rows.length,
+      floorQ: floorQ,
+    };
+  }
+
   function buildBarsSvg(scope) {
     var series = barSeries(scope);
     var data = series.map(barTotals);
@@ -342,8 +539,8 @@
     // One stack order and one legend for every bar: domains ranked by their total
     // over the whole chart, largest at the bottom.
     var everyCol = series.reduce(function (acc, s) { return acc.concat(s.cols); }, []);
-    var overall = domainTotals(everyCol);
-    var domains = Object.keys(overall).sort(function (a, b) { return overall[b] - overall[a]; });
+    var domains = orderedDomains(everyCol);
+    var stats = domainStats(everyCol, domains);
 
     var maxTotal = data.reduce(function (m, d) { return Math.max(m, d.total); }, 0);
     var tickVals = ticks(maxTotal);
@@ -351,8 +548,24 @@
 
     var plotW = series.length * (BAR.w + BAR.gap) + BAR.gap;
     var width = BAR.left + plotW + BAR.right;
-    var height = BAR.top + BAR.h + BAR.bottom;
     var baseY = BAR.top + BAR.h;
+
+    // Caption under the axis: either why there is no test, or which test the
+    // legend's stars come from. Drawn into the SVG, so the PNG/SVG exports carry
+    // it without the reader having to find this page again.
+    var foot = stats.note ? [stats.note] : [
+      "Exact Wilcoxon rank-sum test per domain on per-sample " + stats.axis + ": " +
+        stats.groups[0] + " (n=" + stats.nA + ") vs " + stats.groups[1] + " (n=" + stats.nB +
+        "), Benjamini-Hochberg FDR over " + stats.tested + " domains.",
+      "*** q<0.001    ** q<0.01    * q<0.05    unmarked = not significant. " +
+        "Replicates are samples, not reads.",
+    ];
+    if (stats.floorQ > 0.05) {
+      foot.push("Underpowered: at these group sizes a perfectly separated domain reaches only " +
+        "q = " + num(stats.floorQ) + ", so unmarked means undetectable, not absent. " +
+        "Needs about 6 samples per condition.");
+    }
+    var height = baseY + BAR.bottom + foot.length * 14;
 
     var parts = ['<rect width="' + width + '" height="' + height + '" fill="#ffffff"/>'];
     var title = (matrix.preset_label || "eToL") + " — non-human reads by domain";
@@ -362,7 +575,7 @@
 
     if (!domains.length) {
       parts.push('<text x="16" y="80" font-size="12" fill="#666">No non-human probe-matched reads to plot.</text>');
-      return svgWrap(width, height, parts.join(""));
+      return svgWrap(width, baseY + BAR.bottom, parts.join(""));
     }
 
     // Gridlines + y axis.
@@ -408,25 +621,29 @@
       parts.push('<text x="' + lx + '" y="' + ly + '" font-size="10" fill="#333" text-anchor="end" ' +
         'transform="rotate(-45 ' + lx + " " + ly + ')">' + esc(s.label) + "</text>");
       if (s.condition && scope.value !== GRID) {
-        parts.push('<text x="' + lx + '" y="' + (height - 14) + '" font-size="9" fill="#777" ' +
+        parts.push('<text x="' + lx + '" y="' + (baseY + 90) + '" font-size="9" fill="#777" ' +
           'text-anchor="middle">' + esc(s.condition) + "</text>");
       }
     });
 
-    // Legend on the right, same order as the stack.
+    // Legend on the right, same order as the stack; a tested domain carries its
+    // significance stars here rather than as brackets over the bars -- with one
+    // test per segment, brackets over a stack would be ambiguous about which
+    // segment they mark.
     var lgx = BAR.left + plotW + 20;
     domains.forEach(function (d, i) {
       var y = BAR.top + 10 + i * 22;
+      var mark = (stats.by && stats.by[d] && stats.by[d].stars) || "";
       parts.push('<rect x="' + lgx + '" y="' + (y - 11) + '" width="13" height="13" fill="' + colorFor(d) + '"/>');
-      parts.push('<text x="' + (lgx + 19) + '" y="' + y + '" font-size="11" fill="#333">' + esc(d) + "</text>");
+      parts.push('<text x="' + (lgx + 19) + '" y="' + y + '" font-size="11" fill="#333">' + esc(d) +
+        (mark ? '<tspan font-weight="700">&#160;&#160;' + mark + "</tspan>" : "") + "</text>");
     });
 
-    var hint = barValue() === "hits"
-      ? "Raw counts are not depth-normalized — compare across samples with care."
-      : "";
-    if (hint) {
-      parts.push('<text x="16" y="' + (height - 4) + '" font-size="10" fill="#a15c00">' + esc(hint) + "</text>");
-    }
+    foot.forEach(function (line, i) {
+      var warn = stats.note || i === foot.length - 1 && stats.floorQ > 0.05;
+      parts.push('<text x="16" y="' + (baseY + BAR.bottom + 2 + i * 14) + '" font-size="10" fill="' +
+        (warn ? "#a15c00" : "#555") + '">' + esc(line) + "</text>");
+    });
     return svgWrap(width, height, parts.join(""));
   }
 
@@ -557,6 +774,26 @@
         lines.push([scope.csvLabel, d, totals[d], pct, perCell].map(csvCell).join(","));
       });
     });
+
+    // The numbers behind the figure's stars, on the axis currently selected --
+    // stars alone are not citable. Appended as a second block so it stays one
+    // download; blank line separates it for a spreadsheet import.
+    var everyCol = matrix.cols.map(function (_, i) { return i; });
+    var stats = domainStats(everyCol, orderedDomains(everyCol));
+    lines.push("");
+    if (stats.note) {
+      lines.push(csvCell(stats.note));
+    } else {
+      lines.push(csvCell("Exact Wilcoxon rank-sum test per domain on per-sample " + stats.axis +
+        ", Benjamini-Hochberg FDR over " + stats.tested + " domains"));
+      lines.push(["Domain", "Group A", "n A", "Median A", "Group B", "n B", "Median B",
+        "p", "q (BH)", "Significance"].map(csvCell).join(","));
+      Object.keys(stats.by).forEach(function (d) {
+        var s = stats.by[d];
+        lines.push([d, stats.groups[0], s.nA, num(s.medA), stats.groups[1], s.nB, num(s.medB),
+          s.p.toExponential(3), s.q.toExponential(3), s.stars || "ns"].map(csvCell).join(","));
+      });
+    }
     download("etol_domain_composition.csv", "text/csv", lines.join("\r\n"));
   }
 
