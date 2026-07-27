@@ -62,49 +62,157 @@
     return function () { s = (Math.imul(s, 1103515245) + 12345) >>> 0; return s / 4294967296; };
   }
 
-  // Two-sided Wilcoxon rank-sum (Mann-Whitney) p by permuting group labels:
-  // exact when the C(n,n1) splits can be enumerated, else 20k sampled splits.
-  // Permutation is exact under ties -- and eToL group sizes (n < 10) are far too
-  // small for the normal approximation the textbook formula uses.
-  function wilcoxonP(a, b) {
-    var n1 = a.length, n2 = b.length, n = n1 + n2;
-    if (!n1 || !n2) return null;
-    var ranks = midranks(a.concat(b));
-    var mean = n1 * (n + 1) / 2;
-    var obs = 0, i, j, m, sum;
-    for (i = 0; i < n1; i += 1) obs += ranks[i];
-    var target = Math.abs(obs - mean) - 1e-9;
-    var hits = 0, trials = 0;
+  var PERMUTATIONS = 20000;
 
-    if (choose(n, n1) <= 100000) {
+  // Two-group label spaces this small are enumerated exactly instead of sampled.
+  function enumerable(sizes) {
+    return sizes.length === 2 && choose(sizes[0] + sizes[1], sizes[0]) <= 100000;
+  }
+
+  // Rank statistic S = sum over groups of R_g^2 / n_g.
+  //
+  // One statistic covers both designs. With two groups S is a parabola in the
+  // first group's rank sum whose vertex sits exactly at the null mean, so
+  // P(S >= S_obs) IS the two-sided Wilcoxon rank-sum p -- no separate two-sided
+  // handling. With more groups S is Kruskal-Wallis H up to constants that are
+  // fixed under permutation (the tie correction among them), so the permutation
+  // p is Kruskal-Wallis's. Hence one test function, not two.
+  function rankStat(ranks, sizes) {
+    var s = 0, at = 0;
+    for (var g = 0; g < sizes.length; g += 1) {
+      var sum = 0;
+      for (var i = 0; i < sizes[g]; i += 1) { sum += ranks[at]; at += 1; }
+      s += sum * sum / sizes[g];
+    }
+    return s;
+  }
+
+  // p for "are these groups drawn from the same distribution?", by permuting the
+  // group labels. Exact by enumeration for a small two-group split; otherwise
+  // sampled -- a 4x6 design has ~2.3e12 label assignments, which neither needs
+  // nor admits enumeration. Permuting is exact under ties, and eToL group sizes
+  // are far too small for the normal/chi-square approximations the textbook
+  // formulae rely on.
+  function rankTestP(groups) {
+    var sizes = groups.map(function (g) { return g.length; });
+    if (!sizes.length || sizes.some(function (n) { return n < 1; })) return null;
+    var pooled = [];
+    groups.forEach(function (g) { pooled = pooled.concat(g); });
+    var ranks = midranks(pooled);
+    var n = ranks.length;
+    var obs = rankStat(ranks, sizes) - 1e-9;
+    var hits = 0, trials = 0, j, m, sum;
+
+    if (enumerable(sizes)) {
+      var total = n * (n + 1) / 2;
       var idx = [];
-      for (j = 0; j < n1; j += 1) idx.push(j);
+      for (j = 0; j < sizes[0]; j += 1) idx.push(j);
       for (;;) {
         sum = 0;
-        for (j = 0; j < n1; j += 1) sum += ranks[idx[j]];
-        if (Math.abs(sum - mean) >= target) hits += 1;
+        for (j = 0; j < sizes[0]; j += 1) sum += ranks[idx[j]];
+        if (sum * sum / sizes[0] + (total - sum) * (total - sum) / sizes[1] >= obs) hits += 1;
         trials += 1;
-        j = n1 - 1; // next combination, lexicographic
-        while (j >= 0 && idx[j] === n - n1 + j) j -= 1;
+        j = sizes[0] - 1; // next combination, lexicographic
+        while (j >= 0 && idx[j] === n - sizes[0] + j) j -= 1;
         if (j < 0) break;
         idx[j] += 1;
-        for (m = j + 1; m < n1; m += 1) idx[m] = idx[m - 1] + 1;
+        for (m = j + 1; m < sizes[0]; m += 1) idx[m] = idx[m - 1] + 1;
       }
       return hits / trials;
     }
 
-    var rand = lcg(20220317);
+    var rand = lcg(20220317); // fixed seed: the same figure must give the same p
     var pool = ranks.slice();
-    for (trials = 0; trials < 20000; trials += 1) {
+    for (trials = 0; trials < PERMUTATIONS; trials += 1) {
       for (j = n - 1; j > 0; j -= 1) { // Fisher-Yates
         var t = Math.floor(rand() * (j + 1));
         var tmp = pool[j]; pool[j] = pool[t]; pool[t] = tmp;
       }
-      sum = 0;
-      for (j = 0; j < n1; j += 1) sum += pool[j];
-      if (Math.abs(sum - mean) >= target) hits += 1;
+      if (rankStat(pool, sizes) >= obs) hits += 1;
     }
     return (hits + 1) / (trials + 1);
+  }
+
+  // Which test will run and the smallest p it can return, for the caption: the
+  // exact floor when enumerated, otherwise the larger of the sampling resolution
+  // and the true combinatorial floor (k! of the label assignments reproduce any
+  // given grouping).
+  function rankTestPlan(sizes) {
+    var n = sizes.reduce(function (s, v) { return s + v; }, 0);
+    if (enumerable(sizes)) {
+      return { name: "Exact Wilcoxon rank-sum test", floor: 2 / choose(n, sizes[0]) };
+    }
+    var space = 1, left = n, fact = 1, i;
+    sizes.forEach(function (size) { space *= choose(left, size); left -= size; });
+    for (i = 2; i <= sizes.length; i += 1) fact *= i;
+    return {
+      name: sizes.length === 2
+        ? "Permutation Wilcoxon rank-sum test"
+        : "Kruskal-Wallis permutation test",
+      floor: Math.max(1 / (PERMUTATIONS + 1), fact / space),
+    };
+  }
+
+  // PERMANOVA (Anderson 2001) on Bray-Curtis distances between per-sample
+  // composition vectors: the single global test of "does composition differ
+  // between the groups at all", which the per-domain tests cannot answer jointly
+  // -- they ask one question per domain, this asks one question of the whole
+  // community. Pseudo-F is built from the distance matrix directly (no
+  // ordination), p by permuting group labels, R^2 = share of the total
+  // dissimilarity explained by the grouping.
+  // ponytail: no betadisper companion -- PERMANOVA cannot tell a shift in group
+  // centroid from a difference in within-group spread, so a small p with visibly
+  // uneven scatter needs that check before it is called a composition shift.
+  function brayCurtis(x, y) {
+    var num = 0, den = 0;
+    for (var i = 0; i < x.length; i += 1) {
+      num += Math.abs(x[i] - y[i]);
+      den += x[i] + y[i];
+    }
+    return den > 0 ? num / den : 0;
+  }
+
+  function permanova(vectors, labels) {
+    var n = vectors.length;
+    var names = labels.filter(function (v, i) { return labels.indexOf(v) === i; });
+    var a = names.length;
+    if (n < 3 || a < 2 || n - a < 1) return null;
+
+    var d2 = [], i, j;
+    for (i = 0; i < n; i += 1) {
+      d2.push([]);
+      for (j = 0; j < n; j += 1) {
+        d2[i][j] = i === j ? 0 : Math.pow(brayCurtis(vectors[i], vectors[j]), 2);
+      }
+    }
+
+    function stat(lab) {
+      var total = 0, within = 0, counts = {}, sums = {}, x, y;
+      for (x = 0; x < n; x += 1) {
+        counts[lab[x]] = (counts[lab[x]] || 0) + 1;
+        for (y = x + 1; y < n; y += 1) {
+          total += d2[x][y];
+          if (lab[x] === lab[y]) sums[lab[x]] = (sums[lab[x]] || 0) + d2[x][y];
+        }
+      }
+      Object.keys(sums).forEach(function (g) { within += sums[g] / counts[g]; });
+      total /= n;
+      var between = total - within;
+      return { f: (between / (a - 1)) / (within / (n - a)), r2: total > 0 ? between / total : 0 };
+    }
+
+    var obs = stat(labels);
+    if (!isFinite(obs.f)) return null;
+    var rand = lcg(19710407);
+    var perm = labels.slice(), hits = 0, trials = 9999, t, k, s, tmp;
+    for (t = 0; t < trials; t += 1) {
+      for (k = n - 1; k > 0; k -= 1) {
+        s = Math.floor(rand() * (k + 1));
+        tmp = perm[k]; perm[k] = perm[s]; perm[s] = tmp;
+      }
+      if (stat(perm).f >= obs.f - 1e-12) hits += 1;
+    }
+    return { f: obs.f, r2: obs.r2, p: (hits + 1) / (trials + 1), permutations: trials };
   }
 
   // Benjamini-Hochberg adjusted p-values, returned in the input order.
@@ -135,7 +243,10 @@
   }
 
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { midranks: midranks, wilcoxonP: wilcoxonP, bh: bh, stars: stars, choose: choose };
+    module.exports = {
+      midranks: midranks, rankTestP: rankTestP, rankTestPlan: rankTestPlan,
+      permanova: permanova, brayCurtis: brayCurtis, bh: bh, stars: stars, choose: choose,
+    };
   }
 
   var root = typeof document === "undefined" ? null : document.getElementById("etol-pie");
@@ -475,10 +586,8 @@
       if (cond) (groups[cond] = groups[cond] || []).push(c);
     });
     var names = Object.keys(groups);
-    if (names.length !== 2) {
-      return { note: names.length < 2
-        ? "No significance test: needs two design-matrix conditions."
-        : "No significance test: " + names.length + " conditions (only two-group testing is implemented)." };
+    if (names.length < 2) {
+      return { note: "No significance test: needs at least two design-matrix conditions." };
     }
 
     // Per-sample value on the displayed axis; null when the sample cannot be
@@ -501,34 +610,53 @@
     }
 
     var rows = domains.map(function (d) {
-      return { domain: d, a: valuesFor(names[0], d), b: valuesFor(names[1], d) };
-    }).filter(function (r) { return r.a.length >= 3 && r.b.length >= 3; });
+      return { domain: d, values: names.map(function (name) { return valuesFor(name, d); }) };
+    }).filter(function (r) {
+      return r.values.every(function (v) { return v.length >= 3; });
+    });
     if (!rows.length) {
       return { note: "No significance test: needs at least 3 normalizable samples per condition." };
     }
 
-    var ps = rows.map(function (r) { return wilcoxonP(r.a, r.b); });
+    var ps = rows.map(function (r) { return rankTestP(r.values); });
     var qs = bh(ps);
     var by = {};
     rows.forEach(function (r, i) {
       by[r.domain] = {
         p: ps[i], q: qs[i], stars: stars(qs[i]),
-        nA: r.a.length, nB: r.b.length,
-        medA: median(r.a), medB: median(r.b),
+        n: r.values.map(function (v) { return v.length; }),
+        medians: r.values.map(median),
       };
     });
-    // Smallest q a single separated domain could reach here: the exact test's
-    // floor (2 / C(n, n1), perfect separation) after correcting over the tested
-    // domains. Above 0.05 the design is underpowered and an unmarked domain
-    // means "undetectable at any effect size", not "no difference" -- the caption
-    // has to say which, or a null result gets read as a negative finding.
-    var floorQ = rows.length * Math.min.apply(null, rows.map(function (r) {
-      return 2 / choose(r.a.length + r.b.length, r.a.length);
-    }));
+
+    // Smallest q a single differing domain could reach: the test's own p floor
+    // after correcting over the tested domains. Above 0.05 the design is
+    // underpowered and an unmarked domain means "undetectable at any effect
+    // size", not "no difference" -- the caption has to say which, or a null
+    // result gets read as a negative finding.
+    var plans = rows.map(function (r) {
+      return rankTestPlan(r.values.map(function (v) { return v.length; }));
+    });
+    var floorQ = rows.length * Math.min.apply(null, plans.map(function (p) { return p.floor; }));
+
+    // Global test: one p for the whole community, on the same per-sample vectors
+    // over the same domains, so it cannot disagree with the per-domain results.
+    var vectors = [], labels = [];
+    names.forEach(function (name) {
+      groups[name].forEach(function (c) {
+        var vector = domains.map(function (d) { return valueOf(c, d); });
+        if (vector.every(function (v) { return v !== null; })) {
+          vectors.push(vector);
+          labels.push(name);
+        }
+      });
+    });
+
     return {
       groups: names, by: by, axis: VALUE_LABELS[mode],
-      nA: rows[0].a.length, nB: rows[0].b.length, tested: rows.length,
-      floorQ: floorQ,
+      counts: rows[0].values.map(function (v) { return v.length; }),
+      tested: rows.length, testName: plans[0].name, floorQ: floorQ,
+      global: permanova(vectors, labels),
     };
   }
 
@@ -553,17 +681,27 @@
     // Caption under the axis: either why there is no test, or which test the
     // legend's stars come from. Drawn into the SVG, so the PNG/SVG exports carry
     // it without the reader having to find this page again.
-    var foot = stats.note ? [stats.note] : [
-      "Exact Wilcoxon rank-sum test per domain on per-sample " + stats.axis + ": " +
-        stats.groups[0] + " (n=" + stats.nA + ") vs " + stats.groups[1] + " (n=" + stats.nB +
-        "), Benjamini-Hochberg FDR over " + stats.tested + " domains.",
-      "*** q<0.001    ** q<0.01    * q<0.05    unmarked = not significant. " +
-        "Replicates are samples, not reads.",
-    ];
-    if (stats.floorQ > 0.05) {
-      foot.push("Underpowered: at these group sizes a perfectly separated domain reaches only " +
-        "q = " + num(stats.floorQ) + ", so unmarked means undetectable, not absent. " +
-        "Needs about 6 samples per condition.");
+    var foot;
+    if (stats.note) {
+      foot = [stats.note];
+    } else {
+      foot = [
+        stats.testName + " per domain on per-sample " + stats.axis + ": " +
+          stats.groups.map(function (name, i) { return name + " (n=" + stats.counts[i] + ")"; })
+            .join(", ") + "; Benjamini-Hochberg FDR over " + stats.tested + " domains.",
+        "*** q<0.001    ** q<0.01    * q<0.05    unmarked = not significant. " +
+          "Replicates are samples, not reads.",
+      ];
+      if (stats.global) {
+        foot.splice(1, 0, "Whole-community test — PERMANOVA on Bray-Curtis composition: " +
+          "pseudo-F = " + num(stats.global.f) + ", R² = " + num(stats.global.r2) +
+          ", p = " + num(stats.global.p) + " (" + stats.global.permutations + " permutations).");
+      }
+      if (stats.floorQ > 0.05) {
+        foot.push("Underpowered: at these group sizes a perfectly separated domain reaches only " +
+          "q = " + num(stats.floorQ) + ", so unmarked means undetectable, not absent. " +
+          "Needs about 6 samples per condition.");
+      }
     }
     var height = baseY + BAR.bottom + foot.length * 14;
 
@@ -784,14 +922,23 @@
     if (stats.note) {
       lines.push(csvCell(stats.note));
     } else {
-      lines.push(csvCell("Exact Wilcoxon rank-sum test per domain on per-sample " + stats.axis +
+      lines.push(csvCell(stats.testName + " per domain on per-sample " + stats.axis +
         ", Benjamini-Hochberg FDR over " + stats.tested + " domains"));
-      lines.push(["Domain", "Group A", "n A", "Median A", "Group B", "n B", "Median B",
-        "p", "q (BH)", "Significance"].map(csvCell).join(","));
+      if (stats.global) {
+        lines.push(csvCell("PERMANOVA (Bray-Curtis, " + stats.global.permutations +
+          " permutations): pseudo-F=" + num(stats.global.f) + ", R2=" + num(stats.global.r2) +
+          ", p=" + num(stats.global.p)));
+      }
+      // Long format: one row per domain x group, p/q repeated. Keeps a single
+      // table shape whether the design has two conditions or ten.
+      lines.push(["Domain", "Group", "n", "Median", "p", "q (BH)", "Significance"]
+        .map(csvCell).join(","));
       Object.keys(stats.by).forEach(function (d) {
         var s = stats.by[d];
-        lines.push([d, stats.groups[0], s.nA, num(s.medA), stats.groups[1], s.nB, num(s.medB),
-          s.p.toExponential(3), s.q.toExponential(3), s.stars || "ns"].map(csvCell).join(","));
+        stats.groups.forEach(function (name, i) {
+          lines.push([d, name, s.n[i], num(s.medians[i]),
+            s.p.toExponential(3), s.q.toExponential(3), s.stars || "ns"].map(csvCell).join(","));
+        });
       });
     }
     download("etol_domain_composition.csv", "text/csv", lines.join("\r\n"));
