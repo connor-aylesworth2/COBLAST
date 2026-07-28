@@ -9,6 +9,7 @@ from apoe_summary import build_apoe_probe_summary
 from design_matrix import parse_design_matrix
 from etol_summary import (
     _sample_condition,
+    _species,
     build_etol_matrix,
     build_etol_probe_summary,
     compute_host_cells,
@@ -85,6 +86,23 @@ def test_etol_control_probes_excluded_from_full():
     assert "PGK1_2" not in full_ids
 
 
+def test_species_label_expands_only_abbreviated_binomials():
+    # Abbreviated binomials get the genus initial punctuated...
+    assert _species("B0_Tmaritima_16S") == "T. maritima"
+    assert _species("A_Hsalinarum_16S") == "H. salinarum"
+    # ...while every other shape in the panel is left exactly as written.
+    for taxon, expected in [
+        ("B3_AcidobacteriaKBS96_16S", "AcidobacteriaKBS96"),  # genus + strain code
+        ("H2_TrichoplaxH8_18S", "TrichoplaxH8"),
+        ("B5_Latescibacteria134476n2_16S", "Latescibacteria134476n2"),
+        ("V-HHV_HSV1_gB", "HSV1_gB"),                         # viral gene label
+        ("V-HAdV_AdC_penton", "AdC_penton"),
+        ("PGK1", "PGK1"),                                     # human controls
+        ("hNSE", "hNSE"),
+    ]:
+        assert _species(taxon) == expected
+
+
 def test_etol_summary_aggregates_species():
     records = etol_preset_records("etol_full")
     sample = {
@@ -106,7 +124,7 @@ def test_etol_summary_aggregates_species():
     assert row["probes_detected"] == 3  # two probes of one taxon + one of another
     assert row["species_detected"] == 2
     top = row["detected_species"][0]
-    assert top["species"] == "Hsalinarum"
+    assert top["species"] == "H. salinarum"
     assert top["exact_hits"] == 3
 
 

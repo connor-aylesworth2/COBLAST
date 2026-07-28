@@ -153,6 +153,129 @@
     };
   }
 
+  // --- Parametric arm (reported beside the rank test, never used for stars) ---
+  //
+  // Run so a result can be checked against the parametric test most published
+  // analyses report, and so a reader can see whether the conclusion depends on
+  // the choice of test. It is deliberately NOT wired to the significance marks:
+  // both tests always run on every render, so there is no opportunity to pick
+  // the friendlier one after seeing it.
+
+  var LANCZOS = [
+    676.5203681218851, -1259.1392167224028, 771.32342877765313,
+    -176.61502916214059, 12.507343278686905, -0.13857109526572012,
+    9.9843695780195716e-6, 1.5056327351493116e-7,
+  ];
+
+  function lgamma(x) {
+    if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - lgamma(1 - x);
+    x -= 1;
+    var a = 0.99999999999980993;
+    var t = x + 7.5;
+    for (var i = 0; i < LANCZOS.length; i += 1) a += LANCZOS[i] / (x + i + 1);
+    return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
+  }
+
+  // Continued fraction for the incomplete beta (modified Lentz). Converges for
+  // x < (a+1)/(a+b+2); ibeta's symmetry step routes the other half here.
+  function betacf(a, b, x) {
+    var tiny = 1e-30, qab = a + b, qap = a + 1, qam = a - 1;
+    var c = 1, d = 1 - qab * x / qap, aa, del, m, m2;
+    if (Math.abs(d) < tiny) d = tiny;
+    d = 1 / d;
+    var h = d;
+    for (m = 1; m <= 300; m += 1) {
+      m2 = 2 * m;
+      aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+      d = 1 + aa * d; if (Math.abs(d) < tiny) d = tiny;
+      c = 1 + aa / c; if (Math.abs(c) < tiny) c = tiny;
+      d = 1 / d; h *= d * c;
+      aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+      d = 1 + aa * d; if (Math.abs(d) < tiny) d = tiny;
+      c = 1 + aa / c; if (Math.abs(c) < tiny) c = tiny;
+      d = 1 / d;
+      del = d * c; h *= del;
+      if (Math.abs(del - 1) < 3e-16) break;
+    }
+    return h;
+  }
+
+  // Regularized incomplete beta I_x(a,b) -- the t and F tail probabilities below
+  // are both just this function, so there is one piece of numerics, not two.
+  function ibeta(a, b, x) {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    var front = Math.exp(lgamma(a + b) - lgamma(a) - lgamma(b) +
+      a * Math.log(x) + b * Math.log(1 - x));
+    return x < (a + 1) / (a + b + 2)
+      ? front * betacf(a, b, x) / a
+      : 1 - front * betacf(b, a, 1 - x) / b;
+  }
+
+  function studentP(t, df) { // two-sided
+    if (!(df > 0) || !isFinite(t)) return null;
+    return ibeta(df / 2, 0.5, df / (df + t * t));
+  }
+
+  function fUpperP(f, d1, d2) {
+    if (!(f > 0)) return 1;
+    if (!isFinite(f)) return 0;
+    return ibeta(d2 / 2, d1 / 2, d2 / (d2 + d1 * f));
+  }
+
+  function meanOf(v) {
+    return v.reduce(function (s, x) { return s + x; }, 0) / v.length;
+  }
+
+  function varOf(v) {
+    var m = meanOf(v);
+    return v.reduce(function (s, x) { return s + (x - m) * (x - m); }, 0) / (v.length - 1);
+  }
+
+  // Welch's unequal-variance t-test: what R's t.test() does by default, so it is
+  // the most likely thing behind a published "t-test".
+  function welchT(a, b) {
+    if (a.length < 2 || b.length < 2) return null;
+    var va = varOf(a) / a.length, vb = varOf(b) / b.length;
+    if (va + vb <= 0) return { t: 0, df: a.length + b.length - 2, p: 1 };
+    var t = (meanOf(a) - meanOf(b)) / Math.sqrt(va + vb);
+    var df = (va + vb) * (va + vb) /
+      (va * va / (a.length - 1) + vb * vb / (b.length - 1));
+    return { t: t, df: df, p: studentP(t, df) };
+  }
+
+  // Classic one-way ANOVA: the k-group parametric test, since a t-test is not
+  // defined on more than two groups. At two groups this is the pooled t-test
+  // with F = t^2.
+  function anovaF(groups) {
+    var k = groups.length;
+    var n = groups.reduce(function (s, g) { return s + g.length; }, 0);
+    if (k < 2 || n - k < 1) return null;
+    var grand = meanOf([].concat.apply([], groups));
+    var between = 0, within = 0;
+    groups.forEach(function (g) {
+      var m = meanOf(g);
+      between += g.length * (m - grand) * (m - grand);
+      g.forEach(function (x) { within += (x - m) * (x - m); });
+    });
+    if (within <= 0) {
+      return between > 0
+        ? { f: Infinity, df1: k - 1, df2: n - k, p: 0 }
+        : { f: 0, df1: k - 1, df2: n - k, p: 1 };
+    }
+    var f = (between / (k - 1)) / (within / (n - k));
+    return { f: f, df1: k - 1, df2: n - k, p: fUpperP(f, k - 1, n - k) };
+  }
+
+  function parametricTest(groups) {
+    if (groups.length === 2) {
+      var w = welchT(groups[0], groups[1]);
+      return w && { name: "Welch t-test", label: "t", stat: w.t, p: w.p };
+    }
+    var f = anovaF(groups);
+    return f && { name: "one-way ANOVA", label: "F", stat: f.f, p: f.p };
+  }
+
   // PERMANOVA (Anderson 2001) on Bray-Curtis distances between per-sample
   // composition vectors: the single global test of "does composition differ
   // between the groups at all", which the per-domain tests cannot answer jointly
@@ -246,6 +369,7 @@
     module.exports = {
       midranks: midranks, rankTestP: rankTestP, rankTestPlan: rankTestPlan,
       permanova: permanova, brayCurtis: brayCurtis, bh: bh, stars: stars, choose: choose,
+      ibeta: ibeta, studentP: studentP, fUpperP: fUpperP, welchT: welchT, anovaF: anovaF,
     };
   }
 
@@ -626,6 +750,8 @@
         p: ps[i], q: qs[i], stars: stars(qs[i]),
         n: r.values.map(function (v) { return v.length; }),
         medians: r.values.map(median),
+        // Same values, same pass, parametric test -- reported, never marked.
+        param: parametricTest(r.values),
       };
     });
 
@@ -656,6 +782,7 @@
       groups: names, by: by, axis: VALUE_LABELS[mode],
       counts: rows[0].values.map(function (v) { return v.length; }),
       tested: rows.length, testName: plans[0].name, floorQ: floorQ,
+      paramName: (by[rows[0].domain].param || {}).name || "",
       global: permanova(vectors, labels),
     };
   }
@@ -696,6 +823,18 @@
         foot.splice(1, 0, "Whole-community test — PERMANOVA on Bray-Curtis composition: " +
           "pseudo-F = " + num(stats.global.f) + ", R² = " + num(stats.global.r2) +
           ", p = " + num(stats.global.p) + " (" + stats.global.permutations + " permutations).");
+      }
+      // Parametric arm, same pass, same values. Named domains are nominally
+      // significant only -- spelling that out is the whole point of showing it.
+      if (stats.paramName) {
+        var nominal = Object.keys(stats.by).filter(function (d) {
+          return stats.by[d].param && stats.by[d].param.p < 0.05;
+        });
+        foot.push("Uncorrected " + stats.paramName + " on the same values — " + (nominal.length
+          ? nominal.map(function (d) { return d + " p=" + num(stats.by[d].param.p); }).join(", ")
+          : "no domain reaches p<0.05") +
+          ". Nominal, not corrected for " + stats.tested + " domains; the marks above follow the " +
+          "rank test. Full table in the CSV.");
       }
       if (stats.floorQ > 0.05) {
         foot.push("Underpowered: at these group sizes a perfectly separated domain reaches only " +
@@ -931,13 +1070,17 @@
       }
       // Long format: one row per domain x group, p/q repeated. Keeps a single
       // table shape whether the design has two conditions or ten.
-      lines.push(["Domain", "Group", "n", "Median", "p", "q (BH)", "Significance"]
+      lines.push(["Domain", "Group", "n", "Median", "p", "q (BH)", "Significance",
+        stats.paramName ? stats.paramName + " statistic" : "",
+        stats.paramName ? "p (uncorrected " + stats.paramName + ")" : ""]
         .map(csvCell).join(","));
       Object.keys(stats.by).forEach(function (d) {
         var s = stats.by[d];
         stats.groups.forEach(function (name, i) {
           lines.push([d, name, s.n[i], num(s.medians[i]),
-            s.p.toExponential(3), s.q.toExponential(3), s.stars || "ns"].map(csvCell).join(","));
+            s.p.toExponential(3), s.q.toExponential(3), s.stars || "ns",
+            s.param ? num(s.param.stat) : "",
+            s.param ? s.param.p.toExponential(3) : ""].map(csvCell).join(","));
         });
       });
     }

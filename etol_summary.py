@@ -89,6 +89,13 @@ ETOL_CONTROL_GROUPS = {"PGK1", "hNSE"}
 # rRNA subunit suffix (e.g. "_16S"/"_18S") so only the species label remains.
 _CLASS_PREFIX_RE = re.compile(r"^[^_]+_")
 _RRNA_SUFFIX_RE = re.compile(r"_\d+S$")
+# The panel writes abbreviated binomials without punctuation ("Tmaritima"), so
+# expand a bare initial + epithet back to "T. maritima" for display. Everything
+# else in the panel fails this pattern and is left exactly as written: genus +
+# strain codes ("AcidobacteriaKBS96", "TrichoplaxH8") carry digits or interior
+# capitals, viral gene labels ("HSV1_gB") and the human controls ("PGK1",
+# "hNSE") carry underscores, digits, or a lowercase initial.
+_BINOMIAL_RE = re.compile(r"^([A-Z])([a-z]+)$")
 
 ETOL_SPECIES_EXPORT_COLUMNS = [
     ("sample_database", "Sample/Database"),
@@ -139,7 +146,7 @@ def _species(taxon: str) -> str:
     """Return just the species label (no class prefix, no rRNA-unit suffix)."""
     name = _CLASS_PREFIX_RE.sub("", taxon)
     name = _RRNA_SUFFIX_RE.sub("", name)
-    return name or taxon
+    return _BINOMIAL_RE.sub(r"\1. \2", name) or taxon
 
 
 def _record_meta(probe: str) -> dict[str, str]:

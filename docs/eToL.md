@@ -75,7 +75,11 @@ selected sample/database. Each block reports the total probe-matched reads, how
 many probes were detected, how many species/taxa were detected, and a table of
 the detected species (grouped by domain and eToL class code, sorted by
 matched-read count). Species are shown by species label only (the class prefix and rRNA-unit
-suffix are stripped, e.g. `B0_Tmaritima_16S` is displayed as `Tmaritima`). Class
+suffix are stripped, and an abbreviated binomial is punctuated, e.g.
+`B0_Tmaritima_16S` is displayed as `T. maritima`). Labels that are not
+abbreviated binomials are left as written, so genus + strain codes
+(`AcidobacteriaKBS96`), viral gene labels (`HSV1_gB`), and the human controls
+(`PGK1`, `hNSE`) are unchanged. Class
 codes map to domains per the eToL paper: A Archaea; B Bacteria; C Chloroplastida;
 D Amoebozoa; E0 basal Eukaryota; F Fungi; H Holozoa/Metazoa.
 

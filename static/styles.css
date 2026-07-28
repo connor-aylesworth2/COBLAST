@@ -372,6 +372,35 @@ tr:nth-child(even) {
   text-align: right;
 }
 
+/* Batch database picker: the label in each cell is the click target, so the
+   whole row selects the database instead of just the checkbox itself. */
+.database-row td {
+  padding: 0;
+}
+
+.db-pick {
+  display: block;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.database-checkbox {
+  width: 18px;
+  height: 18px;
+}
+
+.database-row:hover {
+  background: var(--ncbi-blue-light);
+}
+
+.database-row:has(.database-checkbox:checked) {
+  background: #d6e7f5;
+}
+
+.database-row:has(.database-checkbox:disabled) .db-pick {
+  cursor: default;
+}
+
 .apoe-summary-table th,
 .apoe-summary-table td {
   text-align: center;

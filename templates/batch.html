@@ -199,24 +199,31 @@ ATGCGTACGTAGCTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAATGCGTACGTAGCTAGCTAGCTAGCTAATG
                     data-db-type="{{ option.database.db_type }}"
                     data-storage-bytes="{{ option.storage_bytes }}"
                   >
+                    {# Every cell holds a label bound to the row's checkbox, so
+                       clicking anywhere in the row toggles it -- no JS needed. #}
                     <td>
-                      <input
-                        class="database-checkbox"
-                        type="checkbox"
-                        name="database_ids"
-                        value="{{ option.database.id }}"
-                        {% if option.database.status != "available" %}disabled{% endif %}
-                      >
+                      <label class="db-pick">
+                        <input
+                          class="database-checkbox"
+                          id="database_id_{{ option.database.id }}"
+                          type="checkbox"
+                          name="database_ids"
+                          value="{{ option.database.id }}"
+                          {% if option.database.status != "available" %}disabled{% endif %}
+                        >
+                      </label>
                     </td>
                     <td>
-                      <strong>{{ option.database.display_name }}</strong>
-                      {% if option.database.description %}
-                        <br><span class="muted">{{ option.database.description }}</span>
-                      {% endif %}
+                      <label class="db-pick" for="database_id_{{ option.database.id }}">
+                        <strong>{{ option.database.display_name }}</strong>
+                        {% if option.database.description %}
+                          <br><span class="muted">{{ option.database.description }}</span>
+                        {% endif %}
+                      </label>
                     </td>
-                    <td>{{ option.database.db_type }}</td>
-                    <td class="status-{{ option.database.status }}">{{ option.database.status }}</td>
-                    <td>{{ option.storage_label }}</td>
+                    <td><label class="db-pick" for="database_id_{{ option.database.id }}">{{ option.database.db_type }}</label></td>
+                    <td class="status-{{ option.database.status }}"><label class="db-pick" for="database_id_{{ option.database.id }}">{{ option.database.status }}</label></td>
+                    <td><label class="db-pick" for="database_id_{{ option.database.id }}">{{ option.storage_label }}</label></td>
                   </tr>
                 {% else %}
                   <tr>

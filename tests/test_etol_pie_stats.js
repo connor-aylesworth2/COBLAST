@@ -11,6 +11,7 @@
 const assert = require("assert");
 const {
   midranks, rankTestP, rankTestPlan, permanova, brayCurtis, bh, stars, choose,
+  ibeta, studentP, fUpperP, welchT, anovaF,
 } = require("../static/etol_pie.js");
 
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} != ${b}`);
@@ -80,6 +81,40 @@ assert.strictEqual(permanova([[1, 2]], ["AD"]), null, "too few samples");
 assert.deepStrictEqual(bh([0.01, 0.02, 0.03]).map((q) => +q.toFixed(6)), [0.03, 0.03, 0.03]);
 assert.deepStrictEqual(bh([0.001, 0.5]).map((q) => +q.toFixed(6)), [0.002, 0.5]);
 assert.deepStrictEqual(bh([0.6, 0.7]).map((q) => +q.toFixed(6)), [0.7, 0.7]); // capped at 1
+
+// --- parametric arm, against closed forms (no reference library needed) -----
+// I_x(1,1) = x, and I_0.5(0.5,0.5) = 0.5 by symmetry.
+near(ibeta(1, 1, 0.3), 0.3, "ibeta(1,1,x)");
+near(ibeta(0.5, 0.5, 0.5), 0.5, "ibeta symmetry");
+near(ibeta(3, 7, 0), 0, "ibeta at 0");
+near(ibeta(3, 7, 1), 1, "ibeta at 1");
+// t with 1 df is Cauchy: two-sided P(|T|>1) = 1 - 2*atan(1)/pi = 0.5.
+near(studentP(1, 1), 0.5, "t df=1");
+// t with 2 df has CDF 0.5 + t/(2*sqrt(2+t^2)); at t=1 the two-sided p is 1-1/sqrt(3).
+near(studentP(1, 2), 1 - 1 / Math.sqrt(3), "t df=2");
+near(studentP(0, 5), 1, "t at zero");
+// F(2,2) has survival 1/(1+x).
+near(fUpperP(1, 2, 2), 0.5, "F(2,2) at 1");
+near(fUpperP(4, 2, 2), 0.2, "F(2,2) at 4");
+
+// Cross-check between the two independently written parametric paths: with equal
+// n and equal variance Welch's t reduces to the pooled t, Welch's df to 2(n-1),
+// and one-way ANOVA to F = t^2 -- so the two p-values must agree exactly.
+const pa = [1, 2, 3, 4, 5, 6];
+const pb = [11, 12, 13, 14, 15, 16];
+const w = welchT(pa, pb);
+const f = anovaF([pa, pb]);
+near(w.df, 10, "Welch df reduces to 2(n-1)");
+near(f.f, w.t * w.t, "F = t^2");
+near(f.p, w.p, "ANOVA and Welch agree at k=2");
+assert.ok(w.p < 1e-5, `separated groups p=${w.p}`);
+// No difference must not manufacture one, and degenerate input must not throw.
+near(welchT(pa, pa).p, 1, "identical groups");
+near(anovaF([pa, pa, pa, pa]).p, 1, "four identical groups");
+near(welchT([2, 2, 2], [2, 2, 2]).p, 1, "zero variance both sides");
+assert.strictEqual(anovaF([[1, 2]]), null, "one group");
+// Four groups, one clearly apart: ANOVA is the k>2 parametric test.
+assert.ok(anovaF([pa, pa.map((x) => x + 1), pa.map((x) => x + 2), pb]).p < 0.001, "4-group ANOVA");
 
 assert.strictEqual(stars(0.0009), "***");
 assert.strictEqual(stars(0.009), "**");

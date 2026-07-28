@@ -150,7 +150,7 @@ def exercise_etol_summary() -> None:
     assert row["probes_detected"] == 3
     assert row["species_detected"] == 2
     assert row["detected_species"][0]["taxon"] == "A_Hsalinarum_16S"
-    assert row["detected_species"][0]["species"] == "Hsalinarum"
+    assert row["detected_species"][0]["species"] == "H. salinarum"
     assert row["detected_species"][0]["exact_hits"] == 3
     print(
         "etol_summary="
