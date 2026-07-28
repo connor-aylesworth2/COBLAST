@@ -67,7 +67,7 @@
                 <strong>{{ option.label }}</strong>
                 <details class="preset-info">
                   <summary>&#9432; Details</summary>
-                  <span class="muted">{{ option.probe_count }} probes; BLASTN default megablast net (E-value &lt; 0.01, no identity or coverage filter); blastn-short for the 1 ambiguous probe. {{ option.description }}</span>
+                  <span class="muted">{{ option.probe_count }} probes; BLASTN default megablast net (E-value &lt; 0.01, no identity or coverage filter). megablast needs a 28-base unambiguous seed, so a probe whose ambiguous bases leave no such window finds nothing and is dropped (1 probe in the full microbial panel). {{ option.description }}</span>
                 </details>
               </span>
             </label>
@@ -124,7 +124,7 @@
               <strong>Identify each contig's closest homolog and confirm abundance</strong>
               <details class="preset-info">
                 <summary>&#9432; Details</summary>
-                <span class="muted">Requires contig assembly (above). Each assembled contig is BLASTed against the reference rRNA database below for its closest homolog (the species call), and each species' contigs are BLASTed against that species' own reads to count reads matching at &ge;99% identity (confirmed abundance), per Hu, Haas &amp; Lathe 2022. Re-probing the library with key contigs is not yet implemented.</span>
+                <span class="muted">Requires contig assembly (above). Each assembled contig is BLASTed against the reference rRNA database below for its closest homolog (the species call), and each species' contigs are BLASTed against that species' own reads to count reads matching at &ge;99% identity (confirmed abundance), per Hu, Haas &amp; Lathe 2022.</span>
               </details>
             </span>
           </label>
@@ -146,7 +146,7 @@
               <strong>Re-probe the library with key contigs and re-assemble</strong>
               <details class="preset-info">
                 <summary>&#9432; Details</summary>
-                <span class="muted">Requires contig assembly (above). One round (Hu, Haas &amp; Lathe 2022, Box 3): each species' two most-abundant contigs are BLASTed back against this same sample's library to recover additional reads, which (when the human filter above is on) are also human-filtered, then the species' reads are re-assembled into longer contigs. Runs before identification, so the closest-homolog and confirmed-read columns reflect the extended contigs. Searches the patient database already selected &mdash; no extra database needed.</span>
+                <span class="muted">Requires contig assembly (above). One round (Hu, Haas &amp; Lathe 2022, Box 3): each species' most-abundant contig is BLASTed back against this same sample's library to recover additional reads, which (when the human filter above is on) are also human-filtered, then the species' reads are re-assembled into longer contigs. Runs before identification, so the closest-homolog and confirmed-read columns reflect the extended contigs. Searches the patient database already selected &mdash; no extra database needed.</span>
               </details>
             </span>
           </label>

@@ -718,8 +718,6 @@ def run_batch_blast_route():
     # homolog (species call) and re-BLAST each taxon's contigs against that
     # taxon's own reads to count near-100%-identity reads (confirmed abundance).
     # Requires contig assembly to be on plus an available nucleotide reference DB.
-    # The paper's third step -- re-probing the library with key contigs -- is not
-    # implemented yet.
     identify_contigs_requested = request.form.get("identify_contigs") == "1"
     identify_contigs_active = identify_contigs_requested and assemble_contigs_active
     reference_db = None

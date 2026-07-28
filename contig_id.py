@@ -12,12 +12,14 @@ After :mod:`assembler` builds contigs from each taxon's matched reads, the paper
    them. This re-confirms abundance against the contig rather than the 64-mer
    probe.
 
-The paper's third step, re-probing the library with key contigs, is not
-implemented here (deferred by design).
+3. **Re-probing** -- use each taxon's most-abundant contig as a fresh probe
+   against the *same* patient library, then re-assemble that taxon from its
+   original + newly recovered reads (:func:`reprobe_and_reassemble`, below).
 
-Both BLAST calls reuse the local BLAST+ install. Species naming searches an
-indexed reference DB (``-db``); confirmation is a small bl2seq-style search of a
-taxon's reads against its handful of contigs (``-subject``, no index needed).
+All three BLAST calls reuse the local BLAST+ install. Species naming and
+re-probing search an indexed DB (``-db``: the reference DB and the patient
+library respectively); confirmation is a small bl2seq-style search of a taxon's
+reads against its handful of contigs (``-subject``, no index needed).
 """
 
 from __future__ import annotations

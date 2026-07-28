@@ -3,9 +3,9 @@
 The eToL probe presets are an **optional** analysis built on COBLAST+'s general
 batch-BLAST workflow (see the "SRA Pilot and Batch Workflow" section of the main
 [README](../README.md)). They are not required for ordinary BLAST use. This
-document covers the eToL presets in full: the net, the two-pass task split,
-cross-probe de-duplication, host-cell normalization, the secondary human filter,
-and the export formats.
+document covers the eToL presets in full: the net, cross-probe de-duplication,
+host-cell normalization, condition labels, the secondary human filter, contig
+re-probing, and the export formats.
 
 ## eToL probe presets (the net)
 

@@ -552,9 +552,10 @@ commercial server. Those remain separate deployment decisions.
 The SRA workbench can:
 
 - fetch full SRA runs by accession: enter one or more run accessions
-  (SRR/ERR/DRR) and COBLAST opens a terminal that runs `prefetch` then
-  `fastq-dump` to download and convert each run to a complete FASTA in the
-  scanned `sra` folder, when the SRA Toolkit is available
+  (SRR/ERR/DRR) and COBLAST opens a terminal that runs `prefetch`,
+  `fasterq-dump`, then `makeblastdb` to download each run, convert it to a
+  complete FASTA in the scanned `sra` folder, and index it as a nucleotide
+  BLAST database, when the SRA Toolkit is available
 - list local `.sra`, FASTA, and BLAST database artifacts
 - register an existing SRA-derived BLAST database prefix
 - register all discovered SRA-derived BLAST database prefixes, or only selected
@@ -575,12 +576,14 @@ folder (one folder per accession/patient, e.g.
 **Path 0 — SRA-mart: fetch SRA runs from the workbench (recommended, needs the toolkit).**
 In the SRA workbench's **SRA-mart** box, enter one or more run accessions
 (SRR/ERR/DRR, separated by commas, spaces, or newlines) and press **Build &
-Send Fetch Query**. COBLAST opens a new terminal that runs `prefetch` then a
-full `fastq-dump --fasta` for each accession, downloading the run and converting
-it to a complete FASTA under `...\sra\<ACCESSION>\`. This is Path 2 below,
-automated. The run appears in the SRA Projects table as `fasta-ready` when the
-terminal finishes; build the full database from `/databases` → Create from
-FASTA. Notes:
+Send Fetch Query**. COBLAST opens a new terminal that runs three steps per
+accession — `prefetch` to download the run, `fasterq-dump --fasta` to expand it
+to a complete FASTA under `...\sra\<ACCESSION>\`, then `makeblastdb
+-parse_seqids` to index that FASTA as a nucleotide BLAST database beside it.
+This is Path 2 below, automated and with the database build included, so the run
+lands blast-ready rather than stopping at `fasta-ready`: when the terminal
+finishes, register it straight from the workbench's **Register BLASTDB** control
+— no `/databases` → Create from FASTA step needed. Notes:
 
 - Only *run* accessions are accepted. Study, experiment, and sample accessions
   (SRP/SRX/SRS/PRJ...) are rejected so a whole multi-terabyte study is never
@@ -700,9 +703,9 @@ assembly with no CAP3 present continues and reports that contigs were skipped. I
 CAP3 lives somewhere non-standard, point COBLAST+ at its folder with `CAP3_BIN`.
 
 These presets are an optional analysis layered on the general batch workflow
-above, not a required part of using COBLAST+. For the full details — the net, the
-two-pass megablast/blastn-short split, cross-probe de-duplication, host-cell
-normalization, the secondary human filter, and the export formats — see
+above, not a required part of using COBLAST+. For the full details — the net,
+cross-probe de-duplication, host-cell normalization, condition labels, the
+secondary human filter, contig re-probing, and the export formats — see
 **[docs/eToL.md](docs/eToL.md)**.
 
 ## Adding Clinician Databases
