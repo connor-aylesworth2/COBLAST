@@ -372,8 +372,9 @@ tr:nth-child(even) {
   text-align: right;
 }
 
-/* Batch database picker: the label in each cell is the click target, so the
-   whole row selects the database instead of just the checkbox itself. */
+/* Database pickers (batch BLAST and the database registry): the label in each
+   cell is the click target, so the whole row selects the database instead of
+   just the checkbox itself. */
 .database-row td {
   padding: 0;
 }
@@ -384,7 +385,8 @@ tr:nth-child(even) {
   cursor: pointer;
 }
 
-.database-checkbox {
+.database-row input[type="checkbox"],
+#db_select_all_checkbox {
   width: 18px;
   height: 18px;
 }
@@ -393,11 +395,11 @@ tr:nth-child(even) {
   background: var(--ncbi-blue-light);
 }
 
-.database-row:has(.database-checkbox:checked) {
+.database-row:has(input[type="checkbox"]:checked) {
   background: #d6e7f5;
 }
 
-.database-row:has(.database-checkbox:disabled) .db-pick {
+.database-row:has(input[type="checkbox"]:disabled) .db-pick {
   cursor: default;
 }
 

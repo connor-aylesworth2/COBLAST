@@ -110,28 +110,35 @@
               <tbody>
                 {# database_registry.RegisteredDatabase rows are rendered here. #}
                 {% for database in databases %}
-                  <tr>
+                  {# Every cell holds a label bound to the row's checkbox, so
+                     clicking anywhere in the row toggles it -- no JS needed. #}
+                  <tr class="database-row">
                     <td>
-                      <input
-                        type="checkbox"
-                        class="db-checkbox"
-                        name="selected_db"
-                        value="{{ database.id }}"
-                        aria-label="Select {{ database.display_name }}"
-                      >
+                      <label class="db-pick">
+                        <input
+                          type="checkbox"
+                          class="db-checkbox"
+                          id="selected_db_{{ database.id }}"
+                          name="selected_db"
+                          value="{{ database.id }}"
+                          aria-label="Select {{ database.display_name }}"
+                        >
+                      </label>
                     </td>
                     <td>
-                      <strong>{{ database.display_name }}</strong>
-                      {% if database.description %}
-                        <br><span class="muted">{{ database.description }}</span>
-                      {% endif %}
+                      <label class="db-pick" for="selected_db_{{ database.id }}">
+                        <strong>{{ database.display_name }}</strong>
+                        {% if database.description %}
+                          <br><span class="muted">{{ database.description }}</span>
+                        {% endif %}
+                      </label>
                     </td>
-                    <td>{{ database.db_type }}</td>
-                    <td>{{ database.category }}</td>
-                    <td class="status-{{ database.status }}">{{ database.status }}</td>
-                    <td>{{ database.sequence_count if database.sequence_count is not none else "" }}</td>
-                    <td>{{ database.last_verified_at }}</td>
-                    <td>{{ database.db_prefix_path }}</td>
+                    <td><label class="db-pick" for="selected_db_{{ database.id }}">{{ database.db_type }}</label></td>
+                    <td><label class="db-pick" for="selected_db_{{ database.id }}">{{ database.category }}</label></td>
+                    <td class="status-{{ database.status }}"><label class="db-pick" for="selected_db_{{ database.id }}">{{ database.status }}</label></td>
+                    <td><label class="db-pick" for="selected_db_{{ database.id }}">{{ database.sequence_count if database.sequence_count is not none else "" }}</label></td>
+                    <td><label class="db-pick" for="selected_db_{{ database.id }}">{{ database.last_verified_at }}</label></td>
+                    <td><label class="db-pick" for="selected_db_{{ database.id }}">{{ database.db_prefix_path }}</label></td>
                   </tr>
                 {% else %}
                   <tr>
