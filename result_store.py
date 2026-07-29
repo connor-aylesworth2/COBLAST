@@ -281,11 +281,11 @@ def etol_probe_counts_as_delimited(batch_data: dict, delimiter: str) -> str:
 
 ETOL_CONFUSION_COLUMNS = [
     ("result", "Result"),
-    ("virus", "Virus (WGS)"),
+    ("virus", "Virus"),
     ("sample", "Sample"),
     ("srx", "SRX"),
-    ("wgs_count", "WGS count"),
-    ("actual", "WGS present"),
+    ("wgs_count", "Ground-truth count"),
+    ("actual", "Ground-truth present"),
     ("predicted", "eToL-V predicted"),
     ("raw_hits", "Raw net hits"),
     ("confirmed_hits", "Validated hits"),

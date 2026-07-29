@@ -419,18 +419,18 @@
                 <p class="muted">Validation unavailable: {{ c.error }}</p>
               {% elif not c.scored_samples %}
                 <p class="muted">
-                  None of this batch's samples matched the bundled eToL WGS ground
+                  None of this batch's samples matched the bundled eToL ground
                   truth (35 Edinburgh Brain Bank samples, study SRP398685), so no
                   confusion matrix could be computed. Run the eToL-V preset on those
-                  SRA samples to reproduce the dissertation's Figure 9.
+                  SRA samples to score the panel against it.
                 </p>
               {% else %}
                 <p class="muted">
-                  eToL-V's {{ c.stage }} calls vs the eToL whole-genome-shotgun ground
-                  truth, scored over {{ c.scored_samples }} matched sample(s).
-                  Present = WGS read count &gt; 0; a virus is predicted present when any
-                  of its probes has a {{ c.stage }} hit. Fidelity target (Veso, Fig 9):
-                  TP 9 / FP 1 / FN 35 / TN 411.
+                  eToL-V's {{ c.stage }} calls vs the eToL ground truth (24 viruses
+                  &times; 35 samples = 840 cells, 45 of them positive), scored over
+                  {{ c.scored_samples }} matched sample(s). Present = ground-truth read
+                  count &gt; 0; a virus is predicted present when any of its probes has a
+                  {{ c.stage }} hit.
                 </p>
                 <div class="confusion">
                   <div class="confusion__grid">

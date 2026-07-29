@@ -42,9 +42,11 @@ sys.path.insert(0, str(REPO_ROOT))
 from etol_summary import build_etol_matrix, etol_preset_records  # noqa: E402
 from etol_validation import _finalize, compute_confusion  # noqa: E402
 
-# The dissertation's published Figure 9 counts (Edinburgh B270917) -- the target a
-# COBLAST+ reproduction has to hit. Metrics are derived from these by the same
-# _finalize the app uses, so the "published" row can't drift from the code.
+# The dissertation's published Figure 9 counts (Edinburgh B270917). Carried as a
+# reference row only: it scores her 13-virus/456-cell universe, while the app now
+# scores the current 24-virus/840-cell ground truth, so the two are not comparable
+# cell-for-cell. Metrics are derived from these by the same _finalize the app uses,
+# so the "published" row can't drift from the code.
 VESO_FIG9 = {"tp": 9, "fp": 1, "fn": 35, "tn": 411}
 
 
@@ -78,14 +80,11 @@ def write_data(cm: dict, batch: dict | None, prefix: str) -> None:
         w = csv.writer(fh)
         w.writerow(["source", "TP", "FP", "FN", "TN", "N",
                     "accuracy", "precision", "recall", "F1"])
-        for name, m in (("COBLAST+ (reproduced)", cm),
-                        ("Veso dissertation Fig 9 (published)", published)):
+        for name, m in (("COBLAST+ (current ground truth)", cm),
+                        ("Veso dissertation Fig 9 (published, 13-virus universe)", published)):
             w.writerow([name, m["tp"], m["fp"], m["fn"], m["tn"], m["n"],
                         r(m["accuracy"]), r(m["precision"]), r(m["recall"]), r(m["f1"])])
-    print(f"wrote {metrics_path}"
-          + ("  [MATCHES published]" if (cm["tp"], cm["fp"], cm["fn"], cm["tn"])
-             == (VESO_FIG9["tp"], VESO_FIG9["fp"], VESO_FIG9["fn"], VESO_FIG9["tn"])
-             else "  [DIFFERS from published -- inspect cells CSV]"))
+    print(f"wrote {metrics_path}")
 
     if batch is not None:
         from result_store import etol_confusion_rows_as_delimited

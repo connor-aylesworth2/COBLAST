@@ -11,9 +11,21 @@ from etol_validation import (
     VESO_UNIVERSE,
     compute_confusion,
     load_crosswalk,
+    load_ground_truth,
     load_wgs_truth,
     universe_taxa,
 )
+
+
+def test_ground_truth_is_35_samples_x_24_viruses():
+    truth, universe = load_ground_truth()
+    assert len(universe) == 24  # every column folds onto a panel virus token
+    assert len({srx for srx, _virus in truth}) == 35
+    assert len(truth) == 840
+    # 45 positive cells (= TP+FN for any prediction) across the 840.
+    assert sum(1 for count in truth.values() if count > 0) == 45
+    # The SARS rows the legacy WGS table lacked are now scored.
+    assert ("SRX17674433", "SARS-CoV-2") in truth
 
 
 def test_crosswalk_is_inverted_and_complete():
@@ -81,7 +93,7 @@ def test_reproduces_veso_confusion_matrix():
     # ... and the single HPV45 L1 hit in SRX17674444 (-> the 1 FP).
     matrix["confirmed"][row_of["V-HPV_HPV45_L1"]][col_of["SRX17674444"]] = 1
 
-    m = compute_confusion(matrix, truth=truth, stage="validated")
+    m = compute_confusion(matrix, truth=truth, stage="validated", universe=VESO_UNIVERSE)
     assert (m["tp"], m["fp"], m["fn"], m["tn"]) == (9, 1, 35, 411)
     assert m["n"] == 456
     assert round(m["accuracy"], 4) == 0.9211
@@ -129,13 +141,13 @@ def test_confusion_csv_export_roundtrip():
     }
     csv_text = etol_confusion_rows_as_delimited(batch, delimiter=",")
     lines = csv_text.strip().splitlines()
-    assert lines[0].startswith("Result,Virus (WGS),Sample,SRX")
-    # 13 universe viruses x 35 samples = 455 cells; with no predictions every
-    # WGS-positive cell is a false negative (44) and the rest true negatives (411).
+    assert lines[0].startswith("Result,Virus,Sample,SRX")
+    # 24 viruses x 35 samples = 840 cells; with no predictions every ground-truth
+    # positive cell is a false negative (45) and the rest true negatives (795).
     results = [ln.split(",")[0] for ln in lines[1:]]
-    assert len(results) == 455
-    assert results.count("FN") == 44
-    assert results.count("TN") == 411
+    assert len(results) == 840
+    assert results.count("FN") == 45
+    assert results.count("TN") == 795
 
 
 def test_sars_predictions_are_excluded():
@@ -144,6 +156,6 @@ def test_sars_predictions_are_excluded():
     row_of = {t: i for i, t in enumerate(taxa)}
     # A SARS-CoV-2 validated hit must NOT count as a false positive (no WGS data).
     matrix["confirmed"][row_of["V-HCoV_SARSCoV2_S"]][0] = 5
-    m = compute_confusion(matrix, truth=truth, stage="validated")
+    m = compute_confusion(matrix, truth=truth, stage="validated", universe=VESO_UNIVERSE)
     assert m["fp"] == 0
     assert m["tp"] == 0

@@ -472,7 +472,7 @@ modules, collected at commit `e13e3b3` (`python -m pytest --collect-only -q`).
 | `test_contig_id` | Contig species identification and confirmed abundance (blastn helpers monkeypatched) | 12 |
 | `test_design_matrix` | Design-matrix parser: strict CSV/TSV format, accession and display-name index | 10 |
 | `test_sra_workflow` | Single-walk SRA project helpers: fetch-script generation, file discovery | 8 |
-| `test_etol_validation` | eToL-V confusion matrix; reproduces the published TP 9 / FP 1 / FN 35 / TN 411 | 7 |
+| `test_etol_validation` | eToL-V confusion matrix; scores the 24×35 ground truth and reproduces the published TP 9 / FP 1 / FN 35 / TN 411 | 8 |
 | `test_human_filter` | Matched-read recovery for the secondary human filter | 4 |
 | `test_settings_browse` | Settings folder picker: cancel and missing dialog leave the typed path usable | 3 |
 | `test_launcher_port` | Readiness check gating browser launch on Flask actually listening | 3 |
@@ -509,10 +509,10 @@ may skip; it is a build gate that must pass with real BLAST+ present.
 
 > **Gap — no pre-registered acceptance criteria exist in the codebase.** There is
 > no criteria table, no claim-type taxonomy, no match/partial/miss rubric. The
-> only thing resembling a stated target is the fidelity line rendered in the
-> results panel: *"Fidelity target (Veso, Fig 9): TP 9 / FP 1 / FN 35 / TN 411"*
-> (`templates/batch_results.html:432-433`), plus the assertions in
-> `tests/test_etol_validation.py`. Your "Table: Pre-registered acceptance
+> only thing resembling a stated target is `test_reproduces_veso_confusion_matrix`
+> in `tests/test_etol_validation.py` (TP 9 / FP 1 / FN 35 / TN 411, legacy
+> 13-virus universe); the results panel no longer prints a fidelity line, since it
+> now scores the 24×35 ground truth. Your "Table: Pre-registered acceptance
 > criteria per target" — which you correctly identify as the highest-leverage
 > table in the section — must be authored from scratch. Write it before you run
 > anything, and date it.
@@ -544,8 +544,16 @@ phrased:
 (lines 1–28) is the reconstructed specification your outline asks you to state.
 
 **Bundled data:**
+- `data/etol_v_ground_truth.csv` — **the current ground truth and the scoring
+  default**: wide `Patient,Region,<24 viruses>` read counts covering the full
+  eToL-V panel, 24 viruses × 35 samples = **840** cells, **45** of them positive.
+  Loaded by `load_ground_truth()`, which also derives the scoring universe from
+  the column headers (`HAdV-C` → the panel's `AdC` token) and raises if any column
+  matches no probe.
 - `data/etol_v_wgs_truth.csv` — 700 rows of `srx,virus,count`, whole-genome-shotgun
-  read counts from the original eToL workflow (20 viruses × 35 samples).
+  read counts from the original eToL workflow (20 viruses × 35 samples). Retained
+  only for the dissertation reproduction below, which passes it explicitly
+  alongside `universe=VESO_UNIVERSE`.
 - `data/etol_v_sra_crosswalk.csv` — the 35-row SRR↔SRX map.
 
 **A verified, not assumed, quirk:** the SRR↔SRX mapping is **inverted** —
@@ -555,15 +563,20 @@ the highest SRX. `test_crosswalk_is_inverted_and_complete`
 assumption would silently mis-join every sample and still produce a plausible-
 looking matrix.
 
-**The scoring specification** (`compute_confusion`, line 140):
+**The scoring specification** (`compute_confusion`):
 
 | Element | Specification | Source |
 |---|---|---|
-| Ground-truth positive | WGS count **> 0** — binary classification; >0 is the only threshold yielding the reference's 44 actual-positives | `etol_validation.py:20-21`; asserted at `tests/test_etol_validation.py:30-38` |
-| Prediction positive | any of a virus's probes has a **validated (contig-confirmed) hit > 0** — i.e. compared against the post-validation heatmap, not the raw net | `etol_validation.py:22`, `stage="validated"` |
-| Universe | 13 WGS virus rows × 35 samples = **455** cells | `VESO_UNIVERSE`, line 48 |
-| Out-of-universe | any validated prediction outside the universe becomes an extra FP cell, one per (virus token, sample) — the lone HPV45 hit → **456** | lines 214–223 |
-| Exclusions | `SARSCoV2`, `SARSCoV` dropped entirely, no WGS data exists for them | `EXCLUDED_VIRUS_TOKENS`, line 67 |
+| Ground-truth positive | count **> 0** — binary classification | `etol_validation.py`; asserted at `tests/test_etol_validation.py` |
+| Prediction positive | any of a virus's probes has a **validated (contig-confirmed) hit > 0** — i.e. compared against the post-validation heatmap, not the raw net | `stage="validated"` |
+| Universe (default) | 24 ground-truth virus columns × 35 samples = **840** cells, 45 positive; every column is covered by a probe, so nothing is scored as an always-negative row | `load_ground_truth()`, `test_ground_truth_is_35_samples_x_24_viruses` |
+| Out-of-universe | any validated prediction outside the universe becomes an extra FP cell, one per (virus token, sample) — inert under the default universe, which already spans the whole panel | `compute_confusion`, the out-of-universe loop |
+| Exclusions | `SARSCoV2`, `SARSCoV` — legacy path only, where no WGS data existed for them; both are scored under the current ground truth | `EXCLUDED_VIRUS_TOKENS` |
+
+**The legacy reproduction universe.** Everything below scores the dissertation's
+13-virus/456-cell universe and is reached by passing `truth=load_wgs_truth(),
+universe=VESO_UNIVERSE` explicitly; it is no longer what the app computes by
+default.
 
 **The 13-virus universe**, in order: Adenovirus C, COV_229E, HHV1_HSV1,
 HHV2_HSV2, HHV3_VZV, HHV4_EBV, HHV5_CMV, HHV6A, HHV6B, HHV7, HHV8, HPV6, HPV16.

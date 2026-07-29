@@ -7,13 +7,18 @@ precision 90%, recall 20%, F1 0.3). This module reproduces that comparison for a
 COBLAST+ eToL-V batch.
 
 Data (bundled, reference study SRP398685 / Edinburgh Brain Bank, 35 samples):
-* ``data/etol_v_wgs_truth.csv``    - ``srx,virus,count`` WGS read counts.
+* ``data/etol_v_ground_truth.csv``  - the CURRENT ground truth and the default for
+  scoring: wide ``Patient,Region,<24 viruses>`` read counts, 35 samples x the full
+  24-virus eToL-V panel = 840 cells (45 of them positive).
+* ``data/etol_v_wgs_truth.csv``    - ``srx,virus,count`` WGS read counts, the older
+  13-virus table. Kept only to reproduce the dissertation's Figure 9; pass it with
+  ``universe=VESO_UNIVERSE``.
 * ``data/etol_v_sra_crosswalk.csv`` - ``srr,srx,region,diagnosis,sample_name``;
   the SRR<->SRX map is INVERTED (SRX17674433<->SRR21676133), so it is verified,
   not assumed.
 
-Construction (reverse-engineered from her dissertation and verified to reproduce
-9/1/35/411 exactly):
+Construction of the legacy Veso universe (reverse-engineered from her dissertation
+and verified to reproduce 9/1/35/411 exactly):
 * Binary, ``present = WGS count > 0`` (she states a "binary classification model";
   >0 is the only threshold that yields her 44 actual-positives).
 * eToL-V "present" = any of a virus's probes has a *validated* (contig-confirmed)
@@ -30,6 +35,7 @@ Construction (reverse-engineered from her dissertation and verified to reproduce
 from __future__ import annotations
 
 import csv
+import re
 from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
@@ -39,6 +45,7 @@ from config import resource_path
 from etol_summary import etol_preset_records
 
 
+GROUND_TRUTH_PATH = resource_path("data", "etol_v_ground_truth.csv")
 WGS_TRUTH_PATH = resource_path("data", "etol_v_wgs_truth.csv")
 SRA_CROSSWALK_PATH = resource_path("data", "etol_v_sra_crosswalk.csv")
 
@@ -111,7 +118,49 @@ def load_crosswalk(path: Any = SRA_CROSSWALK_PATH) -> dict[str, str]:
         srx = row["srx"].strip()
         alias[row["srr"].strip()] = srx
         alias[srx] = srx  # an SRX-labelled run joins directly
+        alias[row["sample_name"].strip()] = srx  # SD001-17-AMYG joins too
     return alias
+
+
+def _match_key(name: str) -> str:
+    """Fold a ground-truth column and a panel token to one key (``HAdV-C`` == ``AdC``)."""
+    return re.sub(r"^hadv", "ad", name.replace("-", "").lower())
+
+
+def load_ground_truth(
+    path: Any = GROUND_TRUTH_PATH, crosswalk: dict[str, str] | None = None
+) -> tuple[dict[tuple[str, str], int], "OrderedDict[str, str | None]"]:
+    """Load the current ground truth -> (``(srx, virus) -> count``, scoring universe).
+
+    Wide CSV: ``Patient,Region,<virus>...``, ``Patient`` being ``<n>^<yy>`` for the
+    crosswalk's ``SD00n-yy`` (blank spacer rows between patients are skipped). Every
+    column must fold onto a panel virus token, so a header the panel cannot detect
+    raises instead of scoring as a silent always-negative row.
+    """
+    alias = load_crosswalk() if crosswalk is None else crosswalk
+    rows = list(csv.reader(Path(path).read_text(encoding="utf-8").splitlines()))
+    header = [name.strip() for name in rows[0][2:]]
+
+    token_for = {_match_key(token): token for token in _taxa_by_virus_token()}
+    universe: "OrderedDict[str, str | None]" = OrderedDict()
+    for name in header:
+        token = token_for.get(_match_key(name))
+        if token is None:
+            raise ValueError(f"ground-truth column {name!r} matches no eToL-V probe")
+        universe[name] = token
+
+    truth: dict[tuple[str, str], int] = {}
+    for row in rows[1:]:
+        if not row or not row[0].strip():
+            continue
+        patient, region = row[0].strip(), row[1].strip()
+        number, _, year = patient.partition("^")
+        srx = alias.get(f"SD{int(number):03d}-{year}-{region}")
+        if srx is None:
+            raise ValueError(f"ground-truth row {patient} {region} is not in the SRA crosswalk")
+        for name, value in zip(header, row[2:]):
+            truth[(srx, name)] = int(float(value or 0))
+    return truth, universe
 
 
 def _empty_metrics() -> dict[str, Any]:
@@ -143,9 +192,9 @@ def compute_confusion(
     crosswalk: dict[str, str] | None = None,
     *,
     stage: str = "validated",
-    universe: "OrderedDict[str, str | None]" = VESO_UNIVERSE,
+    universe: "OrderedDict[str, str | None]" | None = None,
 ) -> dict[str, Any]:
-    """Confusion matrix of an eToL-V batch's calls vs the WGS ground truth.
+    """Confusion matrix of an eToL-V batch's calls vs the ground truth.
 
     ``matrix`` is a :func:`etol_summary.build_etol_matrix` payload (``level=
     "species"``). ``stage="validated"`` scores the contig-confirmed layer (the
@@ -153,9 +202,15 @@ def compute_confusion(
     SRX via ``crosswalk`` (so SRR-labelled runs join the SRX-keyed truth); samples
     with no crosswalk entry or no truth are reported in ``unmatched_samples`` and
     skipped.
+
+    ``truth``/``universe`` default to the current 35 x 24 ground truth; pass both
+    (``load_wgs_truth()`` and ``VESO_UNIVERSE``) to reproduce the dissertation.
     """
-    truth = load_wgs_truth() if truth is None else truth
     crosswalk = load_crosswalk() if crosswalk is None else crosswalk
+    if truth is None or universe is None:
+        default_truth, default_universe = load_ground_truth(crosswalk=crosswalk)
+        truth = default_truth if truth is None else truth
+        universe = default_universe if universe is None else universe
     taxa_for = universe_taxa(universe)
 
     raw_counts = matrix.get("hits")
@@ -196,7 +251,7 @@ def compute_confusion(
             "raw_hits": raw, "confirmed_hits": conf,
         })
 
-    # In-universe cells: the 13 universe viruses x scored samples. ``raw_hits`` is
+    # In-universe cells: the universe's viruses x scored samples. ``raw_hits`` is
     # the net count (before validation) and ``confirmed_hits`` the validated count,
     # so a false negative reveals where it was lost (raw 0 = net; raw>0, conf 0 =
     # contig assembly/identification).
