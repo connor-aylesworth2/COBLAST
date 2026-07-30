@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 500" width="1180" height="500" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f3864"/>
+    </marker>
+    <style>
+      .stage { fill:#e8f0f9; stroke:#1f3864; stroke-width:2; }
+      .chip  { fill:#f6fafd; stroke:#5b7fa6; stroke-width:1; }
+      .t     { fill:#10243a; font-size:12px; }
+      .h     { fill:#10243a; font-size:13.5px; font-weight:bold; }
+      .n     { fill:#4a6480; font-size:11px; font-style:italic; }
+      .c     { fill:#10243a; font-size:11px; }
+      .flow  { stroke:#1f3864; stroke-width:2; fill:none; marker-end:url(#arrow); }
+      .frame { fill:none; stroke:#8ba3bd; stroke-width:1.5; stroke-dasharray:6 5; }
+    </style>
+  </defs>
+
+  <!-- local-machine boundary -->
+  <rect class="frame" x="14" y="62" width="1152" height="404" rx="10"/>
+  <text class="n" x="20" y="52">Everything below runs on the clinician's own machine (local server, local databases) — no sequence data leaves it.</text>
+
+  <!-- 1. Sequence in -->
+  <rect class="stage" x="30" y="98" width="190" height="150" rx="8"/>
+  <text class="h" x="44" y="122">1 · Sequence in</text>
+  <text class="t" x="44" y="146">Patient RNA-seq reads —</text>
+  <text class="t" x="44" y="163">one SRA run or FASTA per</text>
+  <text class="t" x="44" y="180">sample — or a single</text>
+  <text class="t" x="44" y="197">pasted query sequence.</text>
+  <text class="n" x="44" y="222">SRA Toolkit downloads and</text>
+  <text class="n" x="44" y="237">converts runs on request.</text>
+
+  <!-- 2. Indexed -->
+  <rect class="stage" x="242" y="98" width="190" height="150" rx="8"/>
+  <text class="h" x="256" y="122">2 · Indexed on disk</text>
+  <text class="t" x="256" y="146">Each sample becomes its</text>
+  <text class="t" x="256" y="163">own searchable BLAST</text>
+  <text class="t" x="256" y="180">database.</text>
+  <text class="n" x="256" y="205">A small local catalogue</text>
+  <text class="n" x="256" y="220">records what each database</text>
+  <text class="n" x="256" y="235">is and where it lives; the</text>
+  <text class="n" x="256" y="250">reads stay in its own files.</text>
+
+  <!-- 3. Searched -->
+  <rect class="stage" x="454" y="98" width="200" height="170" rx="8"/>
+  <text class="h" x="468" y="122">3 · Searched</text>
+  <text class="t" x="468" y="146">BLAST+ runs locally</text>
+  <text class="t" x="468" y="163">(blastn / blastp / blastx /</text>
+  <text class="t" x="468" y="180">tblastn). Batch mode puts</text>
+  <text class="t" x="468" y="197">one query across many</text>
+  <text class="t" x="468" y="214">samples in parallel.</text>
+  <text class="n" x="468" y="239">A preset supplies the query</text>
+  <text class="n" x="468" y="254">instead: eToL (1,017 probes),</text>
+  <text class="n" x="468" y="269">eToL-V, or APOE.</text>
+
+  <!-- 4. Interpreted -->
+  <rect class="stage" x="676" y="98" width="230" height="322" rx="8"/>
+  <text class="h" x="690" y="122">4 · Interpreted</text>
+  <text class="n" x="690" y="139">presets only, in this order</text>
+
+  <rect class="chip" x="688" y="150" width="206" height="28" rx="5"/>
+  <text class="c" x="698" y="168">Keep hits at E &lt; 0.01 (the net)</text>
+
+  <rect class="chip" x="688" y="184" width="206" height="28" rx="5"/>
+  <text class="c" x="698" y="202">Drop human-derived reads</text>
+
+  <rect class="chip" x="688" y="218" width="206" height="28" rx="5"/>
+  <text class="c" x="698" y="236">Assign each read to one probe</text>
+
+  <rect class="chip" x="688" y="252" width="206" height="28" rx="5"/>
+  <text class="c" x="698" y="270">Scale counts to host-cell number</text>
+
+  <rect class="chip" x="688" y="286" width="206" height="28" rx="5"/>
+  <text class="c" x="698" y="304">Assemble matched reads (CAP3)</text>
+
+  <rect class="chip" x="688" y="320" width="206" height="28" rx="5"/>
+  <text class="c" x="698" y="338">Name contigs from a reference</text>
+
+  <rect class="chip" x="688" y="354" width="206" height="28" rx="5"/>
+  <text class="c" x="698" y="372">Re-probe with contigs (optional)</text>
+
+  <text class="n" x="690" y="402">Uses BLAST+ again at each step.</text>
+
+  <!-- 5. Reported -->
+  <rect class="stage" x="928" y="98" width="220" height="170" rx="8"/>
+  <text class="h" x="942" y="122">5 · Reported</text>
+  <text class="t" x="942" y="146">Counts per probe and per</text>
+  <text class="t" x="942" y="163">species for every sample —</text>
+  <text class="t" x="942" y="180">raw and per host cell.</text>
+  <text class="t" x="942" y="204">Hit tables, heatmap, pie and</text>
+  <text class="t" x="942" y="221">stacked bars with</text>
+  <text class="t" x="942" y="238">between-group tests.</text>
+  <text class="n" x="942" y="260">Exported as CSV / TSV / FASTA.</text>
+
+  <!-- flow -->
+  <path class="flow" d="M 220 173 L 238 173"/>
+  <path class="flow" d="M 432 173 L 450 173"/>
+  <path class="flow" d="M 654 173 L 672 173"/>
+  <path class="flow" d="M 906 173 L 924 173"/>
+
+  <!-- routine-BLAST bypass -->
+  <path class="flow" d="M 554 268 L 554 444 L 1038 444 L 1038 272"/>
+  <text class="n" x="600" y="438">A routine BLAST run skips stage 4: query in, hits out.</text>
+
+  <!-- user at both ends -->
+  <path class="flow" d="M 1038 82 L 130 82 L 130 94" stroke-dasharray="5 4"/>
+  <text class="n" x="470" y="76">Results are read in the same browser page the query was entered from.</text>
+</svg>

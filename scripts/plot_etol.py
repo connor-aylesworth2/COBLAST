@@ -131,7 +131,9 @@ def render_confusion(cm: dict, out_path: str, title: str) -> None:
     data = np.array([[cm["tn"], cm["fp"]], [cm["fn"], cm["tp"]]])
     labels = [["TN", "FP"], ["FN", "TP"]]
 
-    fig, ax = plt.subplots(figsize=(5.4, 4.6))
+    # Wide enough for the title and the one-line metrics caption; at 5.4in both
+    # clipped once N went four digits.
+    fig, ax = plt.subplots(figsize=(7.6, 5.0))
     im = ax.imshow(data, cmap="Blues")
     ax.set_xticks([0, 1])
     ax.set_xticklabels(["Predicted Negative", "Predicted Positive"])
