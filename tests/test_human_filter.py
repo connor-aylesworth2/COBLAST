@@ -41,14 +41,29 @@ def test_extract_reads_reports_none_when_no_recovery_method_succeeds(monkeypatch
     assert method == "none"
 
 
-def test_find_human_read_ids_uses_bitscore_threshold(monkeypatch):
+def test_bitscore_threshold_follows_mean_read_length():
+    """Lathe's cutoff IS the library's mean read length; see human_filter's note.
+
+    The Kohen case is the one that matters: at a hardcoded 150 the filter cannot
+    fire on ~50 bp reads at all (a perfect 50-mer tops out near 93 bits), so it
+    would silently remove nothing.
+    """
+    assert human_filter.human_bitscore_threshold({"a": "A" * 150}) == 150.0
+    assert human_filter.human_bitscore_threshold({"a": "A" * 50, "b": "C" * 50}) == 50.0
+    # Unmeasurable library falls back rather than returning a 0 gate that would
+    # call every read human.
+    assert human_filter.human_bitscore_threshold({}) == human_filter.HUMAN_BITSCORE_THRESHOLD
+
+
+def test_find_human_read_ids_derives_threshold_from_the_reads(monkeypatch):
     captured_command = []
 
     def run(command, **_kwargs):
         captured_command.extend(command)
         return SimpleNamespace(
             returncode=0,
-            # 200.5 > 150 -> human; 150 is not strictly > 150 -> kept; 80 -> kept.
+            # 150 bp reads -> a 150-bit gate: 200.5 > 150 -> human; 150 is not
+            # strictly > 150 -> kept; 80 -> kept.
             stdout="human-read\t200.5\nborderline\t150\nweak-read\t80.0\ninvalid\tnope\n",
             stderr="",
         )
@@ -57,7 +72,8 @@ def test_find_human_read_ids_uses_bitscore_threshold(monkeypatch):
     monkeypatch.setattr(human_filter.subprocess, "run", run)
 
     human_ids = human_filter.find_human_read_ids(
-        {"human-read": "ACGT", "borderline": "TTTT", "weak-read": "TGCA"}, "human-db"
+        {"human-read": "A" * 150, "borderline": "T" * 150, "weak-read": "G" * 150},
+        "human-db",
     )
 
     assert human_ids == {"human-read"}

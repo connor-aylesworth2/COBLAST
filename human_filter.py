@@ -29,18 +29,53 @@ from config import blast_exe
 from database_registry import blast_safe_path
 
 
-# A read is removed when its best human-genome alignment scores above
-# HUMAN_BITSCORE_THRESHOLD bits; the bitscore is the sole criterion. Hu, Haas &
-# Lathe 2022 used a per-dataset cutoff adjusted to each library's mean read size
-# (>160 MSBB, >126 Rockefeller, >100 Miami); >150 is the value they applied to
-# brain (and liver/skin) datasets, so it is COBLAST's default for brain samples.
-# Because the cutoff tracks read length, libraries with very different mean read
-# lengths may warrant a different value. The E-value is left permissive so it
-# never pre-filters an alignment, leaving bitscore as the only gate (no coverage
-# or E-value filtering happens in this second, human-genome search).
+# A read is removed when its best human-genome alignment scores above the
+# bitscore threshold; the bitscore is the sole criterion. The E-value is left
+# permissive so it never pre-filters an alignment, leaving bitscore as the only
+# gate (no coverage or E-value filtering happens in this second, human-genome
+# search).
+#
+# The threshold FOLLOWS THE LIBRARY rather than being pinned to one cohort. Hu,
+# Haas & Lathe 2022 adjusted it to each dataset's mean read size (>160 MSBB,
+# >126 Rockefeller, >100 Miami, >150 brain) without stating the rule; converting
+# those cutoffs into matched bases recovers it. This search is megablast under
+# default scoring (reward 1 / penalty -2), which is ~1.847 bits per perfectly
+# matching base (lambda 1.28, K 0.46, ungapped), so:
+#
+#     cutoff 160 -> 86.0 bases   cutoff 126 -> 67.6 bases
+#     cutoff 150 -> 80.6 bases   cutoff 100 -> 53.5 bases
+#
+# Each cutoff is numerically the library's mean read length, and each demands
+# ~54% of the read match human before the read is called human. EBB reads
+# measure ~150 bp, confirming the brain value.
+#
+# Pinning 150 to a short-read library silently disables the filter: a perfect
+# 50 bp read tops out at ~93 bits, so no Kohen (~50 bp) read could ever cross a
+# 150-bit gate and none would be removed. Deriving instead of hardcoding fixes
+# every caller at once. ponytail: mean read length is enough because Illumina
+# libraries are near-uniform; switch to a percentile only if a ragged library
+# turns up.
 DEFAULT_HUMAN_EVALUE = "1e9"
+# The calibration knob: bits of threshold per base of mean read length. 1.0
+# reproduces every cutoff the source published. Lower it to filter human reads
+# more aggressively, raise it to keep more borderline reads.
+HUMAN_BITSCORE_PER_READ_BASE = 1.0
+# Fallback only, for when read lengths cannot be measured: the source's brain
+# value, which is also what the rule above yields for a 150 bp library.
 HUMAN_BITSCORE_THRESHOLD = 150.0
 DEFAULT_HUMAN_TIMEOUT_SECONDS = 1800
+
+
+def human_bitscore_threshold(reads: dict[str, str]) -> float:
+    """Bitscore gate for a library, derived from its mean read length.
+
+    Returns :data:`HUMAN_BITSCORE_THRESHOLD` when there are no reads to measure,
+    so a caller never gets a zero threshold that would call everything human.
+    """
+    if not reads:
+        return HUMAN_BITSCORE_THRESHOLD
+    mean_read_length = sum(len(seq) for seq in reads.values()) / len(reads)
+    return HUMAN_BITSCORE_PER_READ_BASE * mean_read_length
 
 # Every batch worker scans the SAME multi-GB human genome DB. Run 30 concurrent
 # and they thrash disk/page-cache re-reading it (CPU sat at 2-4%); serialized,
@@ -165,14 +200,21 @@ def find_human_read_ids(
     human_db_prefix_path: str,
     *,
     evalue: str = DEFAULT_HUMAN_EVALUE,
-    bitscore_threshold: float = HUMAN_BITSCORE_THRESHOLD,
+    bitscore_threshold: float | None = None,
     timeout_seconds: int = DEFAULT_HUMAN_TIMEOUT_SECONDS,
     num_threads: int | str | None = None,
 ) -> set[str]:
     """Return read ids whose best human-genome alignment scores above
-    ``bitscore_threshold`` bits (Hu, Haas & Lathe 2022 brain cutoff = 150)."""
+    ``bitscore_threshold`` bits.
+
+    Left ``None`` the threshold is derived from these reads' mean length by
+    :func:`human_bitscore_threshold` -- the source method's own rule. Pass a
+    number only to override it deliberately.
+    """
     if not reads:
         return set()
+    if bitscore_threshold is None:
+        bitscore_threshold = human_bitscore_threshold(reads)
     with tempfile.TemporaryDirectory(prefix="human_filter_q_") as tmpdir:
         query_path = Path(tmpdir) / "reads.fasta"
         query_path.write_text(reads_to_fasta(reads), encoding="utf-8")
@@ -231,14 +273,16 @@ def filter_human_hits(
     source_fasta_path: str,
     human_db_prefix_path: str,
     evalue: str = DEFAULT_HUMAN_EVALUE,
-    bitscore_threshold: float = HUMAN_BITSCORE_THRESHOLD,
+    bitscore_threshold: float | None = None,
     timeout_seconds: int = DEFAULT_HUMAN_TIMEOUT_SECONDS,
     num_threads: int | str | None = None,
 ) -> tuple[list[dict[str, str]], dict[str, Any]]:
     """Drop hits whose patient read scores a strong human-genome alignment.
 
     A read is treated as human when its best human alignment exceeds
-    ``bitscore_threshold`` bits. Returns the kept hits plus a stats dict
+    ``bitscore_threshold`` bits; left ``None`` that threshold is derived from
+    the library's own mean read length (see :func:`human_bitscore_threshold`)
+    and reported back in the stats. Returns the kept hits plus a stats dict
     describing what happened. Reads that cannot be recovered are conservatively
     kept (never dropped on a guess).
     """
@@ -251,6 +295,9 @@ def filter_human_hits(
         "hits_removed": 0,
         "method": "none",
         "note": "",
+        # Recorded so a run's own result proves which gate it used -- the
+        # difference between a filter that fired and one that silently could not.
+        "bitscore_threshold": bitscore_threshold,
         # Split the phase so a slow run points at the culprit (id-indexed read
         # recovery vs the human-genome BLAST) without toggling features across runs.
         "extract_seconds": 0.0,
@@ -272,6 +319,10 @@ def filter_human_hits(
             "BLAST DB and no readable source FASTA); human filter skipped."
         )
         return hits, stats
+
+    if bitscore_threshold is None:
+        bitscore_threshold = human_bitscore_threshold(reads)
+    stats["bitscore_threshold"] = bitscore_threshold
 
     _t = perf_counter()
     human_ids = find_human_read_ids(

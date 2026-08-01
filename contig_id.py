@@ -32,11 +32,7 @@ from typing import Any
 from blast_runner import reads_to_fasta
 from config import blast_exe
 from database_registry import blast_safe_path
-from human_filter import (
-    HUMAN_BITSCORE_THRESHOLD,
-    extract_reads,
-    find_human_read_ids,
-)
+from human_filter import extract_reads, find_human_read_ids
 
 
 # Reads aligning to a contig at or above this percent identity are "confirmed"
@@ -433,7 +429,7 @@ def reprobe_and_reassemble(
     num_threads: int | str | None = None,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     human_db_prefix: str | None = None,
-    human_bitscore_threshold: float = HUMAN_BITSCORE_THRESHOLD,
+    human_bitscore_threshold: float | None = None,
     assembly_pool: Any = None,
 ) -> dict[str, int]:
     """One round of contig re-probing (Hu, Haas & Lathe 2022, Box 3).
