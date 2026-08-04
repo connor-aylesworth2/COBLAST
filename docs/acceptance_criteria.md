@@ -13,7 +13,7 @@ criterion after a run — add a dated amendment row instead.
 
 Scope: **validation** only (does COBLAST+ reproduce a published
 result?). Verification artefacts — the spike-in positive control, the
-frozen self-check, the 150-test suite — belong in §3.4 and are
+frozen self-check, the 151-test suite — belong in §3.4 and are
 deliberately absent here.
 
 Prior run disclosed: an eToL-V shakedown on 2026-06-29 scored TP 2 / FP
@@ -36,7 +36,7 @@ as an uncontrolled pilot, not as a result against these criteria.
     port-fidelity target.
 
 | \# | Target | Claim type | Reference value (frozen) | Scored from | Pass | Partial | Miss |
-|----|----|----|----|----|----|----|----|
+|---------|---------|---------|---------|---------|---------|---------|---------|
 | V1 | Reference confusion matrix recomputed from its own ground truth (eToL-V, Fig. 9) | Value-level, exact | TP 9 / FP 1 / FN 35 / TN 411, N = 456; acc .9211, prec .90, rec .2045, F1 .33; 13-virus `VESO_UNIVERSE` × 35 | `compute_confusion(truth=load_wgs_truth(), universe=VESO_UNIVERSE)`; pinned by `tests/test_etol_validation.py` | All four cells match exactly | — | Any cell differs |
 | V2 | End-to-end eToL-V run, 35 EBB samples, vs the current ground truth | Value-level, banded | 24 viruses × 35 = 840 cells, 45 positive (HAdV-C 31, HSV1 7, CMV 5, EBV 1, KSHV 1). Reference-equivalent score: **TP 9 / FP 1 / FN 36 / TN 794**, acc .956, prec .90, rec .20, F1 .33 | `/batch-results/<id>/etol-confusion.csv`, `stage="validated"`; `stage="raw"` as sensitivity arm | TN ≥ 794 **and** precision ≥ .90 **and** recall ≥ .20 **and** every TP an HAdV-C cell | Same but recall ≥ .10, **and** each FN attributed to a stage via `raw_hits`/`confirmed_hits` | Precision \< .90, or a TP outside HAdV-C, or FN causes unattributed |
 | C1 | Domain composition of brain microbiome (2023, Fig. 1 / Fig. 4A) | Ordinal + set-level | Most abundant three domains: **fungi, bacteria, chloroplastida**; archaea, amoebozoa, basal eukaryota and holozoa/metazoa also detected (all 7 present) | Domain composition CSV (`static/etol_pie.js` export), reads per host cell, 35 EBB samples | Top 3 domains by reads per host cell are exactly {F, B, C} in that order, and all 7 domains have ≥1 detected sample | Top 3 set is {F, B, C} in a different order, all 7 present | A domain outside {F, B, C} enters the top 3, or a domain is wholly undetected |
@@ -73,6 +73,79 @@ cannot reach q \< 0.05 for any domain — so a clustered test here is
 guaranteed null by construction. Clustered analysis belongs in §3.6 as
 an application-leg limitation, not as a reproduction criterion.
 
+## Amendments
+
+The registration above is preserved as first written. Each amendment is
+dated, states what changed and why, and was recorded **before** the run
+it affects was scored.
+
+### A1 · 2026-08-01 — human-filter threshold scales with read length
+
+**Affects C4 (Kohen) only. V2 and C1–C3 are unchanged.**
+
+The fixed run configuration specifies the human filter at **150 bits**,
+Hu, Haas & Lathe 2022's brain value. That value is correct for EBB and
+unusable for Kohen, for a reason that is arithmetic rather than
+judgement.
+
+`find_human_read_ids` runs `blastn -task megablast`
+(`human_filter.py:182`) under default scoring (reward 1, penalty −2),
+yielding \~1.847 bits per perfectly matching base (λ = 1.28, K = 0.46,
+ungapped). A read of length *L* therefore cannot exceed \~1.847·*L*
+bits, and a 150-bit gate requires ≥ 81 perfectly matching bases:
+
+| Dataset | Mean read length | Max attainable bitscore | 150-bit gate |
+|----|----|----|----|
+| EBB (SRP398685) | \~150 bp | 278 | fires; 81/150 = 54 % of the read |
+| Kohen 2014 | \~50 bp | 93.5 | **cannot fire — 0 reads removed** |
+
+At 50 bp the filter is a silent no-op: every probe-matched human read is
+retained. Because the panel is rRNA and human rRNA is conserved against
+microbial rRNA, those reads concentrate on the conserved probes rather
+than distributing as noise, so burden inflates non-randomly. Scoring C4
+under the unamended configuration would test the age hypothesis on
+contaminated counts.
+
+**Amendment: the threshold is set to the library's mean read length.**
+Converting each cutoff the source reports into matched bases recovers
+that rule from the source itself:
+
+| Dataset     | Published cutoff | Matched bases | Implied read length           |
+|----------------|----------------|----------------|--------------------------|
+| MSBB        | \> 160           | 86.0          | \~160 bp                      |
+| brain / EBB | \> 150           | 80.6          | \~150 bp (measured; confirms) |
+| Rockefeller | \> 126           | 67.6          | \~126 bp                      |
+| Miami       | \> 100           | 53.5          | \~100 bp                      |
+
+The matched-base fraction is \~54 % across all four datasets, and EBB's
+measured 150 bp independently confirms the brain value. **C4 is scored
+with the human filter at 50 bits** — 50 bp × 1 bit per base of read
+length, giving \~26 matched bases, 53 % of the read, the same fraction
+the source applied to every one of its own cohorts.
+
+This restores the source method's intent rather than departing from it,
+but it is a deviation from the value registered above and is recorded as
+one. It is also a fifth entry on F2's *deviating* track.
+
+Registered before the Kohen run: no C4 number existed when this was
+written.
+
+### A2 · 2026-08-01 — cutoff application order made explicit
+
+**Affects C2, C4 and T7.**
+
+The fixed run configuration sets a cellular cutoff of 4 reads per host
+cell but does not say where it applies when burden is a sum. Filtering
+species below 4 and then summing is not the same number as summing and
+then filtering.
+
+**Amendment: the cutoff applies per species, before summing.** A species
+contributes to a sample's burden only if its own reads per host cell ≥
+4. This is what a per-cell detection threshold means, and it is applied
+identically wherever burden is computed.
+
+Registered before any burden number was computed.
+
 ## Two cells you must resolve before this is registrable
 
 1.  **V2 — how SARS-CoV-2 predictions score.** The current ground truth
@@ -97,7 +170,7 @@ an application-leg limitation, not as a reproduction criterion.
 ## Excluded from validation, with reason
 
 | Published result | Why it cannot be a criterion |
-|----|----|
+|------------------------------------|------------------------------------|
 | Pooled differential abundance: top-100 mean overabundance **13.68** (range 2.23–181.97, SD 20.40, P = 0.01); cluster mean **12.59** (range 2.52–36.88, SD 7.83, P \< 0.001) | Computed over MSBB + EBB + Miami + Rockefeller (31 control, 48 AD). MSBB is access-gated via the AD Knowledge Portal; EBB alone cannot reproduce the pooled statistic |
 | The 23S/28S (LSU) confirmation arm behind Figs. 8–9 | COBLAST+ has no LSU disambiguation/reprobe pass — the documented gap in §3.5.3. `ToL_rRNA` contains LSU, but nothing uses it this way. Future Work |
 | Viral findings: AdC = **83 %** of viral transcripts, detected in **\~50 %** of samples; viral burden higher in AD **P = 0.04**; HHV↔AdC inverse relationship in AD only; cutoff **0.03** reads per host cell | Different instrument: the paper probes with *stripped whole genomes* of the top-20 Readhead viruses, not eToL-V's 120-mer structural-protein panel. A disagreement here is a method difference, not a port defect. Cite as context for V2's recall, never as a target |
