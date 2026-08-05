@@ -83,6 +83,11 @@ it affects was scored. A1–A4 were authored on 2026-08-01 and committed on
 reasoning, and no scored run of C3, C4 or C5 had been performed on either
 date.
 
+**A5 is the exception, and says so in its own heading.** It was recorded
+*after* the eToL-V run it concerns. It changes no Pass/Partial/Miss band
+and reverses no outcome; V2's Miss is recorded as the registered bands
+produced it.
+
 ### A1 · 2026-08-01 — human-filter threshold scales with read length
 
 **Affects C4 (Kohen) only. V2 and C1–C3 are unchanged.**
@@ -245,6 +250,83 @@ Two consequences to carry into the write-up:
 
 Registered before any burden number was computed.
 
+### A5 · 2026-08-04 — V1 reclassified as verification; V2 scored as a Miss; SARS-CoV-2 resolved
+
+**Affects V1, V2 and unresolved cell 1. Recorded AFTER the run it
+concerns — post-hoc by construction, unlike A1–A4.**
+
+The 35-sample eToL-V run (batch `fdda627a`, per-cell export
+`etol_v_cells.csv`) was scored before this text existed. Nothing below
+moves a band or reverses an outcome. What changes is where V1 sits, and
+what the eToL-V leg is permitted to claim.
+
+**1. V1 is a verification artefact, not a validation criterion.**
+
+`test_reproduces_veso_confusion_matrix` does not recompute the reference
+matrix from the reference's data. It *constructs* a prediction matrix
+stipulating the reference's surviving calls — nine `V-HAdV_AdC_penton`
+cells plus the lone `V-HPV_HPV45_L1` hit in SRX17674444 — and then
+asserts that the scoring arithmetic, the inverted SRR↔SRX join and the
+universe construction yield TP 9 / FP 1 / FN 35 / TN 411. Ground truth
+and universe are loaded from the bundled CSV; the predictions are
+asserted. The registered "Scored from" cell omits `compute_confusion`'s
+first argument, `matrix`, which is what made it read as an end-to-end
+re-derivation.
+
+That is a known-answer fixture — the same category as the spike-in
+positive control and the frozen self-check, which this document's Scope
+routes to §2.4.
+
+**Amendment: V1 moves to §2.4 as a verification artefact**, described as
+a scoring-logic and ground-truth-join known-answer check, cited as
+`tests/test_etol_validation.py::test_reproduces_veso_confusion_matrix`.
+It passes. Its pass is evidence that COBLAST+'s scoring layer is
+faithful — not evidence about adenovirus. Its fixture encodes the
+reference's ground truth, which Lathe's corrected ground truth
+supersedes; that is exactly why it verifies machinery and not biology.
+
+**2. V2 is scored as a Miss.** Trigger: precision .40 \< .90.
+
+| Arm | TP | FP | FN | TN | Precision | Recall |
+|---------|---------|---------|---------|---------|---------|---------|
+| `stage="validated"` (scored) | 2 | 3 | 43 | 792 | .40 | .044 |
+| `stage="raw"` (sensitivity) | 9 | 7 | 36 | 788 | .56 | .200 |
+
+N = 840, accuracy .945. Of the registered Pass conditions only "every TP
+an HAdV-C cell" held, on both arms. The Partial band's attribution
+requirement was satisfied and is reported regardless: of 43 false
+negatives, **36 carried no net read at all** (`raw = 0`) and **7 carried
+net reads that were not contig-confirmed**, all seven HAdV-C. Every one
+of the 14 non-adenovirus false negatives is in the `raw = 0` bucket, so
+net-stage failure accounts for the entire non-adenovirus shortfall and
+assembly depth accounts only for adenovirus C. Six of the seven carried
+a single net read, below `Cap3Assembler.MIN_READS = 2`, so CAP3 was never
+invoked and no contig could form under any parameterisation; both true
+positives carried three. Contig *identification* is therefore not
+implicated, and no paragraph should blame `ToL_virus_val`.
+
+**3. SARS-CoV-2 predictions are scored, not excluded.** This closes
+unresolved cell 1 against the assumption recorded there.
+
+A truth column of zeros is a negative result, not absent data: the
+corrected ground truth asserts these samples contain no SARS-CoV-2. All
+seven raw-stage SARS-CoV-2 hits fall in SD030-18, SD042-18, SD014-17,
+SD032-17 and SD025-19; if the two-digit suffix encodes collection year —
+**to confirm with Lathe before this is asserted in text** — every one
+predates the virus's emergence, making them definitionally false
+positives and pointing at cross-reactivity of the single
+`V-HCoV_SARSCoV2_S` spike probe. Three survived contig confirmation.
+Excluding them would delete the most informative cells in the run, and
+would remove precisely the cells that caused the precision failure.
+
+**4. The corrected-ground-truth evaluation is Future Work, not a new
+criterion.** A characterisation of eToL-V against Lathe's ground truth
+has no failure condition, and every number in it is already known, so
+registering it as a criterion would be theatre. The stage-resolved
+matrix and the attribution above are reported descriptively in the
+Results and Discussion; the case for a properly pre-registered
+evaluation belongs in Future Work.
+
 ## Two cells you must resolve before this is registrable
 
 1.  **V2 — how SARS-CoV-2 predictions score.** The current ground truth
@@ -256,7 +338,8 @@ Registered before any burden number was computed.
     legacy path. Decide in writing: score them (and set the
     reference-equivalent FP count from the reference's own SARS-CoV-2
     sample list) or exclude them. The V2 value above assumes
-    **excluded**.
+    **excluded**. *(Closed by amendment A5: they are **scored**, against
+    the assumption recorded here.)*
 2.  **C3 — inherited shortlist, not re-derived.** The paper's top-10 was
     selected from a *pooled* four-dataset ranking; you cannot re-derive
     that selection from EBB alone. The criterion therefore inherits the
