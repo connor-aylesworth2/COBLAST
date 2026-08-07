@@ -37,16 +37,16 @@ that a number in the write-up matches the number the tool itself would show;
 
 Run from the repository root:
 
-    python scripts/plot_thesis.py \\
+    python3 scripts/diss_figs.py \\
         --ebb-batch   1254c3b1-26ec-42f7-becd-303ccb1d4400 \\
         --viral-batch fdda627a-55cc-4ce0-9fb5-8da8ba705319 \\
         --kohen-batch c3a41385-27bc-4612-b809-47c6a64b8f64 \\
         --covariates  f10_covariates.csv \\
-        --age-metadata /home/s2837738/COBLAST_2.0/age_metadata.csv \\
+        --age-metadata /home/s2837739/COBLAST_2.0/age_metadata.csv \\
         --outdir figures
 
     # one item at a time while drafting
-    python scripts/plot_thesis.py --only F6 ... --outdir figures
+    python3 scripts/diss_figs.py --only F6 ... --outdir figures
 
 Requires matplotlib; F10 additionally requires statsmodels. Figures are written
 as PDF (vector, per the figure spec) and every table as CSV alongside.
@@ -366,8 +366,25 @@ def per_cell(matrix: dict, row: int, col: int) -> float:
     return (matrix["hits"][row][col] or 0) / host_cells
 
 
+def unmeasurable_samples(matrix: dict) -> list[str]:
+    """Samples with no host-cell estimate, which cannot be normalised at all.
+
+    `per_cell` returns 0 when host_cells <= 0, so such a sample silently scores a
+    burden of 0 and is then averaged in as though it were measured and empty.
+    That is a structural zero, not an observation, and it biases every group
+    mean it lands in. Callers exclude these and say so.
+    """
+    return [col["sample"] for col in matrix["cols"] if (col["host_cells"] or 0.0) <= 0]
+
+
 def sample_burden(matrix: dict, col: int, cutoff: float = CELLULAR_CUTOFF) -> float:
-    """A2: sum reads per host cell over species that individually reach cutoff."""
+    """A2: sum reads per host cell over species that individually reach cutoff.
+
+    NOTE the denominator's leverage: burden is Sum(hits / host_cells), so when
+    host_cells varies more across samples than microbial content does, this
+    measure tracks 1/host_cells. Check `burden ~ host_cells` before reading any
+    between-group difference as biology.
+    """
     total = 0.0
     for row in range(len(matrix["rows"])):
         value = per_cell(matrix, row, col)
@@ -624,6 +641,11 @@ def kohen_burdens(matrix: dict, ages: dict[str, dict]) -> list[dict]:
     F4 draws these and the C4 scorecard row scores them, so the figure and the
     verdict can never disagree.
     """
+    dropped = unmeasurable_samples(matrix)
+    if dropped:
+        print(f"WARNING: {len(dropped)} Kohen sample(s) have no host-cell estimate "
+              f"and are excluded from burden: {', '.join(dropped)}. "
+              "Report n analysed separately from n sequenced.")
     rows = []
     for c, col in enumerate(matrix["cols"]):
         meta = ages.get(col["sample"].strip().upper())
@@ -632,6 +654,8 @@ def kohen_burdens(matrix: dict, ages: dict[str, dict]) -> list[dict]:
                 f"Kohen sample {col['sample']} is not in the age metadata; "
                 "check the Run/Experiment accessions."
             )
+        if col["sample"] in dropped:
+            continue
         rows.append({
             "col": c, "sample": col["sample"], "age": meta["age"],
             "sex": meta["sex"], "burden": sample_burden(matrix, c),
@@ -853,12 +877,16 @@ def figure_f9(ebb: dict, samples: list[dict], outdir: Path) -> list[dict]:
     # Genus comes from contig identification, not probe labels: no shortlist
     # genus exists in the panel's taxon names (they are coded reference
     # organisms), which is why A3 exists at all.
-    homolog_by_taxon: dict[str, str] = {}
+    # A taxon's contig identifies independently in EVERY sample, and the calls
+    # differ between them. Keeping only the first one seen (setdefault) scored
+    # Sphingomonas as absent from EBB despite 27 hits across three SILVA
+    # entries, so collect every genus each taxon ever resolved to.
+    genera_by_taxon: dict[str, set[str]] = defaultdict(set)
     for result in batch.get("database_results", []):
         for taxon, ident in (result.get("contig_identification") or {}).items():
-            homolog = (ident.get("closest_homolog") or "").strip()
-            if homolog:
-                homolog_by_taxon.setdefault(taxon, homolog)
+            genus = homolog_genus((ident.get("closest_homolog") or "").strip())
+            if genus:
+                genera_by_taxon[taxon].add(genus)
 
     ad_cols = [s["col"] for s in samples if s["diagnosis"] == "AD"]
     control_cols = [s["col"] for s in samples if s["diagnosis"] == "CONTROL"]
@@ -878,7 +906,8 @@ def figure_f9(ebb: dict, samples: list[dict], outdir: Path) -> list[dict]:
         if level == "genus":
             rows = [
                 r for r, row in enumerate(matrix["rows"])
-                if homolog_genus(homolog_by_taxon.get(row["key"], "")).lower() == name.lower()
+                if any(g.lower() == name.lower()
+                       for g in genera_by_taxon.get(row["key"], ()))
             ]
             carrier = ", ".join(sorted({matrix["rows"][r]["species"] for r in rows})) or "-"
         else:  # A3: domain-level match for the unnamed chloroplastida
@@ -892,8 +921,13 @@ def figure_f9(ebb: dict, samples: list[dict], outdir: Path) -> list[dict]:
         entries.append({
             "name": name, "level": level, "detected": bool(rows),
             "proportion": proportion, "effect": effect, "carrier": carrier,
-            "homologs": ", ".join(sorted({homolog_by_taxon.get(matrix["rows"][r]["key"], "")
-                                          for r in rows} - {""})) or "-",
+            # Genera, not full SILVA titles: the titles are ~200 chars each and
+            # made the CSV unreadable. What a reader needs is WHAT the carriers
+            # identified as -- which for the Chloroplastida entry is the whole
+            # argument against counting it.
+            "homologs": ", ".join(sorted(
+                {g for r in rows for g in genera_by_taxon.get(matrix["rows"][r]["key"], ())}
+            )) or "-",
             # C3's rule: over-represented if the AD proportion clears half the
             # control proportion. Control proportion is 0.5 by construction of
             # the mean, so the bar is 0.25.
