@@ -874,64 +874,82 @@ def figure_f9(ebb: dict, samples: list[dict], outdir: Path) -> list[dict]:
 
     matrix = ebb["matrix"]
     batch = ebb["batch"]
-    # Genus comes from contig identification, not probe labels: no shortlist
-    # genus exists in the panel's taxon names (they are coded reference
-    # organisms), which is why A3 exists at all.
-    # A taxon's contig identifies independently in EVERY sample, and the calls
-    # differ between them. Keeping only the first one seen (setdefault) scored
-    # Sphingomonas as absent from EBB despite 27 hits across three SILVA
-    # entries, so collect every genus each taxon ever resolved to.
-    genera_by_taxon: dict[str, set[str]] = defaultdict(set)
+    # Score the contig IDENTIFICATIONS, per sample -- not the panel taxa that
+    # carried them.
+    #
+    # A panel taxon is a coded reference organism whose contig is identified
+    # independently in every sample, and in this cohort a single taxon routinely
+    # resolves to dozens of unrelated genera across the 35 (peanut, birch, oak,
+    # mites, ...). Attributing that taxon's whole read count to any one of them
+    # is wrong in both directions, as two earlier versions of this function
+    # showed: keeping only the first call missed Sphingomonas entirely, and
+    # accepting any call made every promiscuous taxon match every genus it ever
+    # hit. The confirmed reads behind an identification, in the sample where it
+    # was made, is the only quantity that answers what C3 asks.
+    genus_reads: list[dict[str, float]] = []
+    genera_per_taxon: dict[str, set[str]] = defaultdict(set)
     for result in batch.get("database_results", []):
+        per_genus: dict[str, float] = defaultdict(float)
         for taxon, ident in (result.get("contig_identification") or {}).items():
             genus = homolog_genus((ident.get("closest_homolog") or "").strip())
-            if genus:
-                genera_by_taxon[taxon].add(genus)
+            if not genus:
+                continue
+            genera_per_taxon[taxon].add(genus)
+            try:
+                per_genus[genus] += float(ident.get("confirmed_reads") or 0)
+            except (TypeError, ValueError):
+                continue
+        genus_reads.append(per_genus)
+
+    # How far identification wanders. This decides whether any genus-level score
+    # here is interpretable at all, so it goes on the figure.
+    spread = sorted(len(v) for v in genera_per_taxon.values())
+    median_genera = spread[len(spread) // 2] if spread else 0
+
+    all_genera = set().union(*genera_per_taxon.values()) if genera_per_taxon else set()
+
+    # A3's domain entry: the genera the Chloroplastida-class taxa resolved to.
+    chloroplastida_genera = {
+        g for row in matrix["rows"] if row["group"] in CHLOROPLASTIDA_CLASSES
+        for g in genera_per_taxon.get(row["key"], ())
+    }
 
     ad_cols = [s["col"] for s in samples if s["diagnosis"] == "AD"]
     control_cols = [s["col"] for s in samples if s["diagnosis"] == "CONTROL"]
 
-    def over_representation(rows: list[int]) -> tuple[float, float]:
-        """(proportion of AD samples above the control mean, effect size)."""
-        if not rows:
-            return 0.0, 0.0
-        control = [sum(per_cell(matrix, r, c) for r in rows) for c in control_cols]
-        ad = [sum(per_cell(matrix, r, c) for r in rows) for c in ad_cols]
+    def over_representation(genera: set[str]) -> tuple[float, float, bool]:
+        """(proportion of AD samples above the control mean, effect size, detected)."""
+        if not genera:
+            return 0.0, 0.0, False
+        ad = [sum(genus_reads[c].get(g, 0.0) for g in genera) for c in ad_cols]
+        control = [sum(genus_reads[c].get(g, 0.0) for g in genera) for c in control_cols]
         control_mean = sum(control) / len(control) if control else 0.0
         above = sum(1 for v in ad if v > control_mean) / len(ad) if ad else 0.0
-        return above, cohens_d(ad, control)
+        return above, cohens_d(ad, control), any(ad) or any(control)
 
     entries = []
     for name, level in AD_SHORTLIST:
         if level == "genus":
-            rows = [
-                r for r, row in enumerate(matrix["rows"])
-                if any(g.lower() == name.lower()
-                       for g in genera_by_taxon.get(row["key"], ()))
-            ]
-            carrier = ", ".join(sorted({matrix["rows"][r]["species"] for r in rows})) or "-"
+            # Match case-insensitively against the genus strings SILVA actually used.
+            genera = {g for g in all_genera if g.lower() == name.lower()}
+            carriers = sorted(t for t, gs in genera_per_taxon.items()
+                              if any(g.lower() == name.lower() for g in gs))
         else:  # A3: domain-level match for the unnamed chloroplastida
-            rows = [
-                r for r, row in enumerate(matrix["rows"])
-                if row["group"] in CHLOROPLASTIDA_CLASSES
-                and any(matrix["hits"][r][c] for c in ad_cols + control_cols)
-            ]
-            carrier = ", ".join(sorted({matrix["rows"][r]["species"] for r in rows})) or "-"
-        proportion, effect = over_representation(rows)
+            genera = chloroplastida_genera
+            carriers = sorted(t for t, gs in genera_per_taxon.items()
+                              if gs & chloroplastida_genera)
+        proportion, effect, detected = over_representation(genera)
         entries.append({
-            "name": name, "level": level, "detected": bool(rows),
-            "proportion": proportion, "effect": effect, "carrier": carrier,
-            # Genera, not full SILVA titles: the titles are ~200 chars each and
-            # made the CSV unreadable. What a reader needs is WHAT the carriers
-            # identified as -- which for the Chloroplastida entry is the whole
-            # argument against counting it.
-            "homologs": ", ".join(sorted(
-                {g for r in rows for g in genera_by_taxon.get(matrix["rows"][r]["key"], ())}
-            )) or "-",
+            "name": name, "level": level, "detected": detected,
+            "proportion": proportion, "effect": effect,
+            "carrier": ", ".join(carriers) or "-",
+            # What the carriers actually identified as. For the Chloroplastida
+            # entry this list IS the argument against counting it.
+            "homologs": ", ".join(sorted(genera)) or "-",
             # C3's rule: over-represented if the AD proportion clears half the
             # control proportion. Control proportion is 0.5 by construction of
             # the mean, so the bar is 0.25.
-            "over": bool(rows) and proportion > 0.25,
+            "over": detected and proportion > 0.25,
         })
 
     fig, ax = plt.subplots(figsize=(8.4, 5.4))
@@ -953,7 +971,10 @@ def figure_f9(ebb: dict, samples: list[dict], outdir: Path) -> list[dict]:
     ax.grid(alpha=0.25, axis="x")
     _finish(fig, f"F9  {matched}/10 over-represented; square marker = matched at DOMAIN level "
                  "because the source named it via the 23S/28S LSU pass COBLAST+ does not "
-                 "implement, so genus matching caps at 9/10 by construction (A3)",
+                 "implement, so genus matching caps at 9/10 by construction (A3). "
+                 f"Scored from contig identifications per sample; a panel taxon resolved to a "
+                 f"median of {median_genera} distinct genera across the 35 samples, which is the "
+                 "ambiguity that LSU disambiguation exists to resolve",
             outdir / "F9_ad_shortlist_overlap.pdf")
 
     _write_csv(
