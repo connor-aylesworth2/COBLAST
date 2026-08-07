@@ -14,6 +14,8 @@ measurements.
   F8   Per-probe age association  volcano over the 120 taxa, BH threshold
   F9   AD-shortlist overlap       ranked lollipop, 9 genus + 1 domain (A3)
   F10  Region effects             forest plot, naive vs clustered (mixed model)
+  F11  Burden vs its denominator  the measurement diagnostic behind every
+                                  burden result -- read this before F4/F6/F10
   T6   Validation scorecard       V2, C1-C5 against the registered criteria
   T7   Absolute burden            fold change scored, absolutes transcribed (A4)
   T8   FDR table                  per-taxon r, p, q
@@ -1073,6 +1075,93 @@ def figure_f10(samples: list[dict], outdir: Path) -> dict:
     return {"naive": naive, "clustered": clustered, "secondary": secondary}
 
 
+# --- F11: the measurement diagnostic --------------------------------------
+
+
+def figure_f11(cohorts: list[dict], outdir: Path) -> dict:
+    """Burden against the host-cell estimate it is divided by.
+
+    Burden is Sum(hits / host_cells) over species clearing the cutoff. If
+    host_cells varies more across samples than microbial content does, this
+    measure tracks 1/host_cells and every between-group comparison built on it
+    is substantially a comparison of denominators.
+
+    Log-log axes are the point here, unlike F3: a pure 1/x relationship is a
+    straight line of slope -1, so the eye can judge directly how much of the
+    burden signal is the denominator. The reference line is fitted only in its
+    intercept -- its slope is fixed at -1 by definition, never estimated, so it
+    cannot be mistaken for a model of the data.
+
+    ``cohorts``: [{"label", "matrix", "rows": [{"col", "burden", "group"}]}]
+    """
+    plt = _plt()
+
+    fig, axes = plt.subplots(1, len(cohorts), figsize=(5.6 * len(cohorts), 5.0))
+    axes = axes if len(cohorts) > 1 else [axes]
+    stats: dict[str, dict] = {}
+
+    for ax, cohort in zip(axes, cohorts):
+        matrix = cohort["matrix"]
+        points = [
+            (matrix["cols"][row["col"]]["host_cells"] or 0.0, row["burden"], row["group"])
+            for row in cohort["rows"]
+        ]
+        # Only positive pairs can go on log axes; zero-burden samples are
+        # reported in the caption rather than silently dropped.
+        usable = [(h, b, g) for h, b, g in points if h > 0 and b > 0]
+        dropped = len(points) - len(usable)
+        rho = spearman_r([p[0] for p in usable], [p[1] for p in usable])
+        stats[cohort["label"]] = {
+            "rho": rho, "n": len(usable), "dropped": dropped,
+            "host_min": min((p[0] for p in usable), default=0.0),
+            "host_max": max((p[0] for p in usable), default=0.0),
+        }
+
+        groups = sorted({p[2] for p in usable})
+        palette = ["#0072b2", "#d55e00", "#009e73", "#cc79a7"]
+        for colour, group in zip(palette, groups):
+            xs = [p[0] for p in usable if p[2] == group]
+            ys = [p[1] for p in usable if p[2] == group]
+            ax.scatter(xs, ys, s=38, color=colour, label=f"{group} (n={len(xs)})",
+                       alpha=0.85, zorder=3)
+
+        # y = c / x, with c the median of burden * host_cells. Slope is fixed.
+        products = sorted(h * b for h, b, _ in usable)
+        c = products[len(products) // 2] if products else 1.0
+        lo = min(p[0] for p in usable)
+        hi = max(p[0] for p in usable)
+        curve = [lo * (hi / lo) ** (i / 60) for i in range(61)]
+        ax.plot(curve, [c / x for x in curve], linestyle="--", linewidth=1.2,
+                color="#555", zorder=1,
+                label="burden = c / host cells (slope -1)")
+
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlabel("Estimated host cells (control-probe mean / 50)")
+        ax.set_ylabel(f"Burden (reads per host cell, species >= {CELLULAR_CUTOFF:g})")
+        ax.set_title(f"{cohort['label']}   Spearman rho = {rho:+.2f}", fontsize=11)
+        ax.legend(fontsize=7.5, loc="upper right")
+        ax.grid(alpha=0.25, which="both")
+
+    summary = "; ".join(
+        f"{label}: rho {s['rho']:+.2f}, n={s['n']}, host cells {s['host_min']:.2f}-{s['host_max']:.2f}"
+        + (f", {s['dropped']} sample(s) not plottable" if s["dropped"] else "")
+        for label, s in stats.items()
+    )
+    _finish(fig, "F11  Burden is Sum(reads / host cells), so a strong negative association with "
+                 "the host-cell estimate means the measure is tracking its own denominator rather "
+                 f"than microbial content. {summary}. The dashed line is not fitted to the points: "
+                 "its slope is fixed at -1 and only its intercept is set from the data",
+            outdir / "F11_burden_vs_host_cells.pdf")
+
+    _write_csv(outdir / "F11_burden_vs_host_cells.csv",
+               ["cohort", "spearman_rho", "n", "host_cells_min", "host_cells_max",
+                "samples_not_plottable"],
+               [[label, round(s["rho"], 4), s["n"], round(s["host_min"], 4),
+                 round(s["host_max"], 4), s["dropped"]] for label, s in stats.items()])
+    return stats
+
+
 # --- T7 / C5 and T6 -------------------------------------------------------
 
 
@@ -1228,7 +1317,7 @@ def main(argv: list[str] | None = None) -> int:
         ])
 
     kohen = None
-    if run("F4") or run("F8") or run("T8") or run("T6"):
+    if run("F4") or run("F8") or run("T8") or run("T6") or run("F11"):
         ages = load_age_metadata(args.age_metadata)
         kohen = load_matrix(args.kohen_batch, "etol_full")
         kohen_rows = kohen_burdens(kohen["matrix"], ages)
@@ -1274,6 +1363,21 @@ def main(argv: list[str] | None = None) -> int:
 
     if run("F10"):
         figure_f10(samples, outdir)
+
+    # Read before any burden result: if these correlations are strongly
+    # negative, F4/F6/F10 and C2/C4/C5 are reporting the denominator.
+    if run("F11"):
+        stats = figure_f11([
+            {"label": "EBB (eToL Full)", "matrix": ebb["matrix"],
+             "rows": [{"col": s["col"], "burden": s["burden"], "group": s["diagnosis"]}
+                      for s in samples]},
+            {"label": "Kohen (eToL Full)", "matrix": kohen["matrix"],
+             "rows": [{"col": r["col"], "burden": r["burden"],
+                       "group": "young" if r["age"] <= KOHEN_YOUNG_MAX else "elderly"}
+                      for r in kohen_rows]},
+        ], outdir)
+        for label, s in stats.items():
+            print(f"F11 {label}: burden ~ host cells rho = {s['rho']:+.3f} (n={s['n']})")
 
     if run("T6") and scorecard:
         order = {"V2": 0, "C1": 1, "C2": 2, "C3": 3, "C4": 4, "C5": 5}
