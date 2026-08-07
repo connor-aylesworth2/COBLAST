@@ -37,7 +37,7 @@ that a number in the write-up matches the number the tool itself would show;
 
 Run from the repository root:
 
-    python3 scripts/diss_figs.py \\
+    python3 scripts/plot_thesis.py \\
         --ebb-batch   1254c3b1-26ec-42f7-becd-303ccb1d4400 \\
         --viral-batch fdda627a-55cc-4ce0-9fb5-8da8ba705319 \\
         --kohen-batch c3a41385-27bc-4612-b809-47c6a64b8f64 \\
@@ -46,7 +46,7 @@ Run from the repository root:
         --outdir figures
 
     # one item at a time while drafting
-    python3 scripts/diss_figs.py --only F6 ... --outdir figures
+    python3 scripts/plot_thesis.py --only F6 ... --outdir figures
 
 Requires matplotlib; F10 additionally requires statsmodels. Figures are written
 as PDF (vector, per the figure spec) and every table as CSV alongside.
