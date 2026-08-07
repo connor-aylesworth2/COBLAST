@@ -822,6 +822,28 @@ def figure_f8_and_t8(results: list[dict], panel_taxa: int, outdir: Path) -> None
 # --- F9: AD-shortlist overlap ---------------------------------------------
 
 
+def homolog_genus(homolog: str) -> str:
+    """Genus from a SILVA hit title.
+
+    `closest_homolog` carries the FULL reference title: an accession, a space,
+    then the whole ``;``-delimited lineage --
+
+        LRBV01001970.46707.48505 Eukaryota;...;Quercus;Quercus lobata
+
+    The genus is the SECOND-TO-LAST rank. The last rank is a species string that
+    is routinely not a binomial (``uncultured fungus``, ``metagenome``,
+    ``Sphingomonadaceae bacterium KVD-unk-19``), so it cannot be split on
+    whitespace to recover a genus either.
+
+    Splitting the whole title on its first space returns the ACCESSION, which
+    matches no genus at all. That was the original implementation and it scored
+    every named genus in the AD shortlist as absent -- a wrong result that looked
+    exactly like a real one, which is why this has a test.
+    """
+    ranks = [part.strip() for part in homolog.split(";") if part.strip()]
+    return ranks[-2] if len(ranks) >= 2 else ""
+
+
 def figure_f9(ebb: dict, samples: list[dict], outdir: Path) -> list[dict]:
     """Ranked lollipop over the published top 10. Never a Venn."""
     plt = _plt()
@@ -856,7 +878,7 @@ def figure_f9(ebb: dict, samples: list[dict], outdir: Path) -> list[dict]:
         if level == "genus":
             rows = [
                 r for r, row in enumerate(matrix["rows"])
-                if homolog_by_taxon.get(row["key"], "").split(" ")[0].lower() == name.lower()
+                if homolog_genus(homolog_by_taxon.get(row["key"], "")).lower() == name.lower()
             ]
             carrier = ", ".join(sorted({matrix["rows"][r]["species"] for r in rows})) or "-"
         else:  # A3: domain-level match for the unnamed chloroplastida
