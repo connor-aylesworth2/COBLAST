@@ -120,9 +120,11 @@ AD_SHORTLIST = (
     ("Staphylococcus", "genus"),
     ("uncharacterised Chloroplastida", "domain"),  # A3
 )
-# A3: the tenth entry counts as matched if ANY Chloroplastida taxon is detected
-# and over-represented. Class codes C1-C4 carry that domain in the panel.
-CHLOROPLASTIDA_CLASSES = ("C1", "C2", "C3", "C4")
+# A3: the tenth entry counts as matched if ANY Chloroplastida is detected and
+# over-represented. Decided from the contig's SILVA LINEAGE, not from the panel
+# class codes C1-C4 -- those span red algae, glaucophytes and excavates as well
+# as green algae, and a taxon's contig routinely identifies outside its own
+# class anyway. See :func:`figure_f9`.
 
 
 # --- statistics, ported from static/etol_pie.js ---------------------------
@@ -890,18 +892,32 @@ def figure_f9(ebb: dict, samples: list[dict], outdir: Path) -> list[dict]:
     # was made, is the only quantity that answers what C3 asks.
     genus_reads: list[dict[str, float]] = []
     genera_per_taxon: dict[str, set[str]] = defaultdict(set)
+    # A3's domain entry is decided by the LINEAGE, not by the genus name: a
+    # genus string alone cannot say whether it is Chloroplastida, so scoring the
+    # union of genera the C-class taxa happened to resolve to swept in Malassezia,
+    # Mammalia and Coleoptera, and made an archaeon (M. kandleri) a carrier of
+    # the plant entry.
+    chloroplastida_reads: list[float] = []
+    chloroplastida_carriers: set[str] = set()
     for result in batch.get("database_results", []):
         per_genus: dict[str, float] = defaultdict(float)
+        chloro = 0.0
         for taxon, ident in (result.get("contig_identification") or {}).items():
-            genus = homolog_genus((ident.get("closest_homolog") or "").strip())
+            title = (ident.get("closest_homolog") or "").strip()
+            genus = homolog_genus(title)
             if not genus:
                 continue
             genera_per_taxon[taxon].add(genus)
             try:
-                per_genus[genus] += float(ident.get("confirmed_reads") or 0)
+                reads = float(ident.get("confirmed_reads") or 0)
             except (TypeError, ValueError):
                 continue
+            per_genus[genus] += reads
+            if "Chloroplastida" in title:
+                chloro += reads
+                chloroplastida_carriers.add(taxon)
         genus_reads.append(per_genus)
+        chloroplastida_reads.append(chloro)
 
     # How far identification wanders. This decides whether any genus-level score
     # here is interpretable at all, so it goes on the figure.
@@ -910,21 +926,17 @@ def figure_f9(ebb: dict, samples: list[dict], outdir: Path) -> list[dict]:
 
     all_genera = set().union(*genera_per_taxon.values()) if genera_per_taxon else set()
 
-    # A3's domain entry: the genera the Chloroplastida-class taxa resolved to.
-    chloroplastida_genera = {
-        g for row in matrix["rows"] if row["group"] in CHLOROPLASTIDA_CLASSES
-        for g in genera_per_taxon.get(row["key"], ())
-    }
-
     ad_cols = [s["col"] for s in samples if s["diagnosis"] == "AD"]
     control_cols = [s["col"] for s in samples if s["diagnosis"] == "CONTROL"]
 
-    def over_representation(genera: set[str]) -> tuple[float, float, bool]:
-        """(proportion of AD samples above the control mean, effect size, detected)."""
-        if not genera:
-            return 0.0, 0.0, False
-        ad = [sum(genus_reads[c].get(g, 0.0) for g in genera) for c in ad_cols]
-        control = [sum(genus_reads[c].get(g, 0.0) for g in genera) for c in control_cols]
+    def over_representation(values: list[float]) -> tuple[float, float, bool]:
+        """(proportion of AD samples above the control mean, effect size, detected).
+
+        NOTE the proportion's null is 0.5, not 0: with no AD/control difference,
+        half the AD samples sit above the control mean by construction.
+        """
+        ad = [values[c] for c in ad_cols]
+        control = [values[c] for c in control_cols]
         control_mean = sum(control) / len(control) if control else 0.0
         above = sum(1 for v in ad if v > control_mean) / len(ad) if ad else 0.0
         return above, cohens_d(ad, control), any(ad) or any(control)
@@ -936,11 +948,12 @@ def figure_f9(ebb: dict, samples: list[dict], outdir: Path) -> list[dict]:
             genera = {g for g in all_genera if g.lower() == name.lower()}
             carriers = sorted(t for t, gs in genera_per_taxon.items()
                               if any(g.lower() == name.lower() for g in gs))
-        else:  # A3: domain-level match for the unnamed chloroplastida
-            genera = chloroplastida_genera
-            carriers = sorted(t for t, gs in genera_per_taxon.items()
-                              if gs & chloroplastida_genera)
-        proportion, effect, detected = over_representation(genera)
+            values = [sum(per.get(g, 0.0) for g in genera) for per in genus_reads]
+        else:  # A3: domain-level, decided by lineage
+            genera = {"(any Chloroplastida lineage)"} if any(chloroplastida_reads) else set()
+            carriers = sorted(chloroplastida_carriers)
+            values = chloroplastida_reads
+        proportion, effect, detected = over_representation(values)
         entries.append({
             "name": name, "level": level, "detected": detected,
             "proportion": proportion, "effect": effect,
