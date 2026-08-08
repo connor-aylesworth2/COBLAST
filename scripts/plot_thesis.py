@@ -948,6 +948,13 @@ def figure_f9(ebb: dict, samples: list[dict], outdir: Path) -> list[dict]:
             # What the carriers actually identified as. For the Chloroplastida
             # entry this list IS the argument against counting it.
             "homologs": ", ".join(sorted(genera)) or "-",
+            # What ELSE the carrying taxa resolved to. For a genus row the
+            # column above just echoes the entry name, so this is where the
+            # evidence lives: a carrier that also resolves to peanut, birch and
+            # mites is not credible evidence for a yeast.
+            "also": ", ".join(sorted(
+                {g for t in carriers for g in genera_per_taxon.get(t, ())} - set(genera)
+            )) or "-",
             # C3's rule: over-represented if the AD proportion clears half the
             # control proportion. Control proportion is 0.5 by construction of
             # the mean, so the bar is 0.25.
@@ -982,10 +989,14 @@ def figure_f9(ebb: dict, samples: list[dict], outdir: Path) -> list[dict]:
     _write_csv(
         outdir / "F9_ad_shortlist_overlap.csv",
         ["entry", "match_level", "detected", "ad_proportion_above_control_mean",
-         "cohens_d", "carrier_taxa", "closest_homologs", "over_represented"],
+         "null_expectation", "cohens_d", "carrier_taxa", "matched_genera",
+         "carrier_also_resolved_to", "over_represented"],
+        # 0.5 is the null: with no AD/control difference, half the AD samples sit
+        # above the control mean by construction. Printed on every row so the
+        # proportion is never read without it.
         [[e["name"], e["level"], "yes" if e["detected"] else "no",
-          round(e["proportion"], 4), round(e["effect"], 4), e["carrier"],
-          e["homologs"], "yes" if e["over"] else "no"] for e in entries],
+          round(e["proportion"], 4), 0.5, round(e["effect"], 4), e["carrier"],
+          e["homologs"], e["also"], "yes" if e["over"] else "no"] for e in entries],
     )
     return entries
 
@@ -1172,12 +1183,27 @@ def table_t7(matrix: dict, samples: list[dict], outdir: Path) -> dict:
     peak = max(samples, key=lambda s: s["burden"])
     fold = peak["burden"] / control_mean if control_mean > 0 else float("nan")
 
-    # Domain strata for the control arm. Cutoff-free and pooled, so the
-    # ordering is computed the same way C1 is -- C5 asks for consistency with
-    # C1, and mixing definitions across the two would be the error A4 warns of.
-    control_domains = domain_composition(matrix, [s["col"] for s in controls])
+    # C5 contains an internal inconsistency: its burden sums take A2's cutoff,
+    # but its bacteria-vs-fungi clause says "consistent with C1", and C1 is
+    # cutoff-free and pooled. Both quantities are therefore reported, LABELLED
+    # SEPARATELY -- they are different computations and must never be added or
+    # compared to each other. The ordering test uses the C1-consistent pair.
+    control_cols = [s["col"] for s in controls]
+    control_domains = domain_composition(matrix, control_cols)
     bacteria = control_domains.get("Bacteria", {}).get("per_host_cell", 0.0)
     fungi = control_domains.get("Fungi", {}).get("per_host_cell", 0.0)
+
+    def domain_burden_mean(domain: str) -> float:
+        """Per-sample burden restricted to one domain, A2 cutoff applied.
+
+        This is the definition that IS comparable to the combined figure.
+        """
+        rows = [r for r, row in enumerate(matrix["rows"]) if row["domain"] == domain]
+        totals = []
+        for c in control_cols:
+            totals.append(sum(v for r in rows
+                              if (v := per_cell(matrix, r, c)) >= CELLULAR_CUTOFF))
+        return sum(totals) / len(totals) if totals else 0.0
 
     verdict = (
         "PASS" if (5.0 <= fold <= 20.0 and peak["diagnosis"] == "AD" and fungi > bacteria)
@@ -1189,12 +1215,23 @@ def table_t7(matrix: dict, samples: list[dict], outdir: Path) -> dict:
         outdir / "T7_absolute_burden.csv",
         ["quantity", "published", "published_units", "coblast", "coblast_units", "scored"],
         [
-            ["Bacteria, control mean", C5_PUBLISHED["bacteria"], "organisms per host cell",
-             round(bacteria, 4), "reads per host cell", "NOT SCORED (A4: unit mismatch)"],
-            ["Fungi, control mean", C5_PUBLISHED["fungi"], "organisms per host cell",
-             round(fungi, 4), "reads per host cell", "NOT SCORED (A4: unit mismatch)"],
-            ["Combined, control mean", C5_PUBLISHED["combined"], "organisms per host cell",
-             round(control_mean, 4), "reads per host cell", "NOT SCORED (A4: unit mismatch)"],
+            ["Bacteria, control (pooled, cutoff-free; C1 definition)",
+             C5_PUBLISHED["bacteria"], "organisms per host cell",
+             round(bacteria, 4), "reads per host cell, POOLED ratio-of-sums",
+             "NOT SCORED (A4: unit mismatch). Not additive with the rows below"],
+            ["Fungi, control (pooled, cutoff-free; C1 definition)",
+             C5_PUBLISHED["fungi"], "organisms per host cell",
+             round(fungi, 4), "reads per host cell, POOLED ratio-of-sums",
+             "NOT SCORED (A4: unit mismatch). Not additive with the rows below"],
+            ["Bacteria, control mean (A2 cutoff; comparable to combined)",
+             "", "", round(domain_burden_mean("Bacteria"), 4),
+             "reads per host cell, per-sample mean", "NOT SCORED"],
+            ["Fungi, control mean (A2 cutoff; comparable to combined)",
+             "", "", round(domain_burden_mean("Fungi"), 4),
+             "reads per host cell, per-sample mean", "NOT SCORED"],
+            ["Combined, control mean (A2 cutoff)", C5_PUBLISHED["combined"],
+             "organisms per host cell", round(control_mean, 4),
+             "reads per host cell, per-sample mean", "NOT SCORED (A4: unit mismatch)"],
             ["Maximum-burden case", C5_PUBLISHED["max_case"], "organisms per host cell",
              round(peak["burden"], 4), "reads per host cell", "NOT SCORED (A4: unit mismatch)"],
             ["Max-to-control fold change", round(C5_PUBLISHED_FOLD, 2), "ratio",
@@ -1202,6 +1239,13 @@ def table_t7(matrix: dict, samples: list[dict], outdir: Path) -> dict:
             ["Maximum-burden sample", "M66 (AD, male)", "donor",
              f"{peak['sample']} / {peak['individual']} ({peak['diagnosis_full']})", "donor",
              "donor identity not automated -- EBB age/sex is a manual lookup"],
+            # If the max-burden sample is also the min-host-cell sample, the fold
+            # change is a denominator artifact rather than a burden result (F11).
+            ["Host cells in the max-burden sample", "", "",
+             round(matrix["cols"][peak["col"]]["host_cells"] or 0.0, 4), "host cells",
+             f"cohort range {min(matrix['cols'][s['col']]['host_cells'] for s in samples):.3f}"
+             f"-{max(matrix['cols'][s['col']]['host_cells'] for s in samples):.3f}; "
+             "if this sits at the low end, read the fold change with F11"],
         ],
     )
     return {"fold": fold, "verdict": verdict, "peak": peak, "control_mean": control_mean,
