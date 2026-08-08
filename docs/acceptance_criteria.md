@@ -88,6 +88,26 @@ date.
 and reverses no outcome; V2's Miss is recorded as the registered bands
 produced it.
 
+**A6 and A7 are likewise post-hoc in time** — both were recorded on
+2026-08-08, after C3 and C5 had been scored. Their defence is not their
+timing, and the reader should not accept one. Each identifies a defect
+that is demonstrable from the criterion's own text or arithmetic
+*without reference to any result*, and each gives the derivation in full
+so that claim can be checked independently. Neither moves a band: C3
+stands as a **Miss** and C5 as a **Partial**, exactly as the registered
+bands produced them.
+
+**Anything discovered *from* the results is not an amendment.** A defect
+that could only be found by reading the scored output cannot be used to
+retire the criterion that produced it — that is precisely the
+circularity this document exists to prevent, and the direction of travel
+(verification → validation → application) forbids it. Such findings are
+recorded separately below, under **Deviations discovered during
+analysis**. They are reported in the Results and the Discussion; they
+change no verdict. The test that sorts an amendment from a deviation is
+a single question: *could this defect have been demonstrated before the
+run?*
+
 ### A1 · 2026-08-01 — human-filter threshold scales with read length
 
 **Affects C4 (Kohen) only. V2 and C1–C3 are unchanged.**
@@ -326,6 +346,194 @@ registering it as a criterion would be theatre. The stage-resolved
 matrix and the attribution above are reported descriptively in the
 Results and Discussion; the case for a properly pre-registered
 evaluation belongs in Future Work.
+
+### A6 · 2026-08-08 — C3's Pass bar sits at half its own null
+
+**Affects C3. Recorded AFTER C3 was scored; the defect follows from the
+criterion's definition alone, and C3's Miss stands.**
+
+C3's Pass band requires each shortlist genus to be "over-represented in
+AD" by this rule: the proportion of AD samples above the EBB control
+mean must exceed **0.5 × the control proportion**, where the control
+proportion is the proportion of CONTROL samples above that same mean.
+
+Write the control proportion as *p*. The threshold is then 0.5*p*. Under
+the null the criterion exists to reject — that a genus is distributed
+identically in AD and in control — AD samples and control samples are
+draws from the same distribution, so the expected proportion of AD
+samples above the control mean is also *p*.
+
+**The bar therefore sits at exactly half the null, whatever the null
+is.** The factor 0.5 is fixed by the criterion and does not depend on
+the shape of the distribution, on skew, or on the value of *p*. The
+symmetric case (*p* ≈ 0.5, bar ≈ 0.25) is one instance of this, not the
+general statement, and quoting only those two numbers understates the
+problem.
+
+A criterion of this form cannot detect enrichment, because enrichment
+and no-effect both clear the bar comfortably. What it actually tests is
+whether a genus is **depleted in AD by more than twofold** relative to
+the control rate. No result was required to see this: it follows from
+setting 0.5*p* beside E[*p*].
+
+**Amendment: the defect is recorded; the criterion is not rewritten and
+the verdict is not revisited.** C3 is scored at 2 of 10 and stands as a
+**Miss** under the registered bands. Replacing the rule now would be
+choosing the test after seeing which test the data passes.
+
+One consequence carries into the write-up, and it sharpens the finding
+rather than softening it. Because no-effect alone was expected to clear
+this bar, **8 of the 10 shortlist genera failed a threshold that noise
+should have passed.** That is not evidence that the published genera are
+absent from EBB. It points at non-detection, and at contig
+identification failing to resolve to genus — the missing 23S/28S LSU
+disambiguation pass, scope limitation **S1**, whose downstream cost this
+makes concrete. Report C3's Miss as a *resolution* result, with the
+bar's weakness stated in the same paragraph, and do not quote it as
+evidence about the biology.
+
+### A7 · 2026-08-08 — "reads per host cell" names two different quantities
+
+**Affects C5 and T7. Recorded AFTER C5 was scored; the ambiguity is in
+the criterion's own text, and C5's Partial stands.**
+
+Summed over a stratum, "reads per host cell" can mean either of two
+quantities, and they are not equal:
+
+-   **Pooled — a ratio of sums.** Total microbial reads across the
+    stratum ÷ total host cells across the stratum. Samples contribute in
+    proportion to their size, and no per-species cutoff is natural.
+-   **Per-sample — a mean of ratios.** Each sample's burden is computed
+    with the A2 cutoff applied per species first, and those burdens are
+    then averaged. Samples contribute equally.
+
+C5 uses the phrase twice, at different aggregations. Its fold-change
+clause is explicit — burden "summed per sample with the A2 cutoff
+applied per species first", divided by the **control-mean** burden, so a
+mean of ratios. Its third Pass condition, that "fungi exceed bacteria in
+reads per host cell **across controls**", specifies no aggregation at
+all, and the two readings give different numbers.
+
+**Amendment: the two aggregations are named and reported separately; the
+scored quantity is unchanged.** C5's fold change remains the per-sample,
+A2-cutoff definition it registered. T7 now labels the pooled/cutoff-free
+figure separately from the per-sample/cutoff figure rather than printing
+one column headed "reads per host cell", and prints the control-stratum
+domain comparison **both ways** so the third Pass condition is scored
+against a stated aggregation.
+
+The ordering itself does not turn on the choice. Computed across the 35
+EBB samples for C1, fungi lead bacteria under both definitions — **215.6
+vs 92.2** pooled and cutoff-free, **340.7 vs 132.7** as a per-sample mean
+with the A2 cutoff. That agreement is what makes this an ambiguity of
+wording rather than a live dispute about the result, and it is why C5's
+Partial is undisturbed.
+
+## Deviations discovered during analysis
+
+**Recorded 2026-08-08. Everything in this section was found by reading
+scored output.** None of it can amend a criterion or move a verdict; see
+the sorting question stated under Amendments above. Each entry states
+what was found, how it was found, and what the write-up is and is not
+licensed to claim from it. Every registered verdict stands exactly as
+the bands produced it.
+
+### D1 · C5's fold change is confounded with the host-cell estimate
+
+**C5 stands as a Partial** (11.43× against a published 9.47×).
+
+The maximum-burden sample of the 35 carries a host-cell estimate of
+**0.300** — exactly the minimum of the EBB cohort, whose range is
+0.300–3.875. Burden is reads ÷ host cells, so at this cohort's read
+depths the sample that maximises burden is selected substantially by
+minimising the denominator rather than by carrying the most microbial
+reads. The ratio C5 scores is therefore not a clean measurement of the
+quantity C5 was written to test.
+
+This was found by inspecting the max case after the score existed. It
+does not retire C5, and it does not convert the Partial into an
+unscoreable. It licenses exactly one thing: the Results may report the
+fold change **with the max case's host-cell value stated beside it**, and
+§5.2 may argue from that pairing that the criterion could not test what
+it intended. Cross-reference **F11** wherever the fold change appears.
+
+### D2 · C2 reported on raw reads alongside burden
+
+**C2 stands as a Partial. Both conditions remain scored on burden, as
+registered.**
+
+Raw net reads were tabulated by region and by condition after C2 was
+scored, to test whether the registered readout was carrying the result.
+Two findings, which point in opposite directions and must be reported
+together:
+
+1.  **Condition 1 survives the change of readout.** BA24 is highest of
+    the four regions on raw reads as well as on burden: BA24 **858**,
+    AMYG **391**, HPC **344**, HYPO **276**. The ranking is identical
+    both ways; normalisation widened the margin by roughly 15 % but did
+    not create it. This is the one reproduction in the scorecard that
+    does not depend on the denominator, and it should be stated in those
+    terms.
+2.  **Condition 2's direction is an artefact of the denominator.** In
+    BA24, AD exceeds control on raw reads (**886** vs **858**) and falls
+    below it on burden (**904.1** vs **1027.5**). The host-cell
+    estimates are AD **0.980** and control **0.845**: the group carrying
+    more microbial reads also carries the larger denominator, and the
+    ordering inverts. At +3.3 % on roughly 6 versus 2 samples the raw
+    contrast is not itself a result — condition 2 is **untestable at this
+    n**, and should be reported as such — but the reversal is
+    attributable to normalisation rather than to biology.
+
+Raw reads are a labelled post-hoc sensitivity arm, never the scored
+quantity. Cross-reference **F11**.
+
+### D3 · C4 re-tested on a denominator-free measure
+
+**C4 stands as a Miss** (burden: elderly 1257.08 vs young 1775.96, Welch
+P = 0.6718, direction reversed).
+
+C4 is computed on reads per host cell, and burden tracks its own
+denominator (F11), so the criterion was re-run on a measure the
+host-cell estimate never enters: **microbial reads per million library
+reads**, per million rather than raw because the Kohen libraries span
+10.6M–53.8M sequences. Reproduced by
+`scripts/c4_rpm.py <kohen_batch> <age_metadata.csv>`, reading the same
+matrix F4 scores. All **29** samples are usable here; the reduction to
+20 is a burden-only exclusion (2 samples with no host-cell estimate, 7
+more with zero burden).
+
+| Measure | Statistic | Value |
+|------------------------|------------------------|------------------------|
+| RPM, elderly (n = 13) vs young (n = 16) | Welch — **primary** | 1.122 vs 1.108, **P = 0.9717** |
+| RPM vs age | Spearman ρ — secondary | **+0.2677**, P = 0.160 |
+| Raw reads vs age | Spearman ρ — secondary | **+0.3174**, P = 0.093 |
+
+The rank statistics are secondary for the reason `cohens_d` already
+records in `plot_thesis.py`: the Kohen ages are bimodal (16 at 29–59, 13
+at 68–95, nothing between), so a correlation across that gap is largely
+the two-group difference the Welch already reports.
+
+**What this licenses.** The *sign* of the age relationship flips from
+negative under burden to positive under RPM, so C4's reversal is
+attributable to the denominator and not to the reads. What replaces the
+reversal is a null, not the published increase: the primary test returns
+P = 0.9717 and neither secondary reaches significance. The claim the
+data supports is therefore narrow and should be written narrowly —
+**normalisation manufactured a reversal; it did not conceal a real
+effect.** Do not write that the published direction is recoverable.
+
+**What this does not license.** The Kohen arm carries **942 microbial
+reads in total** across 830.9M library sequences — median 22 per sample,
+range 0–149. The two largest counts (149 at age 52, 70 at age 44) are
+both in the young group, which is why the rank statistics and the group
+means disagree. C4 was not scoreable at this depth in either direction.
+That is a property of the observed data, not of the criterion, so it is
+recorded here and **not** as an amendment: C4's Miss stands as
+registered, and the underpowering is reported beside it.
+
+Taken with D2, this is the second independent demonstration that the
+host-cell denominator inverts a sign — different cohort, different
+contrast, same mechanism. Both belong beside **F11**.
 
 ## Two cells you must resolve before this is registrable
 

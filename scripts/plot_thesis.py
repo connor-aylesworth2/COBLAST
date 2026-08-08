@@ -20,9 +20,12 @@ measurements.
   T7   Absolute burden            fold change scored, absolutes transcribed (A4)
   T8   FDR table                  per-taxon r, p, q
 
-Governing registration: `docs/acceptance_criteria.md`, amendments A1-A5. The
-decisions those encode are applied here and named at each use site, so a reader
-can check the code against the registration line by line:
+Governing registration: `docs/acceptance_criteria.md`, amendments A1-A7 and
+the deviations D1-D3. A6/A7 record defects in C3 and C5 without changing their
+bands, and D1-D3 are post-hoc findings that move no verdict, so neither group
+changes any number computed here. The decisions the amendments encode are
+applied here and named at each use site, so a reader can check the code against
+the registration line by line:
 
   A2  the cellular cutoff applies PER SPECIES BEFORE SUMMING (`CELLULAR_CUTOFF`)
   A3  the tenth AD-shortlist entry is matched at domain level, not genus

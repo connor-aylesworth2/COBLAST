@@ -13,6 +13,7 @@ estimate is a burden-only exclusion.
     python scripts/c4_rpm.py <kohen_batch_id> <age_metadata.csv>
 """
 import csv
+import math
 import sys
 from pathlib import Path
 
@@ -20,8 +21,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from plot_thesis import (  # noqa: E402
-    KOHEN_ELDERLY_MIN, KOHEN_YOUNG_MAX, load_matrix, spearman_r, welch_t,
+    KOHEN_ELDERLY_MIN, KOHEN_YOUNG_MAX, load_matrix, spearman_r, student_p,
+    welch_t,
 )
+
+
+def rho_p(rho: float, n: int) -> float:
+    """Two-sided p for Spearman's rho, via the same t tail every other p uses.
+
+    SECONDARY here, for the reason `cohens_d` already records: the Kohen ages
+    are bimodal, so a correlation across that gap is largely the two-group
+    difference the Welch already reports. Printed to bound it, not to lead on.
+    """
+    if n < 3 or abs(rho) >= 1.0:
+        return float("nan")
+    return student_p(rho * math.sqrt((n - 2) / (1.0 - rho * rho)), n - 2)
 
 SEQS_COLUMN = "# of Seqs"  # NOT '# of Bases'/'mean read length' -- those are misaligned.
 
@@ -55,9 +69,13 @@ def main(batch_id: str, metadata: str) -> None:
     matrix = load_matrix(batch_id, "etol_full")["matrix"]
     rows = rpm_rows(matrix, library_sizes(metadata))
 
-    print(f"n = {len(rows)} (all Kohen samples; no host-cell exclusion applies)")
-    print(f"rho(age, RPM)  = {spearman_r([r['age'] for r in rows], [r['rpm'] for r in rows]):+.4f}")
-    print(f"rho(age, reads) = {spearman_r([r['age'] for r in rows], [float(r['reads']) for r in rows]):+.4f}")
+    n = len(rows)
+    ages = [r["age"] for r in rows]
+    print(f"n = {n} (all Kohen samples; no host-cell exclusion applies)")
+    for label, ys in (("RPM", [r["rpm"] for r in rows]),
+                      ("reads", [float(r["reads"]) for r in rows])):
+        rho = spearman_r(ages, ys)
+        print(f"rho(age, {label:5s}) = {rho:+.4f}  p = {rho_p(rho, n):.4f}  (secondary)")
 
     elderly = [r["rpm"] for r in rows if r["age"] >= KOHEN_ELDERLY_MIN]
     young = [r["rpm"] for r in rows if r["age"] <= KOHEN_YOUNG_MAX]
@@ -68,6 +86,12 @@ def main(batch_id: str, metadata: str) -> None:
           f"young n={len(young)} mean={test['mean_b']:.3f} RPM")
     print(f"Welch p = {test['p']:.4f}   direction = "
           f"{'INCREASES with age' if test['mean_a'] > test['mean_b'] else 'DECREASES with age'}")
+
+    # Depth, because the whole Kohen arm rests on it.
+    counts = sorted(r["reads"] for r in rows)
+    print(f"\ntotal microbial reads = {sum(counts)} over "
+          f"{sum(r['seqs'] for r in rows) / 1e6:.1f}M library seqs; "
+          f"per sample median {counts[n // 2]}, range {counts[0]}-{counts[-1]}")
     print("\n  age      RPM     reads       seqs  sample")
     for r in sorted(rows, key=lambda r: r["age"]):
         print(f"{r['age']:5.1f} {r['rpm']:8.3f} {r['reads']:9d} {r['seqs']:10.0f}  {r['sample']}")
@@ -85,6 +109,7 @@ def self_check() -> None:
     assert rows["srr001"]["reads"] == 3 and rows["srr001"]["rpm"] == 3.0
     assert rows["SRX002"]["reads"] == 15 and rows["SRX002"]["rpm"] == 5.0
     assert rows["srr001"]["age"] == 70.0, "age paired to the wrong library"
+    assert abs(rho_p(0.0, 29) - 1.0) < 1e-9, "zero correlation must give p = 1"
     print("self-check OK")
 
 
